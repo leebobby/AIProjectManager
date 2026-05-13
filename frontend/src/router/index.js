@@ -1,0 +1,56 @@
+import { createRouter, createWebHistory } from 'vue-router'
+import { auth } from '../store/auth'
+
+const routes = [
+  {
+    path: '/login',
+    name: 'Login',
+    component: () => import('../views/Login.vue'),
+    meta: { public: true, layout: 'blank' },
+  },
+  { path: '/', redirect: '/intro' },
+  {
+    path: '/intro',
+    name: 'ProjectIntro',
+    component: () => import('../views/ProjectIntro.vue'),
+    meta: { title: '项目简介', icon: 'InfoFilled' },
+  },
+  {
+    path: '/customer-status',
+    name: 'CustomerStatus',
+    component: () => import('../views/CustomerStatus.vue'),
+    meta: { title: '客户面状态', icon: 'DataLine' },
+  },
+  {
+    path: '/versions',
+    name: 'VersionManagement',
+    component: () => import('../views/VersionManagement.vue'),
+    meta: { title: '版本管理', icon: 'Files' },
+  },
+  {
+    path: '/iterations',
+    name: 'IterationManagement',
+    component: () => import('../views/IterationManagement.vue'),
+    meta: { title: '迭代管理', icon: 'Calendar' },
+  },
+  {
+    path: '/users',
+    name: 'UserManagement',
+    component: () => import('../views/UserManagement.vue'),
+    meta: { title: '用户管理', icon: 'User', requireAdmin: true },
+  },
+]
+
+const router = createRouter({
+  history: createWebHistory(),
+  routes,
+})
+
+router.beforeEach((to) => {
+  if (to.meta.public) return true
+  if (!auth.isLoggedIn.value) return { path: '/login', query: { redirect: to.fullPath } }
+  if (to.meta.requireAdmin && !auth.isAdmin.value) return { path: '/intro' }
+  return true
+})
+
+export default router
