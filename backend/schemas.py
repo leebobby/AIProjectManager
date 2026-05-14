@@ -9,6 +9,7 @@ class CustomerStatusBase(BaseModel):
     machine_id: str
     battlefield: str
     current_stage: str
+    field_version: Optional[str] = ""
     attention_level: Optional[int] = 0
     customer_status: str
     recent_focus: Optional[str] = ""
@@ -22,6 +23,7 @@ class CustomerStatusCreate(CustomerStatusBase):
 class CustomerStatusUpdate(BaseModel):
     """编辑时 machine_id / battlefield 不能修改，所以单独定义一个 schema。"""
     current_stage: Optional[str] = None
+    field_version: Optional[str] = None
     attention_level: Optional[int] = None
     customer_status: Optional[str] = None
     recent_focus: Optional[str] = None

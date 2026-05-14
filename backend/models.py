@@ -12,6 +12,7 @@ class CustomerStatus(Base):
     machine_id = Column(String(64), nullable=False, comment="机台编号")
     battlefield = Column(String(128), nullable=False, comment="战场")
     current_stage = Column(String(128), nullable=False, comment="当前阶段")
+    field_version = Column(String(128), default="", comment="现场版本")
     attention_level = Column(Integer, default=0, comment="近期关注度: 0 未评估 / 1-5 星")
     customer_status = Column(String(256), nullable=False, comment="客户面进展")
     recent_focus = Column(Text, default="", comment="近期重点事务")

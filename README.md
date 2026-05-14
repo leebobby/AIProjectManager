@@ -80,7 +80,7 @@ npm run dev
 | --- | --- | --- | --- |
 | 登录 | `/login` | 公开 | 支持登录与自助注册（注册默认 normal 角色） |
 | 项目简介 | `/intro` | 登录用户 | 静态展示 |
-| 客户面状态 | `/customer-status` | 登录用户 | 列：机台编号 / 战场 / 当前阶段 / 近期关注度 / 客户面进展 / 近期重点事务 / 关键问题 |
+| 客户面状态 | `/customer-status` | 登录用户 | 列：机台编号 / 战场 / 当前阶段 / 现场版本 / 近期关注度 / 客户面进展 / 近期重点事务 / 关键问题 |
 | 版本管理 | `/versions` | 登录用户 | 含跳转链接 |
 | 迭代管理 | `/iterations` | 登录用户 | 含状态、负责人、起止时间 |
 | 用户管理 | `/users` | 仅 admin | 增删用户、改角色、禁用、重置密码 |
@@ -89,6 +89,7 @@ npm run dev
 
 - **机台编号 / 战场** 创建后锁定（编辑时禁用），且新建时机台编号唯一校验。
 - **当前阶段** 下拉选择，候选项来自 [backend/config.json](backend/config.json) 中的 `current_stages`，运维改文件即可调整选项，前端无需发版。
+- **现场版本** 紧跟在「当前阶段」之后，记录机台目前部署的软件版本号；表格内双击可改。
 - **近期关注度** 1-5 星，表格内点击星星即时保存。
 - **近期重点事务 / 关键问题** 表格内 **双击单元格** 直接编辑，回车保存、ESC 取消。
 
@@ -122,6 +123,18 @@ npm run dev
 - Docker Compose 一键部署 + Nginx 反向代理
 
 ## 更新日志
+
+### v0.4.0 — 2026-05-14
+
+**客户面状态页：新增「现场版本」列**
+- 数据模型：[models.py](backend/models.py) `CustomerStatus.field_version`（VARCHAR(128)，默认空串）；[schemas.py](backend/schemas.py) 同步加字段。
+- 列位置在「当前阶段」与「近期关注度」之间。
+- 支持表格内双击行内编辑（与「近期重点事务」「关键问题」一致），回车保存、ESC 回滚。
+- 新增 / 编辑弹窗也加了「现场版本」输入框。
+- 种子示例数据补 `field_version` 值。
+
+**轻量迁移**
+- [migrate.py](backend/migrate.py) `_ADDITIONS` 追加 `customer_status.field_version` 一项，老库（v0.3.0）启动时自动 `ALTER TABLE ADD COLUMN`，无需删 `app.db`。
 
 ### v0.3.0 — 2026-05-13
 

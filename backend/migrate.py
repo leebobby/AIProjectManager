@@ -14,6 +14,11 @@ _ADDITIONS = [
         "attention_level",
         "INTEGER DEFAULT 0",
     ),
+    (
+        "customer_status",
+        "field_version",
+        "VARCHAR(128) DEFAULT ''",
+    ),
 ]
 
 

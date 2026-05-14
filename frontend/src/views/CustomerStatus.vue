@@ -4,13 +4,29 @@
       <div class="toolbar">
         <el-button type="primary" :icon="Plus" @click="openCreate">新增</el-button>
         <el-button :icon="Refresh" @click="load">刷新</el-button>
-        <span class="tip">提示：「近期重点事务」「关键问题」单元格双击可直接编辑</span>
+        <span class="tip">提示：「现场版本」「近期重点事务」「关键问题」单元格双击可直接编辑</span>
       </div>
 
       <el-table :data="list" v-loading="loading" border stripe style="width: 100%">
         <el-table-column prop="machine_id" label="机台编号" width="120" />
         <el-table-column prop="battlefield" label="战场" width="140" />
         <el-table-column prop="current_stage" label="当前阶段" width="140" />
+        <el-table-column label="现场版本" width="160">
+          <template #default="{ row }">
+            <el-input
+              v-if="isEditing(row, 'field_version')"
+              v-model="row.field_version"
+              size="small"
+              autofocus
+              @blur="commit(row, 'field_version')"
+              @keyup.enter="commit(row, 'field_version')"
+              @keyup.esc="cancel(row, 'field_version')"
+            />
+            <div v-else class="editable-cell" @dblclick="startEdit(row, 'field_version')">
+              {{ row.field_version || '—' }}
+            </div>
+          </template>
+        </el-table-column>
         <el-table-column label="近期关注度" width="180" align="center">
           <template #default="{ row }">
             <el-rate
@@ -90,6 +106,9 @@
             <el-option v-for="s in stages" :key="s" :label="s" :value="s" />
           </el-select>
         </el-form-item>
+        <el-form-item label="现场版本">
+          <el-input v-model="form.field_version" placeholder="例如 v2.1.3" />
+        </el-form-item>
         <el-form-item label="近期关注度">
           <el-rate v-model="form.attention_level" :max="5" show-score score-template="{value} 星" />
         </el-form-item>
@@ -131,6 +150,7 @@ function defaultForm() {
     machine_id: '',
     battlefield: '',
     current_stage: '',
+    field_version: '',
     attention_level: 0,
     customer_status: '',
     recent_focus: '',
@@ -184,6 +204,7 @@ async function onSubmit() {
       // 后端编辑接口只接受可改字段
       const payload = {
         current_stage: form.current_stage,
+        field_version: form.field_version,
         attention_level: form.attention_level,
         customer_status: form.customer_status,
         recent_focus: form.recent_focus,
