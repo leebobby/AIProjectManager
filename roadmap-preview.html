@@ -1,0 +1,414 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>项目里程碑 — 效果预览</title>
+<style>
+* { box-sizing: border-box; }
+body {
+  margin: 0;
+  padding: 28px 20px;
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Microsoft YaHei', 'PingFang SC', sans-serif;
+  background: linear-gradient(180deg, #f5f7fa 0%, #eef2f7 100%);
+  min-height: 100vh;
+  color: #303133;
+}
+.container { max-width: 1280px; margin: 0 auto; }
+
+.page-title {
+  font-size: 22px;
+  font-weight: 600;
+  margin: 0 0 6px 0;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.page-sub {
+  font-size: 13px;
+  color: #909399;
+  margin: 0 0 24px 0;
+  line-height: 1.7;
+}
+
+.project-card {
+  background: #fff;
+  border-radius: 12px;
+  box-shadow: 0 4px 16px rgba(0,0,0,0.04);
+  padding: 22px 26px 30px;
+  margin-bottom: 24px;
+  overflow-x: auto;
+}
+.project-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  border-bottom: 1px solid #ebeef5;
+  padding-bottom: 12px;
+  margin-bottom: 24px;
+  min-width: 1200px;
+}
+.project-title {
+  font-size: 17px;
+  font-weight: 600;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+.project-title::before {
+  content: '';
+  display: inline-block;
+  width: 4px;
+  height: 16px;
+  background: #409EFF;
+  border-radius: 2px;
+}
+.project-meta {
+  font-size: 12px;
+  color: #909399;
+  display: flex;
+  gap: 8px;
+  align-items: center;
+}
+.project-meta .tag {
+  padding: 2px 8px;
+  border-radius: 3px;
+  background: #f0f7ff;
+  color: #409EFF;
+  font-size: 11px;
+}
+.project-meta .tag.alt { background: #fef0e7; color: #e6a23c; }
+
+.roadmap {
+  position: relative;
+  width: 1200px;
+  margin: 0 auto;
+}
+.roadmap svg {
+  display: block;
+  width: 100%;
+  height: auto;
+}
+
+.phase-block {
+  position: absolute;
+  width: 260px;
+  pointer-events: none;
+}
+.phase-block .phase-title {
+  font-size: 16px;
+  font-weight: 600;
+  margin-bottom: 10px;
+}
+.phase-block .phase-row {
+  font-size: 12px;
+  line-height: 1.7;
+  color: #606266;
+  margin-bottom: 2px;
+}
+.phase-block .phase-row .k {
+  color: #303133;
+  font-weight: 500;
+}
+.phase-block .phase-row.gap { margin-top: 8px; }
+
+.milestone-block {
+  position: absolute;
+  width: 130px;
+  transform: translateX(-50%);
+  text-align: center;
+  pointer-events: none;
+}
+.milestone-block .month-label {
+  font-size: 14px;
+  color: #303133;
+  margin-bottom: 10px;
+  font-weight: 500;
+}
+.milestone-block .product {
+  display: inline-block;
+  border: 1.5px solid #409EFF;
+  color: #409EFF;
+  padding: 5px 10px;
+  border-radius: 4px;
+  font-size: 12px;
+  font-weight: 600;
+  background: #fff;
+  min-width: 95px;
+  margin-bottom: 8px;
+}
+.milestone-block .desc {
+  font-size: 11px;
+  color: #909399;
+  line-height: 1.6;
+  padding: 0 4px;
+}
+.milestone-block .product.empty {
+  visibility: hidden;
+  margin-bottom: 0;
+}
+</style>
+</head>
+<body>
+<div class="container">
+
+  <h2 class="page-title">📍 项目里程碑 — 效果预览</h2>
+  <p class="page-sub">
+    下方两个示例分别展示「季度精度」和「月度精度」两种渲染。后台管理可以增删项目、阶段、里程碑；
+    渲染时根据项目里程碑的最早/最晚月份自动适配宽度。多个项目纵向堆叠在首页 Hero 下方。
+  </p>
+
+  <!-- ============================================================== -->
+  <!-- Project 1: 季度精度示例（对照你给的战略型产品路线图） -->
+  <!-- ============================================================== -->
+  <div class="project-card">
+    <div class="project-header">
+      <div class="project-title">战略型产品路线图</div>
+      <div class="project-meta">
+        <span>2026 年</span>
+        <span class="tag">季度精度</span>
+      </div>
+    </div>
+
+    <div class="roadmap" style="height: 560px;">
+      <svg viewBox="0 0 1200 560" xmlns="http://www.w3.org/2000/svg">
+        <!-- 主轴 -->
+        <line x1="40" y1="290" x2="1170" y2="290" stroke="#cbd5e0" stroke-width="2"/>
+        <polygon points="1165,282 1182,290 1165,298" fill="#cbd5e0"/>
+
+        <!-- Q1 阶段锚点 (x=120) -->
+        <line x1="120" y1="290" x2="120" y2="200" stroke="#67c23a" stroke-width="1.5"/>
+        <circle cx="120" cy="200" r="22" fill="#67c23a"/>
+        <text x="120" y="206" text-anchor="middle" fill="#fff" font-size="14" font-weight="600">Q1</text>
+
+        <!-- Q2 阶段锚点 (x=480) -->
+        <line x1="480" y1="290" x2="480" y2="200" stroke="#409EFF" stroke-width="1.5"/>
+        <circle cx="480" cy="200" r="22" fill="#409EFF"/>
+        <text x="480" y="206" text-anchor="middle" fill="#fff" font-size="14" font-weight="600">Q2</text>
+
+        <!-- Q3 阶段锚点 (x=840) -->
+        <line x1="840" y1="290" x2="840" y2="200" stroke="#F56C6C" stroke-width="1.5"/>
+        <circle cx="840" cy="200" r="22" fill="#F56C6C"/>
+        <text x="840" y="206" text-anchor="middle" fill="#fff" font-size="14" font-weight="600">Q3</text>
+
+        <!-- 月份连接线和小圆点（1-9月，x: 120, 240, 360, ..., 1080） -->
+        <g stroke="#cbd5e0" stroke-dasharray="3,3">
+          <line x1="120" y1="290" x2="120" y2="345"/>
+          <line x1="240" y1="290" x2="240" y2="345"/>
+          <line x1="360" y1="290" x2="360" y2="345"/>
+          <line x1="480" y1="290" x2="480" y2="345"/>
+          <line x1="600" y1="290" x2="600" y2="345"/>
+          <line x1="720" y1="290" x2="720" y2="345"/>
+          <line x1="840" y1="290" x2="840" y2="345"/>
+          <line x1="960" y1="290" x2="960" y2="345"/>
+          <line x1="1080" y1="290" x2="1080" y2="345"/>
+        </g>
+        <g fill="#fff" stroke="#cbd5e0" stroke-width="2">
+          <circle cx="120" cy="290" r="5"/>
+          <circle cx="240" cy="290" r="5"/>
+          <circle cx="360" cy="290" r="5"/>
+          <circle cx="480" cy="290" r="5"/>
+          <circle cx="600" cy="290" r="5"/>
+          <circle cx="720" cy="290" r="5"/>
+          <circle cx="840" cy="290" r="5"/>
+          <circle cx="960" cy="290" r="5"/>
+          <circle cx="1080" cy="290" r="5"/>
+        </g>
+      </svg>
+
+      <!-- 阶段内容卡片（绝对定位在SVG上） -->
+      <div class="phase-block" style="left: 150px; top: 185px;">
+        <div class="phase-title" style="color: #67c23a;">启动阶段</div>
+        <div class="phase-row"><span class="k">目标：</span></div>
+        <div class="phase-row">1. 公司战略级长线产品初始需求</div>
+        <div class="phase-row">2. 团队练兵、熟悉业务</div>
+        <div class="phase-row gap"><span class="k">核心产品：</span>AFKGoo</div>
+        <div class="phase-row gap"><span class="k">主要应用场景：</span></div>
+        <div class="phase-row">线上 + 线下互导流收割</div>
+      </div>
+
+      <div class="phase-block" style="left: 510px; top: 185px;">
+        <div class="phase-title" style="color: #409EFF;">持续交付阶段</div>
+        <div class="phase-row"><span class="k">目标：</span></div>
+        <div class="phase-row">1. AFKGoo1.0 交付业务投产</div>
+        <div class="phase-row">2. 验证超敏捷产品迭代交付节奏</div>
+        <div class="phase-row gap"><span class="k">核心产品：</span>AFKGoo、Sharaly</div>
+        <div class="phase-row gap"><span class="k">主要应用场景：</span></div>
+        <div class="phase-row">微信生态群运营</div>
+      </div>
+
+      <div class="phase-block" style="left: 870px; top: 185px;">
+        <div class="phase-title" style="color: #F56C6C;">聚焦效果阶段</div>
+        <div class="phase-row"><span class="k">目标：</span></div>
+        <div class="phase-row">1. 可量化、可视化的用户运营效果</div>
+        <div class="phase-row">2. 内容 + 系统 + 服务体系建设</div>
+        <div class="phase-row">3. 精准营销，提 LTV、复购率、降 CPC</div>
+        <div class="phase-row gap"><span class="k">核心产品：</span>AFKGoo、Sharaly</div>
+        <div class="phase-row gap"><span class="k">主要应用场景：</span></div>
+        <div class="phase-row">C 端视角：参照 KualaLumpur</div>
+        <div class="phase-row">B 端视角：参照 Gyllenhaal</div>
+      </div>
+
+      <!-- 里程碑卡片 -->
+      <div class="milestone-block" style="left: 120px; top: 355px;">
+        <div class="month-label">1月</div>
+        <div class="product empty">·</div>
+        <div class="desc">产品 MRD、技术新底盘</div>
+      </div>
+      <div class="milestone-block" style="left: 240px; top: 355px;">
+        <div class="month-label">2月</div>
+        <div class="product empty">·</div>
+        <div class="desc">AFKGooPRD、原型<br/>云服务搭建</div>
+      </div>
+      <div class="milestone-block" style="left: 360px; top: 355px;">
+        <div class="month-label">3月</div>
+        <div class="product empty">·</div>
+        <div class="desc">需求分析、WBS<br/>进入研发 SOP</div>
+      </div>
+      <div class="milestone-block" style="left: 480px; top: 355px;">
+        <div class="month-label">4月</div>
+        <div class="product">AFKGoo1.0</div>
+      </div>
+      <div class="milestone-block" style="left: 600px; top: 355px;">
+        <div class="month-label">5月</div>
+        <div class="product">AFKGoo 1.1</div>
+        <div class="desc">Q3 的产品 MRD<br/>6 月的产品 PRD、原型</div>
+      </div>
+      <div class="milestone-block" style="left: 720px; top: 355px;">
+        <div class="month-label">6月</div>
+        <div class="product">Sharaly1.0</div>
+        <div class="desc">7 月的产品 PRD、原型</div>
+      </div>
+      <div class="milestone-block" style="left: 840px; top: 355px;">
+        <div class="month-label">7月</div>
+        <div class="product">AFKGoo2.0</div>
+        <div class="desc">Q4 的产品 MRD<br/>8 月的产品 PRD、原型</div>
+      </div>
+      <div class="milestone-block" style="left: 960px; top: 355px;">
+        <div class="month-label">8月</div>
+        <div class="product">Sharaly1.1</div>
+        <div class="desc">9 月的产品 PRD、原型</div>
+      </div>
+      <div class="milestone-block" style="left: 1080px; top: 355px;">
+        <div class="month-label">9月</div>
+        <div class="product">Sharaly2.0</div>
+        <div class="desc">10 月的产品 PRD、原型</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ============================================================== -->
+  <!-- Project 2: 月度精度示例 -->
+  <!-- ============================================================== -->
+  <div class="project-card">
+    <div class="project-header">
+      <div class="project-title">AFKGoo 1.0 项目里程碑</div>
+      <div class="project-meta">
+        <span>2026 年 3 月 — 8 月</span>
+        <span class="tag alt">月度精度</span>
+      </div>
+    </div>
+
+    <div class="roadmap" style="height: 520px;">
+      <svg viewBox="0 0 1200 520" xmlns="http://www.w3.org/2000/svg">
+        <!-- 主轴 -->
+        <line x1="40" y1="280" x2="1170" y2="280" stroke="#cbd5e0" stroke-width="2"/>
+        <polygon points="1165,272 1182,280 1165,288" fill="#cbd5e0"/>
+
+        <!-- 阶段1 锚点：起点 3月 (x=140) -->
+        <line x1="140" y1="280" x2="140" y2="190" stroke="#67c23a" stroke-width="1.5"/>
+        <circle cx="140" cy="190" r="22" fill="#67c23a"/>
+        <text x="140" y="196" text-anchor="middle" fill="#fff" font-size="11" font-weight="600">3月</text>
+
+        <!-- 阶段2 锚点：起点 5月 (x=540) -->
+        <line x1="540" y1="280" x2="540" y2="190" stroke="#409EFF" stroke-width="1.5"/>
+        <circle cx="540" cy="190" r="22" fill="#409EFF"/>
+        <text x="540" y="196" text-anchor="middle" fill="#fff" font-size="11" font-weight="600">5月</text>
+
+        <!-- 阶段3 锚点：起点 7月 (x=940) -->
+        <line x1="940" y1="280" x2="940" y2="190" stroke="#e6a23c" stroke-width="1.5"/>
+        <circle cx="940" cy="190" r="22" fill="#e6a23c"/>
+        <text x="940" y="196" text-anchor="middle" fill="#fff" font-size="11" font-weight="600">7月</text>
+
+        <!-- 月份连接线（3-8月，6个月，slot=200，x: 140, 340, 540, 740, 940, 1140） -->
+        <g stroke="#cbd5e0" stroke-dasharray="3,3">
+          <line x1="140" y1="280" x2="140" y2="335"/>
+          <line x1="340" y1="280" x2="340" y2="335"/>
+          <line x1="540" y1="280" x2="540" y2="335"/>
+          <line x1="740" y1="280" x2="740" y2="335"/>
+          <line x1="940" y1="280" x2="940" y2="335"/>
+          <line x1="1140" y1="280" x2="1140" y2="335"/>
+        </g>
+        <g fill="#fff" stroke="#cbd5e0" stroke-width="2">
+          <circle cx="140" cy="280" r="5"/>
+          <circle cx="340" cy="280" r="5"/>
+          <circle cx="540" cy="280" r="5"/>
+          <circle cx="740" cy="280" r="5"/>
+          <circle cx="940" cy="280" r="5"/>
+          <circle cx="1140" cy="280" r="5"/>
+        </g>
+      </svg>
+
+      <div class="phase-block" style="left: 170px; top: 175px;">
+        <div class="phase-title" style="color: #67c23a;">需求与设计</div>
+        <div class="phase-row"><span class="k">目标：</span></div>
+        <div class="phase-row">1. 完成 PRD 与高保真原型</div>
+        <div class="phase-row">2. 评审通过、研发排期</div>
+        <div class="phase-row gap"><span class="k">关键交付：</span>PRD v1.0、UX 评审</div>
+        <div class="phase-row gap"><span class="k">负责人：</span>张三 / 产品组</div>
+      </div>
+
+      <div class="phase-block" style="left: 570px; top: 175px;">
+        <div class="phase-title" style="color: #409EFF;">开发与联调</div>
+        <div class="phase-row"><span class="k">目标：</span></div>
+        <div class="phase-row">1. 后端 API + 前端页面同步交付</div>
+        <div class="phase-row">2. 双周迭代节奏</div>
+        <div class="phase-row gap"><span class="k">关键交付：</span>核心功能 alpha 包</div>
+        <div class="phase-row gap"><span class="k">负责人：</span>李四 / 研发组</div>
+      </div>
+
+      <div class="phase-block" style="left: 740px; top: 175px;">
+        <div class="phase-title" style="color: #e6a23c;">上线与运营</div>
+        <div class="phase-row"><span class="k">目标：</span></div>
+        <div class="phase-row">1. 灰度发布，覆盖 10 家试点客户</div>
+        <div class="phase-row">2. 收集反馈，启动 1.1 迭代</div>
+        <div class="phase-row gap"><span class="k">关键交付：</span>正式版 1.0、运营手册</div>
+        <div class="phase-row gap"><span class="k">负责人：</span>王五 / 项目组</div>
+      </div>
+
+      <div class="milestone-block" style="left: 140px; top: 345px;">
+        <div class="month-label">3月</div>
+        <div class="product empty">·</div>
+        <div class="desc">立项启动会</div>
+      </div>
+      <div class="milestone-block" style="left: 340px; top: 345px;">
+        <div class="month-label">4月</div>
+        <div class="product">PRD v1.0</div>
+        <div class="desc">需求评审、UX 评审</div>
+      </div>
+      <div class="milestone-block" style="left: 540px; top: 345px;">
+        <div class="month-label">5月</div>
+        <div class="product">Alpha 包</div>
+        <div class="desc">核心功能开发完成</div>
+      </div>
+      <div class="milestone-block" style="left: 740px; top: 345px;">
+        <div class="month-label">6月</div>
+        <div class="product">Beta 包</div>
+        <div class="desc">联调测试、问题收敛</div>
+      </div>
+      <div class="milestone-block" style="left: 940px; top: 345px;">
+        <div class="month-label">7月</div>
+        <div class="product">v1.0 灰度</div>
+        <div class="desc">首批试点客户上线</div>
+      </div>
+      <div class="milestone-block" style="left: 1140px; top: 345px;">
+        <div class="month-label">8月</div>
+        <div class="product">v1.0 正式</div>
+        <div class="desc">全量发布、启动 1.1</div>
+      </div>
+    </div>
+  </div>
+
+</div>
+</body>
+</html>

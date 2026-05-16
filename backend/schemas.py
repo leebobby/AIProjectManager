@@ -174,6 +174,98 @@ class IterationRequirementOut(IterationRequirementBase):
     model_config = ConfigDict(from_attributes=True)
 
 
+# ===== Roadmap =====
+class RoadmapPhaseBase(BaseModel):
+    name: str
+    color: Optional[str] = "#409EFF"
+    start_month: int
+    end_month: int
+    goal: Optional[str] = ""
+    core_products: Optional[str] = ""
+    scenarios: Optional[str] = ""
+    sort_order: Optional[int] = 0
+
+
+class RoadmapPhaseCreate(RoadmapPhaseBase):
+    project_id: int
+
+
+class RoadmapPhaseUpdate(BaseModel):
+    name: Optional[str] = None
+    color: Optional[str] = None
+    start_month: Optional[int] = None
+    end_month: Optional[int] = None
+    goal: Optional[str] = None
+    core_products: Optional[str] = None
+    scenarios: Optional[str] = None
+    sort_order: Optional[int] = None
+
+
+class RoadmapPhaseOut(RoadmapPhaseBase):
+    id: int
+    project_id: int
+
+    model_config = ConfigDict(from_attributes=True)
+
+
+class RoadmapMilestoneBase(BaseModel):
+    month: int
+    title: Optional[str] = ""
+    description: Optional[str] = ""
+    sort_order: Optional[int] = 0
+
+
+class RoadmapMilestoneCreate(RoadmapMilestoneBase):
+    project_id: int
+
+
+class RoadmapMilestoneUpdate(BaseModel):
+    month: Optional[int] = None
+    title: Optional[str] = None
+    description: Optional[str] = None
+    sort_order: Optional[int] = None
+
+
+class RoadmapMilestoneOut(RoadmapMilestoneBase):
+    id: int
+    project_id: int
+
+    model_config = ConfigDict(from_attributes=True)
+
+
+class RoadmapProjectBase(BaseModel):
+    name: str
+    description: Optional[str] = ""
+    year: Optional[int] = None
+    granularity: Optional[str] = "quarter"
+    sort_order: Optional[int] = 0
+    is_active: Optional[bool] = True
+
+
+class RoadmapProjectCreate(RoadmapProjectBase):
+    pass
+
+
+class RoadmapProjectUpdate(BaseModel):
+    name: Optional[str] = None
+    description: Optional[str] = None
+    year: Optional[int] = None
+    granularity: Optional[str] = None
+    sort_order: Optional[int] = None
+    is_active: Optional[bool] = None
+
+
+class RoadmapProjectOut(RoadmapProjectBase):
+    id: int
+
+    model_config = ConfigDict(from_attributes=True)
+
+
+class RoadmapProjectDetailOut(RoadmapProjectOut):
+    phases: List[RoadmapPhaseOut] = []
+    milestones: List[RoadmapMilestoneOut] = []
+
+
 # ===== Auth / User =====
 class UserBase(BaseModel):
     username: str

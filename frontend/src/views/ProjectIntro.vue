@@ -32,6 +32,21 @@
       </div>
     </div>
 
+    <el-card v-if="roadmaps.length || roadmapsLoading" shadow="never" class="roadmap-section">
+      <template #header>
+        <span class="card-title"><el-icon><Guide /></el-icon> 项目里程碑</span>
+        <span v-if="isAdmin" class="card-hint">
+          <el-link type="primary" :underline="false" @click="$router.push('/roadmaps')">
+            管理路线图 <el-icon><Right /></el-icon>
+          </el-link>
+        </span>
+      </template>
+      <div v-if="roadmapsLoading" class="loading-hint">加载中…</div>
+      <div v-else class="roadmap-stack">
+        <RoadmapTimeline v-for="p in roadmaps" :key="p.id" :project="p" />
+      </div>
+    </el-card>
+
     <el-card shadow="never" class="modules-card">
       <template #header>
         <span class="card-title"><el-icon><Grid /></el-icon> 系统模块</span>
@@ -65,13 +80,15 @@
 </template>
 
 <script setup>
-import { onMounted, reactive } from 'vue'
+import { onMounted, reactive, ref } from 'vue'
 import { auth } from '../store/auth'
 import {
   annualIterationApi,
   customerStatusApi,
+  roadmapApi,
   versionApi,
 } from '../api'
+import RoadmapTimeline from './RoadmapTimeline.vue'
 
 const isAdmin = auth.isAdmin
 
@@ -110,6 +127,21 @@ const modules = [
 
 const stats = reactive({ versions: '-', iterations: '-', machines: '-' })
 
+const roadmaps = ref([])
+const roadmapsLoading = ref(true)
+
+async function loadRoadmaps() {
+  roadmapsLoading.value = true
+  try {
+    const { data } = await roadmapApi.listProjects(false)
+    roadmaps.value = data
+  } catch (e) {
+    /* 不阻塞 */
+  } finally {
+    roadmapsLoading.value = false
+  }
+}
+
 async function loadStats() {
   try {
     const [v, m] = await Promise.all([
@@ -126,7 +158,10 @@ async function loadStats() {
   } catch (e) { /* 不阻塞 */ }
 }
 
-onMounted(loadStats)
+onMounted(() => {
+  loadStats()
+  loadRoadmaps()
+})
 </script>
 
 <style scoped>
@@ -208,10 +243,22 @@ onMounted(loadStats)
 .stat-divider { width: 1px; height: 28px; background: rgba(255,255,255,0.2); }
 
 .modules-card :deep(.el-card__header),
-.about-card   :deep(.el-card__header) {
+.about-card   :deep(.el-card__header),
+.roadmap-section :deep(.el-card__header) {
   display: flex;
   align-items: center;
   justify-content: space-between;
+}
+.roadmap-stack {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+.loading-hint {
+  text-align: center;
+  color: #909399;
+  padding: 24px 0;
+  font-size: 13px;
 }
 .card-title { font-size: 16px; font-weight: 600; display: inline-flex; align-items: center; gap: 6px; }
 .card-hint  { color: #909399; font-size: 12px; }

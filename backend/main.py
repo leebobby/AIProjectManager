@@ -10,7 +10,7 @@ from migrate import ensure_schema
 from routers import annual_iterations, iteration_requirements
 from routers import auth as auth_router
 from routers import config as config_router
-from routers import customer_status, iterations, users, versions
+from routers import customer_status, iterations, roadmap, users, versions
 
 # 先做轻量迁移（给老库加列），再 create_all 补齐缺失的表。
 ensure_schema()
@@ -37,6 +37,7 @@ app.include_router(iterations.router, dependencies=authed)
 app.include_router(annual_iterations.router, dependencies=authed)
 app.include_router(iteration_requirements.router, dependencies=authed)
 app.include_router(config_router.router, dependencies=authed)
+app.include_router(roadmap.router, dependencies=authed)
 
 # 用户管理：路由内部已挂 require_admin
 app.include_router(users.router)
@@ -147,6 +148,66 @@ def seed_initial_data():
                     progress_bbit="未开始",
                     progress_clarify="未开始",
                 ))
+        # 首页项目里程碑示例数据
+        if db.query(models.RoadmapProject).count() == 0:
+            current_year = datetime.now().year
+            demo = models.RoadmapProject(
+                name="战略型产品路线图",
+                description="示例项目：演示季度精度的路线图渲染。",
+                year=current_year,
+                granularity="quarter",
+                sort_order=0,
+                is_active=True,
+            )
+            db.add(demo)
+            db.flush()
+            db.add_all([
+                models.RoadmapPhase(
+                    project_id=demo.id,
+                    name="启动阶段",
+                    color="#67C23A",
+                    start_month=1,
+                    end_month=3,
+                    goal="1. 公司战略级长线产品初始需求\n2. 团队练兵、熟悉业务",
+                    core_products="AFKGoo",
+                    scenarios="线上 + 线下互导流收割",
+                    sort_order=0,
+                ),
+                models.RoadmapPhase(
+                    project_id=demo.id,
+                    name="持续交付阶段",
+                    color="#409EFF",
+                    start_month=4,
+                    end_month=6,
+                    goal="1. AFKGoo1.0 交付业务投产\n2. 验证超敏捷产品迭代交付节奏",
+                    core_products="AFKGoo、Sharaly",
+                    scenarios="微信生态群运营",
+                    sort_order=1,
+                ),
+                models.RoadmapPhase(
+                    project_id=demo.id,
+                    name="聚焦效果阶段",
+                    color="#F56C6C",
+                    start_month=7,
+                    end_month=9,
+                    goal="1. 可量化、可视化的用户运营效果\n2. 内容 + 系统 + 服务体系建设\n3. 精准营销，提 LTV、复购率、降 CPC",
+                    core_products="AFKGoo、Sharaly",
+                    scenarios="C 端视角：参照 KualaLumpur\nB 端视角：参照 Gyllenhaal",
+                    sort_order=2,
+                ),
+            ])
+            db.add_all([
+                models.RoadmapMilestone(project_id=demo.id, month=1, title="", description="产品 MRD、技术新底盘"),
+                models.RoadmapMilestone(project_id=demo.id, month=2, title="", description="AFKGooPRD、原型\n云服务搭建"),
+                models.RoadmapMilestone(project_id=demo.id, month=3, title="", description="需求分析、WBS\n进入研发 SOP"),
+                models.RoadmapMilestone(project_id=demo.id, month=4, title="AFKGoo1.0", description=""),
+                models.RoadmapMilestone(project_id=demo.id, month=5, title="AFKGoo 1.1", description="Q3 的产品 MRD\n6 月的产品 PRD、原型"),
+                models.RoadmapMilestone(project_id=demo.id, month=6, title="Sharaly1.0", description="7 月的产品 PRD、原型"),
+                models.RoadmapMilestone(project_id=demo.id, month=7, title="AFKGoo2.0", description="Q4 的产品 MRD\n8 月的产品 PRD、原型"),
+                models.RoadmapMilestone(project_id=demo.id, month=8, title="Sharaly1.1", description="9 月的产品 PRD、原型"),
+                models.RoadmapMilestone(project_id=demo.id, month=9, title="Sharaly2.0", description="10 月的产品 PRD、原型"),
+            ])
+
         db.commit()
     finally:
         db.close()

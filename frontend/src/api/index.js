@@ -90,6 +90,23 @@ export const iterationRequirementApi = {
   },
 }
 
+export const roadmapApi = {
+  listProjects: (include_inactive = false) =>
+    http.get('/roadmap/projects', { params: { include_inactive } }),
+  getProject: (id) => http.get(`/roadmap/projects/${id}`),
+  createProject: (data) => http.post('/roadmap/projects', data),
+  updateProject: (id, data) => http.put(`/roadmap/projects/${id}`, data),
+  removeProject: (id) => http.delete(`/roadmap/projects/${id}`),
+
+  createPhase: (data) => http.post('/roadmap/phases', data),
+  updatePhase: (id, data) => http.put(`/roadmap/phases/${id}`, data),
+  removePhase: (id) => http.delete(`/roadmap/phases/${id}`),
+
+  createMilestone: (data) => http.post('/roadmap/milestones', data),
+  updateMilestone: (id, data) => http.put(`/roadmap/milestones/${id}`, data),
+  removeMilestone: (id) => http.delete(`/roadmap/milestones/${id}`),
+}
+
 export function downloadBlob(blob, filename) {
   const url = window.URL.createObjectURL(blob)
   const a = document.createElement('a')

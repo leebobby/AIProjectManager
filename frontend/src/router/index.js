@@ -40,6 +40,12 @@ const routes = [
     meta: { title: '迭代详情', hidden: true },
   },
   {
+    path: '/roadmaps',
+    name: 'RoadmapManage',
+    component: () => import('../views/RoadmapManage.vue'),
+    meta: { title: '路线图管理', icon: 'Guide', requireAdmin: true },
+  },
+  {
     path: '/users',
     name: 'UserManagement',
     component: () => import('../views/UserManagement.vue'),

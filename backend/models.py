@@ -100,6 +100,66 @@ class IterationRequirement(Base):
     iteration = relationship("AnnualIteration", back_populates="requirements")
 
 
+class RoadmapProject(Base):
+    """首页项目里程碑：一个产品下可以挂多个项目。"""
+    __tablename__ = "roadmap_projects"
+
+    id = Column(Integer, primary_key=True, index=True)
+    name = Column(String(128), nullable=False, comment="项目名称")
+    description = Column(String(256), default="", comment="副标题/简要描述")
+    year = Column(Integer, nullable=True, comment="年份（可选，仅展示）")
+    granularity = Column(String(16), default="quarter", comment="精度: quarter / month")
+    sort_order = Column(Integer, default=0, comment="排序")
+    is_active = Column(Boolean, default=True, comment="是否在首页展示")
+    created_at = Column(DateTime, default=datetime.utcnow)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+    phases = relationship(
+        "RoadmapPhase",
+        back_populates="project",
+        cascade="all, delete-orphan",
+        order_by="RoadmapPhase.sort_order",
+    )
+    milestones = relationship(
+        "RoadmapMilestone",
+        back_populates="project",
+        cascade="all, delete-orphan",
+        order_by="RoadmapMilestone.month",
+    )
+
+
+class RoadmapPhase(Base):
+    """路线图上方阶段块：含锚点、彩色标题、目标/核心产品/应用场景文本。"""
+    __tablename__ = "roadmap_phases"
+
+    id = Column(Integer, primary_key=True, index=True)
+    project_id = Column(Integer, ForeignKey("roadmap_projects.id", ondelete="CASCADE"), nullable=False, index=True)
+    name = Column(String(64), nullable=False, comment="阶段名称")
+    color = Column(String(16), default="#409EFF", comment="阶段主色 #RRGGBB")
+    start_month = Column(Integer, nullable=False, comment="起始月份 1-12")
+    end_month = Column(Integer, nullable=False, comment="结束月份 1-12")
+    goal = Column(Text, default="", comment="目标（多行）")
+    core_products = Column(String(256), default="", comment="核心产品")
+    scenarios = Column(Text, default="", comment="主要应用场景（多行）")
+    sort_order = Column(Integer, default=0, comment="排序")
+
+    project = relationship("RoadmapProject", back_populates="phases")
+
+
+class RoadmapMilestone(Base):
+    """时间轴下方月份卡片：产品名 + 描述。"""
+    __tablename__ = "roadmap_milestones"
+
+    id = Column(Integer, primary_key=True, index=True)
+    project_id = Column(Integer, ForeignKey("roadmap_projects.id", ondelete="CASCADE"), nullable=False, index=True)
+    month = Column(Integer, nullable=False, comment="月份 1-12")
+    title = Column(String(128), default="", comment="产品/版本名（蓝框文字）")
+    description = Column(Text, default="", comment="描述文字")
+    sort_order = Column(Integer, default=0, comment="同月内排序")
+
+    project = relationship("RoadmapProject", back_populates="milestones")
+
+
 class User(Base):
     __tablename__ = "users"
 
