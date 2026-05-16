@@ -24,7 +24,7 @@ from database import get_db
 
 router = APIRouter(prefix="/api/customer-status", tags=["customer-status"])
 
-_ADMIN_ONLY_FIELDS = {"current_stage", "field_version", "attention_level"}
+_ADMIN_ONLY_FIELDS = {"current_stage", "field_version", "attention_level", "issue_url"}
 _USER_FIELDS = {"customer_status", "recent_focus", "key_issues"}
 
 

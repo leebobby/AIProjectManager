@@ -12,9 +12,10 @@
     <el-card shadow="never" class="card">
       <div class="toolbar">
         <el-button type="primary" :icon="Plus" @click="openCreate">新增需求</el-button>
+        <el-button :icon="Upload" type="warning" @click="openImport">批量导入</el-button>
         <el-button :icon="Refresh" @click="load">刷新</el-button>
         <el-button v-if="isAdmin" :icon="Download" type="success" @click="onExport">导出 PPT</el-button>
-        <span class="tip">提示：除「需求编号 / 标题 / 责任人 / 优先级 / 计划版本」可双击编辑外，6 个进展直接下拉切换</span>
+        <span class="tip">提示：基础列双击编辑，6 个进展直接下拉切换；备注列记录变更说明</span>
       </div>
 
       <el-table :data="list" v-loading="loading" border stripe style="width: 100%">
@@ -123,6 +124,26 @@
           </el-table-column>
         </el-table-column>
 
+        <el-table-column label="备注" min-width="180">
+          <template #default="{ row }">
+            <el-input
+              v-if="isEditing(row, 'remark')"
+              v-model="row.remark"
+              size="small"
+              autofocus
+              type="textarea"
+              :rows="2"
+              @blur="commit(row, 'remark')"
+              @keyup.enter.ctrl="commit(row, 'remark')"
+              @keyup.esc="cancel(row, 'remark')"
+            />
+            <div v-else class="editable-cell" @dblclick="startEdit(row, 'remark')">
+              <el-tag v-if="row.remark" type="warning" size="small" effect="plain" class="remark-tag">变更</el-tag>
+              <span :class="row.remark ? 'remark-text' : 'remark-empty'">{{ row.remark || '—' }}</span>
+            </div>
+          </template>
+        </el-table-column>
+
         <el-table-column label="操作" width="160" fixed="right">
           <template #default="{ row }">
             <el-button size="small" @click="openEdit(row)">完整编辑</el-button>
@@ -162,10 +183,57 @@
             <el-option v-for="s in PROGRESS_STATUSES" :key="s" :label="s" :value="s" />
           </el-select>
         </el-form-item>
+        <el-form-item label="备注">
+          <el-input v-model="form.remark" type="textarea" :rows="2" placeholder="如有变更，请说明……" />
+        </el-form-item>
       </el-form>
       <template #footer>
         <el-button @click="dialogVisible = false">取消</el-button>
         <el-button type="primary" @click="onSubmit">保存</el-button>
+      </template>
+    </el-dialog>
+
+    <el-dialog v-model="importVisible" title="批量导入需求" width="520px">
+      <p class="import-tip">
+        1. 先下载模板，按格式填写需求清单；<br />
+        2. 表头列名请勿改动；进展列填写「未开始/进行中/已完成/已延期/不涉及」；<br />
+        3. 上传 .xlsx 文件，系统将批量创建到当前迭代下。
+      </p>
+      <el-button :icon="Download" link type="primary" @click="onDownloadTemplate">
+        下载导入模板 (.xlsx)
+      </el-button>
+
+      <el-divider />
+
+      <el-upload
+        ref="uploadRef"
+        :auto-upload="false"
+        :limit="1"
+        :on-exceed="onExceed"
+        :on-change="onFileChange"
+        :show-file-list="true"
+        accept=".xlsx"
+        drag
+      >
+        <el-icon class="el-icon--upload"><UploadFilled /></el-icon>
+        <div class="el-upload__text">拖拽 .xlsx 文件到此，或<em>点击选择</em></div>
+      </el-upload>
+
+      <div v-if="importResult" class="import-result">
+        <el-alert
+          :title="`成功导入 ${importResult.created} 条`"
+          :type="importResult.errors?.length ? 'warning' : 'success'"
+          :description="importResult.errors?.length ? importResult.errors.join('\n') : '无错误'"
+          show-icon
+          :closable="false"
+        />
+      </div>
+
+      <template #footer>
+        <el-button @click="importVisible = false">关闭</el-button>
+        <el-button type="primary" :loading="importing" :disabled="!importFile" @click="onSubmitImport">
+          开始导入
+        </el-button>
       </template>
     </el-dialog>
   </div>
@@ -175,7 +243,7 @@
 import { onMounted, reactive, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
-import { Download, Plus, Refresh } from '@element-plus/icons-vue'
+import { Download, Plus, Refresh, Upload, UploadFilled } from '@element-plus/icons-vue'
 import { annualIterationApi, downloadBlob, iterationRequirementApi } from '../api'
 import { auth } from '../store/auth'
 
@@ -203,6 +271,12 @@ const editing = ref(null)
 const form = reactive(defaultForm())
 const editingCell = ref(null)
 
+const importVisible = ref(false)
+const importing = ref(false)
+const importFile = ref(null)
+const importResult = ref(null)
+const uploadRef = ref(null)
+
 function defaultForm() {
   return {
     seq: 0,
@@ -218,6 +292,7 @@ function defaultForm() {
     progress_coding: '未开始',
     progress_bbit: '未开始',
     progress_clarify: '未开始',
+    remark: '',
   }
 }
 
@@ -335,6 +410,54 @@ async function onExport() {
   }
 }
 
+// ===== 批量导入 =====
+function openImport() {
+  importFile.value = null
+  importResult.value = null
+  importVisible.value = true
+  if (uploadRef.value) uploadRef.value.clearFiles?.()
+}
+
+function onExceed() {
+  ElMessage.warning('一次仅可上传一个文件，请先移除已选文件')
+}
+
+function onFileChange(file) {
+  importFile.value = file.raw
+  importResult.value = null
+}
+
+async function onDownloadTemplate() {
+  try {
+    const resp = await iterationRequirementApi.importTemplate()
+    downloadBlob(resp.data, 'iteration-requirements-template.xlsx')
+  } catch (e) {
+    ElMessage.error(e.response?.data?.detail || '下载失败')
+  }
+}
+
+async function onSubmitImport() {
+  if (!importFile.value) {
+    ElMessage.warning('请先选择 .xlsx 文件')
+    return
+  }
+  importing.value = true
+  try {
+    const { data } = await iterationRequirementApi.importExcel(iterationId, importFile.value)
+    importResult.value = data
+    if (data.created > 0) {
+      ElMessage.success(`成功导入 ${data.created} 条`)
+      load()
+    } else {
+      ElMessage.warning('未导入任何数据')
+    }
+  } catch (e) {
+    ElMessage.error(e.response?.data?.detail || '导入失败')
+  } finally {
+    importing.value = false
+  }
+}
+
 onMounted(() => {
   loadIteration()
   load()
@@ -360,6 +483,23 @@ onMounted(() => {
 .editable-cell {
   cursor: text;
   min-height: 22px;
+  white-space: pre-wrap;
+}
+.remark-tag {
+  margin-right: 6px;
+}
+.remark-text { color: #e6a23c; }
+.remark-empty { color: #c0c4cc; }
+.import-tip {
+  color: #606266;
+  line-height: 1.7;
+  font-size: 13px;
+  margin: 0 0 8px 0;
+}
+.import-result {
+  margin-top: 12px;
+}
+.import-result :deep(.el-alert__description) {
   white-space: pre-wrap;
 }
 </style>

@@ -6,11 +6,12 @@
         <el-button :icon="Refresh" @click="load">刷新</el-button>
         <el-button v-if="isAdmin" :icon="Download" type="success" @click="onExport">导出 PPT</el-button>
         <span class="tip">
-          提示：「当前进展」「近期现场关键诉求」「软件类风险和问题」双击单元格直接编辑{{ isAdmin ? '；管理员还可双击「现场版本」' : '' }}
+          提示：「当前进展」「近期现场关键诉求」「软件类风险和问题」双击单元格直接编辑{{ isAdmin ? '；管理员可双击「问题单」编辑链接' : '' }}
         </span>
       </div>
 
       <el-table :data="list" v-loading="loading" border stripe style="width: 100%">
+        <el-table-column type="index" label="序号" width="60" align="center" :index="(i) => i + 1" />
         <el-table-column prop="machine_id" label="机台编号" width="110" />
         <el-table-column prop="battlefield" label="客户" width="140" />
         <el-table-column prop="model" label="型号" width="120" />
@@ -27,22 +28,20 @@
             <span v-else>{{ row.current_stage || '—' }}</span>
           </template>
         </el-table-column>
-        <el-table-column label="现场版本" width="160">
+        <el-table-column label="现场版本" width="170">
           <template #default="{ row }">
-            <template v-if="isAdmin">
-              <el-input
-                v-if="isEditing(row, 'field_version')"
-                v-model="row.field_version"
-                size="small"
-                autofocus
-                @blur="commit(row, 'field_version')"
-                @keyup.enter="commit(row, 'field_version')"
-                @keyup.esc="cancel(row, 'field_version')"
-              />
-              <div v-else class="editable-cell" @dblclick="startEdit(row, 'field_version')">
-                {{ row.field_version || '—' }}
-              </div>
-            </template>
+            <el-select
+              v-if="isAdmin"
+              :model-value="row.field_version"
+              size="small"
+              filterable
+              allow-create
+              default-first-option
+              placeholder="选择或输入"
+              @change="(v) => onVersionChange(row, v)"
+            >
+              <el-option v-for="v in versionOptions" :key="v.value" :label="v.label" :value="v.value" />
+            </el-select>
             <span v-else>{{ row.field_version || '—' }}</span>
           </template>
         </el-table-column>
@@ -115,6 +114,45 @@
           </template>
         </el-table-column>
 
+        <el-table-column label="问题单情况" width="140" align="center">
+          <template #default="{ row }">
+            <template v-if="isAdmin && isEditing(row, 'issue_url')">
+              <el-input
+                v-model="row.issue_url"
+                size="small"
+                autofocus
+                placeholder="https://..."
+                @blur="commit(row, 'issue_url')"
+                @keyup.enter="commit(row, 'issue_url')"
+                @keyup.esc="cancel(row, 'issue_url')"
+              />
+            </template>
+            <template v-else>
+              <el-button
+                v-if="row.issue_url"
+                size="small"
+                type="primary"
+                link
+                :icon="Link"
+                @click="openIssue(row)"
+                @dblclick="isAdmin && startEdit(row, 'issue_url')"
+              >
+                查看
+              </el-button>
+              <el-button
+                v-else-if="isAdmin"
+                size="small"
+                type="info"
+                link
+                @click="startEdit(row, 'issue_url')"
+              >
+                设置
+              </el-button>
+              <span v-else>—</span>
+            </template>
+          </template>
+        </el-table-column>
+
         <el-table-column v-if="isAdmin" label="操作" width="160" fixed="right">
           <template #default="{ row }">
             <el-button size="small" @click="openEdit(row)">编辑</el-button>
@@ -141,7 +179,9 @@
           </el-select>
         </el-form-item>
         <el-form-item label="现场版本">
-          <el-input v-model="form.field_version" placeholder="例如 v2.1.3" />
+          <el-select v-model="form.field_version" filterable allow-create default-first-option placeholder="选择或输入" style="width: 100%">
+            <el-option v-for="v in versionOptions" :key="v.value" :label="v.label" :value="v.value" />
+          </el-select>
         </el-form-item>
         <el-form-item label="近期关注度">
           <el-rate v-model="form.attention_level" :max="5" show-score score-template="{value} 星" />
@@ -155,6 +195,9 @@
         <el-form-item label="软件类风险和问题">
           <el-input v-model="form.key_issues" type="textarea" :rows="2" />
         </el-form-item>
+        <el-form-item label="问题单链接">
+          <el-input v-model="form.issue_url" placeholder="https://..." />
+        </el-form-item>
       </el-form>
       <template #footer>
         <el-button @click="dialogVisible = false">取消</el-button>
@@ -167,14 +210,15 @@
 <script setup>
 import { computed, onMounted, reactive, ref } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
-import { Download, Plus, Refresh } from '@element-plus/icons-vue'
-import { configApi, customerStatusApi, downloadBlob } from '../api'
+import { Download, Link, Plus, Refresh } from '@element-plus/icons-vue'
+import { configApi, customerStatusApi, downloadBlob, versionApi } from '../api'
 import { auth } from '../store/auth'
 
 const isAdmin = auth.isAdmin
 
 const list = ref([])
 const stages = ref([])
+const versions = ref([])
 const loading = ref(false)
 const dialogVisible = ref(false)
 const editing = ref(null)
@@ -182,8 +226,13 @@ const form = reactive(defaultForm())
 
 const editingCell = ref(null)
 
-const ADMIN_FIELDS = ['current_stage', 'field_version', 'attention_level']
+const ADMIN_FIELDS = ['current_stage', 'field_version', 'attention_level', 'issue_url']
 const USER_FIELDS = ['customer_status', 'recent_focus', 'key_issues']
+
+const versionOptions = computed(() => versions.value.map((v) => ({
+  value: v.version_no,
+  label: v.title ? `${v.version_no} · ${v.title}` : v.version_no,
+})))
 
 function defaultForm() {
   return {
@@ -196,6 +245,7 @@ function defaultForm() {
     customer_status: '',
     recent_focus: '',
     key_issues: '',
+    issue_url: '',
   }
 }
 
@@ -215,6 +265,15 @@ async function loadConfig() {
   try {
     const { data } = await configApi.get()
     stages.value = data.current_stages || []
+  } catch (e) {
+    /* 不阻塞 */
+  }
+}
+
+async function loadVersions() {
+  try {
+    const { data } = await versionApi.list()
+    versions.value = data
   } catch (e) {
     /* 不阻塞 */
   }
@@ -327,6 +386,22 @@ async function onStageChange(row, value) {
   }
 }
 
+async function onVersionChange(row, value) {
+  const original = row.field_version
+  if (value === original) return
+  try {
+    await customerStatusApi.update(row.id, { field_version: value })
+    row.field_version = value
+    ElMessage.success('已保存')
+  } catch (e) {
+    ElMessage.error(e.response?.data?.detail || '保存失败')
+  }
+}
+
+function openIssue(row) {
+  if (row.issue_url) window.open(row.issue_url, '_blank')
+}
+
 async function onExport() {
   try {
     const resp = await customerStatusApi.exportPptx()
@@ -341,6 +416,7 @@ async function onExport() {
 onMounted(() => {
   load()
   loadConfig()
+  loadVersions()
 })
 </script>
 

@@ -30,7 +30,10 @@
             </span>
             <template #dropdown>
               <el-dropdown-menu>
-                <el-dropdown-item command="logout">
+                <el-dropdown-item command="changePassword">
+                  <el-icon><Lock /></el-icon> 修改密码
+                </el-dropdown-item>
+                <el-dropdown-item command="logout" divided>
                   <el-icon><SwitchButton /></el-icon> 退出登录
                 </el-dropdown-item>
               </el-dropdown-menu>
@@ -43,11 +46,31 @@
       </el-main>
     </el-container>
   </el-container>
+
+  <el-dialog v-model="pwdVisible" title="修改密码" width="420px" :close-on-click-modal="false">
+    <el-form :model="pwdForm" label-width="100px" @keyup.enter="onSubmitPwd">
+      <el-form-item label="原密码">
+        <el-input v-model="pwdForm.old_password" type="password" show-password autocomplete="current-password" />
+      </el-form-item>
+      <el-form-item label="新密码">
+        <el-input v-model="pwdForm.new_password" type="password" show-password autocomplete="new-password" placeholder="至少 6 位" />
+      </el-form-item>
+      <el-form-item label="确认新密码">
+        <el-input v-model="pwdForm.confirm" type="password" show-password autocomplete="new-password" />
+      </el-form-item>
+    </el-form>
+    <template #footer>
+      <el-button @click="pwdVisible = false">取消</el-button>
+      <el-button type="primary" :loading="pwdLoading" @click="onSubmitPwd">保存</el-button>
+    </template>
+  </el-dialog>
 </template>
 
 <script setup>
-import { computed } from 'vue'
+import { computed, reactive, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
+import { ElMessage } from 'element-plus'
+import { authApi } from './api'
 import { auth } from './store/auth'
 
 const route = useRoute()
@@ -63,10 +86,53 @@ const menuRoutes = computed(() =>
 )
 const currentTitle = computed(() => route.meta?.title || '')
 
+const pwdVisible = ref(false)
+const pwdLoading = ref(false)
+const pwdForm = reactive({ old_password: '', new_password: '', confirm: '' })
+
+function openChangePassword() {
+  pwdForm.old_password = ''
+  pwdForm.new_password = ''
+  pwdForm.confirm = ''
+  pwdVisible.value = true
+}
+
+async function onSubmitPwd() {
+  if (!pwdForm.old_password || !pwdForm.new_password) {
+    ElMessage.warning('请填写完整')
+    return
+  }
+  if (pwdForm.new_password.length < 6) {
+    ElMessage.warning('新密码至少 6 位')
+    return
+  }
+  if (pwdForm.new_password !== pwdForm.confirm) {
+    ElMessage.warning('两次输入的新密码不一致')
+    return
+  }
+  pwdLoading.value = true
+  try {
+    await authApi.changePassword({
+      old_password: pwdForm.old_password,
+      new_password: pwdForm.new_password,
+    })
+    ElMessage.success('密码已修改，请重新登录')
+    pwdVisible.value = false
+    auth.clear()
+    router.replace('/login')
+  } catch (e) {
+    ElMessage.error(e.response?.data?.detail || '修改失败')
+  } finally {
+    pwdLoading.value = false
+  }
+}
+
 function onCommand(cmd) {
   if (cmd === 'logout') {
     auth.clear()
     router.replace('/login')
+  } else if (cmd === 'changePassword') {
+    openChangePassword()
   }
 }
 </script>

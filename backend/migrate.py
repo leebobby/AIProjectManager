@@ -24,6 +24,16 @@ _ADDITIONS = [
         "model",
         "VARCHAR(128) DEFAULT ''",
     ),
+    (
+        "customer_status",
+        "issue_url",
+        "VARCHAR(512) DEFAULT ''",
+    ),
+    (
+        "iteration_requirements",
+        "remark",
+        "TEXT DEFAULT ''",
+    ),
 ]
 
 

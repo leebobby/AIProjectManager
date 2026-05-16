@@ -19,6 +19,7 @@ class CustomerStatus(Base):
     customer_status = Column(String(256), nullable=False, comment="当前进展")
     recent_focus = Column(Text, default="", comment="近期现场关键诉求")
     key_issues = Column(Text, default="", comment="软件类风险和问题")
+    issue_url = Column(String(512), default="", comment="问题单链接")
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
 
 
@@ -90,6 +91,8 @@ class IterationRequirement(Base):
     progress_coding = Column(String(16), default="未开始", comment="编码")
     progress_bbit = Column(String(16), default="未开始", comment="BBIT")
     progress_clarify = Column(String(16), default="未开始", comment="转测澄清")
+
+    remark = Column(Text, default="", comment="备注（是否存在变更等）")
 
     created_at = Column(DateTime, default=datetime.utcnow)
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)

@@ -22,6 +22,7 @@ class CustomerStatusBase(BaseModel):
     customer_status: str
     recent_focus: Optional[str] = ""
     key_issues: Optional[str] = ""
+    issue_url: Optional[str] = ""
 
 
 class CustomerStatusCreate(CustomerStatusBase):
@@ -30,7 +31,7 @@ class CustomerStatusCreate(CustomerStatusBase):
 
 class CustomerStatusUpdate(BaseModel):
     """编辑允许的字段；机台编号/客户/型号 创建后锁定，由后端忽略。
-    管理员字段：current_stage / field_version / attention_level
+    管理员字段：current_stage / field_version / attention_level / issue_url
     所有用户：customer_status / recent_focus / key_issues
     路由层按角色再做校验。
     """
@@ -39,6 +40,7 @@ class CustomerStatusUpdate(BaseModel):
     current_stage: Optional[str] = None
     field_version: Optional[str] = None
     attention_level: Optional[int] = None
+    issue_url: Optional[str] = None
     customer_status: Optional[str] = None
     recent_focus: Optional[str] = None
     key_issues: Optional[str] = None
@@ -141,6 +143,7 @@ class IterationRequirementBase(BaseModel):
     progress_coding: Optional[str] = "未开始"
     progress_bbit: Optional[str] = "未开始"
     progress_clarify: Optional[str] = "未开始"
+    remark: Optional[str] = ""
 
 
 class IterationRequirementCreate(IterationRequirementBase):
@@ -161,6 +164,7 @@ class IterationRequirementUpdate(BaseModel):
     progress_coding: Optional[str] = None
     progress_bbit: Optional[str] = None
     progress_clarify: Optional[str] = None
+    remark: Optional[str] = None
 
 
 class IterationRequirementOut(IterationRequirementBase):
@@ -203,6 +207,11 @@ class UserOut(BaseModel):
 class LoginRequest(BaseModel):
     username: str
     password: str
+
+
+class PasswordChangeRequest(BaseModel):
+    old_password: str
+    new_password: str
 
 
 class RegisterRequest(BaseModel):

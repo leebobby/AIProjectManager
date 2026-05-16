@@ -124,6 +124,35 @@ npm run dev
 
 ## 更新日志
 
+### v0.6.0 — 2026-05-16
+
+**公共能力**
+- 顶部用户下拉新增「修改密码」入口，调用 `POST /api/auth/change-password`，校验原密码并要求新密码 ≥ 6 位；修改成功后自动登出并跳登录页。
+- 项目简介 / 首页重做：品牌色横幅 + 技术栈徽章 + 实时统计（版本 / 迭代 / 机台数）+ 可点击的模块卡片（含 hover 抬升与图标渐变），按角色显示用户管理入口。
+
+**客户面状态页**
+- 新增首列「序号」，直接显示行号，便于一眼看到行数。
+- 「现场版本」改为下拉，候选项来自版本管理；同时保留 `allow-create`，可手动输入未登记的版本号。
+- 新增最后一列「问题单情况」，存为 `issue_url`；管理员可双击/「设置」编辑，普通用户看到「查看」按钮新窗打开。
+- PPT 导出全面改版：品牌色横幅标题 + 副标题（导出时间 / 数量）、斑马纹数据行、统一边框、问题单列同步加入。
+
+**迭代管理页**
+- 迭代详情页新增「批量导入」按钮：弹窗内一键下载 xlsx 模板（含表头 + 一行示例 + 提示），上传后调用 `POST /api/iteration-requirements/import?iteration_id=...` 批量入库，逐行报错提示。
+- 新增「备注」列（`remark`）：记录该需求是否存在变更，双击编辑；表格内有内容时左侧出现「变更」橙色徽标。
+- PPT 导出修复：表头增加「交付进展跟踪」父级标题（覆盖 6 个进展子列），新增「备注」列；表头使用品牌色 + 双层结构（父 / 子表头自动合并）。
+
+**数据模型 & 路由**
+- `CustomerStatus` 新增 `issue_url: VARCHAR(512)`；`IterationRequirement` 新增 `remark: TEXT`。
+- [migrate.py](backend/migrate.py) 自动为老库补这两列。
+- 新增路由：`POST /api/auth/change-password`、`GET /api/iteration-requirements/import-template.xlsx`、`POST /api/iteration-requirements/import`。
+- 客户面状态字段权限矩阵：`issue_url` 归入「仅管理员可改」分组。
+
+**依赖**
+- requirements.txt 新增 `openpyxl==3.1.5`（用于 xlsx 模板下载与批量导入解析）。请在后端环境执行 `pip install -r requirements.txt`。
+
+**升级提示**
+- 老库（v0.5.0 → v0.6.0）无需删 `app.db`，启动会自动补列。
+
 ### v0.5.0 — 2026-05-16
 
 **客户面状态页改造**

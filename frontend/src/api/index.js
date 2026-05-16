@@ -30,6 +30,7 @@ export const authApi = {
   login: (data) => http.post('/auth/login', data),
   register: (data) => http.post('/auth/register', data),
   me: () => http.get('/auth/me'),
+  changePassword: (data) => http.post('/auth/change-password', data),
 }
 
 export const userApi = {
@@ -78,6 +79,15 @@ export const iterationRequirementApi = {
   create: (data) => http.post('/iteration-requirements', data),
   update: (id, data) => http.put(`/iteration-requirements/${id}`, data),
   remove: (id) => http.delete(`/iteration-requirements/${id}`),
+  importTemplate: () => http.get('/iteration-requirements/import-template.xlsx', { responseType: 'blob' }),
+  importExcel: (iteration_id, file) => {
+    const fd = new FormData()
+    fd.append('file', file)
+    return http.post('/iteration-requirements/import', fd, {
+      params: { iteration_id },
+      headers: { 'Content-Type': 'multipart/form-data' },
+    })
+  },
 }
 
 export function downloadBlob(blob, filename) {
