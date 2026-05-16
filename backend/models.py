@@ -124,7 +124,7 @@ class RoadmapProject(Base):
         "RoadmapMilestone",
         back_populates="project",
         cascade="all, delete-orphan",
-        order_by="RoadmapMilestone.month",
+        order_by="(RoadmapMilestone.year, RoadmapMilestone.month, RoadmapMilestone.sort_order)",
     )
 
 
@@ -136,7 +136,9 @@ class RoadmapPhase(Base):
     project_id = Column(Integer, ForeignKey("roadmap_projects.id", ondelete="CASCADE"), nullable=False, index=True)
     name = Column(String(64), nullable=False, comment="阶段名称")
     color = Column(String(16), default="#409EFF", comment="阶段主色 #RRGGBB")
+    start_year = Column(Integer, nullable=False, default=lambda: datetime.utcnow().year, comment="起始年份")
     start_month = Column(Integer, nullable=False, comment="起始月份 1-12")
+    end_year = Column(Integer, nullable=False, default=lambda: datetime.utcnow().year, comment="结束年份")
     end_month = Column(Integer, nullable=False, comment="结束月份 1-12")
     goal = Column(Text, default="", comment="目标（多行）")
     core_products = Column(String(256), default="", comment="核心产品")
@@ -152,6 +154,7 @@ class RoadmapMilestone(Base):
 
     id = Column(Integer, primary_key=True, index=True)
     project_id = Column(Integer, ForeignKey("roadmap_projects.id", ondelete="CASCADE"), nullable=False, index=True)
+    year = Column(Integer, nullable=False, default=lambda: datetime.utcnow().year, comment="年份")
     month = Column(Integer, nullable=False, comment="月份 1-12")
     title = Column(String(128), default="", comment="产品/版本名（蓝框文字）")
     description = Column(Text, default="", comment="描述文字")

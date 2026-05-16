@@ -78,11 +78,15 @@ def delete_project(project_id: int, db: Session = Depends(get_db)):
 
 
 # ===== 阶段 =====
-def _validate_month_range(start_month: int, end_month: int):
+def _validate_phase_range(start_year: int, start_month: int, end_year: int, end_month: int):
     if not (1 <= start_month <= 12 and 1 <= end_month <= 12):
         raise HTTPException(status_code=400, detail="月份需在 1-12 之间")
-    if end_month < start_month:
-        raise HTTPException(status_code=400, detail="结束月份不能早于起始月份")
+    if not (1900 <= start_year <= 2200 and 1900 <= end_year <= 2200):
+        raise HTTPException(status_code=400, detail="年份需在 1900-2200 之间")
+    start_abs = start_year * 12 + (start_month - 1)
+    end_abs = end_year * 12 + (end_month - 1)
+    if end_abs < start_abs:
+        raise HTTPException(status_code=400, detail="结束时间不能早于起始时间")
 
 
 @router.post(
@@ -94,7 +98,7 @@ def create_phase(payload: schemas.RoadmapPhaseCreate, db: Session = Depends(get_
     project = db.query(models.RoadmapProject).filter(models.RoadmapProject.id == payload.project_id).first()
     if not project:
         raise HTTPException(status_code=404, detail="项目不存在")
-    _validate_month_range(payload.start_month, payload.end_month)
+    _validate_phase_range(payload.start_year, payload.start_month, payload.end_year, payload.end_month)
     item = models.RoadmapPhase(**payload.model_dump())
     db.add(item)
     db.commit()
@@ -116,9 +120,11 @@ def update_phase(
     if not item:
         raise HTTPException(status_code=404, detail="阶段不存在")
     data = payload.model_dump(exclude_unset=True)
-    start = data.get("start_month", item.start_month)
-    end = data.get("end_month", item.end_month)
-    _validate_month_range(start, end)
+    sy = data.get("start_year", item.start_year)
+    sm = data.get("start_month", item.start_month)
+    ey = data.get("end_year", item.end_year)
+    em = data.get("end_month", item.end_month)
+    _validate_phase_range(sy, sm, ey, em)
     for k, v in data.items():
         setattr(item, k, v)
     db.commit()
@@ -137,9 +143,11 @@ def delete_phase(phase_id: int, db: Session = Depends(get_db)):
 
 
 # ===== 里程碑 =====
-def _validate_month(month: int):
+def _validate_milestone(year: int, month: int):
     if not (1 <= month <= 12):
         raise HTTPException(status_code=400, detail="月份需在 1-12 之间")
+    if not (1900 <= year <= 2200):
+        raise HTTPException(status_code=400, detail="年份需在 1900-2200 之间")
 
 
 @router.post(
@@ -151,7 +159,7 @@ def create_milestone(payload: schemas.RoadmapMilestoneCreate, db: Session = Depe
     project = db.query(models.RoadmapProject).filter(models.RoadmapProject.id == payload.project_id).first()
     if not project:
         raise HTTPException(status_code=404, detail="项目不存在")
-    _validate_month(payload.month)
+    _validate_milestone(payload.year, payload.month)
     item = models.RoadmapMilestone(**payload.model_dump())
     db.add(item)
     db.commit()
@@ -173,8 +181,9 @@ def update_milestone(
     if not item:
         raise HTTPException(status_code=404, detail="里程碑不存在")
     data = payload.model_dump(exclude_unset=True)
-    if "month" in data:
-        _validate_month(data["month"])
+    y = data.get("year", item.year)
+    m = data.get("month", item.month)
+    _validate_milestone(y, m)
     for k, v in data.items():
         setattr(item, k, v)
     db.commit()

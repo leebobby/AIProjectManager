@@ -178,7 +178,9 @@ class IterationRequirementOut(IterationRequirementBase):
 class RoadmapPhaseBase(BaseModel):
     name: str
     color: Optional[str] = "#409EFF"
+    start_year: int
     start_month: int
+    end_year: int
     end_month: int
     goal: Optional[str] = ""
     core_products: Optional[str] = ""
@@ -193,7 +195,9 @@ class RoadmapPhaseCreate(RoadmapPhaseBase):
 class RoadmapPhaseUpdate(BaseModel):
     name: Optional[str] = None
     color: Optional[str] = None
+    start_year: Optional[int] = None
     start_month: Optional[int] = None
+    end_year: Optional[int] = None
     end_month: Optional[int] = None
     goal: Optional[str] = None
     core_products: Optional[str] = None
@@ -209,6 +213,7 @@ class RoadmapPhaseOut(RoadmapPhaseBase):
 
 
 class RoadmapMilestoneBase(BaseModel):
+    year: int
     month: int
     title: Optional[str] = ""
     description: Optional[str] = ""
@@ -220,6 +225,7 @@ class RoadmapMilestoneCreate(RoadmapMilestoneBase):
 
 
 class RoadmapMilestoneUpdate(BaseModel):
+    year: Optional[int] = None
     month: Optional[int] = None
     title: Optional[str] = None
     description: Optional[str] = None

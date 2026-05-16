@@ -37,7 +37,7 @@
         <span class="card-title"><el-icon><Guide /></el-icon> 项目里程碑</span>
         <span v-if="isAdmin" class="card-hint">
           <el-link type="primary" :underline="false" @click="$router.push('/roadmaps')">
-            管理路线图 <el-icon><Right /></el-icon>
+            管理里程碑 <el-icon><Right /></el-icon>
           </el-link>
         </span>
       </template>

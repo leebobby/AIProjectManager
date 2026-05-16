@@ -84,8 +84,10 @@
                   <span class="color-text">{{ row.color }}</span>
                 </template>
               </el-table-column>
-              <el-table-column label="月份范围" width="120" align="center">
-                <template #default="{ row }">{{ row.start_month }}–{{ row.end_month }} 月</template>
+              <el-table-column label="时间范围" width="180" align="center">
+                <template #default="{ row }">
+                  {{ row.start_year }}.{{ row.start_month }} — {{ row.end_year }}.{{ row.end_month }}
+                </template>
               </el-table-column>
               <el-table-column prop="core_products" label="核心产品" width="160" show-overflow-tooltip />
               <el-table-column prop="goal" label="目标" min-width="220" show-overflow-tooltip>
@@ -113,8 +115,8 @@
             </template>
             <el-table :data="selected.milestones || []" border stripe size="small" empty-text="暂无里程碑">
               <el-table-column type="index" label="#" width="50" align="center" />
-              <el-table-column label="月份" width="90" align="center">
-                <template #default="{ row }">{{ row.month }} 月</template>
+              <el-table-column label="时间" width="130" align="center">
+                <template #default="{ row }">{{ row.year }} 年 {{ row.month }} 月</template>
               </el-table-column>
               <el-table-column prop="title" label="产品/版本（蓝框）" width="200" />
               <el-table-column prop="description" label="描述" min-width="280">
@@ -193,10 +195,17 @@
             />
           </div>
         </el-form-item>
-        <el-form-item label="月份范围">
+        <el-form-item label="起始时间">
+          <el-input-number v-model="phaseForm.start_year" :min="1900" :max="2200" controls-position="right" />
+          <span class="dash">年</span>
           <el-input-number v-model="phaseForm.start_month" :min="1" :max="12" controls-position="right" />
-          <span class="dash">—</span>
+          <span class="dash">月</span>
+        </el-form-item>
+        <el-form-item label="结束时间">
+          <el-input-number v-model="phaseForm.end_year" :min="1900" :max="2200" controls-position="right" />
+          <span class="dash">年</span>
           <el-input-number v-model="phaseForm.end_month" :min="1" :max="12" controls-position="right" />
+          <span class="dash">月</span>
         </el-form-item>
         <el-form-item label="目标">
           <el-input
@@ -230,8 +239,11 @@
     <!-- 里程碑 新增/编辑 -->
     <el-dialog v-model="msDlg" :title="msEditing ? '编辑里程碑' : '新增里程碑'" width="520px">
       <el-form :model="msForm" label-width="100px">
-        <el-form-item label="月份">
+        <el-form-item label="时间">
+          <el-input-number v-model="msForm.year" :min="1900" :max="2200" controls-position="right" />
+          <span class="dash">年</span>
           <el-input-number v-model="msForm.month" :min="1" :max="12" controls-position="right" />
+          <span class="dash">月</span>
         </el-form-item>
         <el-form-item label="产品/版本">
           <el-input v-model="msForm.title" placeholder="蓝框中的文字，可留空" />
@@ -291,10 +303,13 @@ const phaseDlg = ref(false)
 const phaseEditing = ref(null)
 const phaseForm = reactive(defaultPhaseForm())
 function defaultPhaseForm() {
+  const y = new Date().getFullYear()
   return {
     name: '',
     color: '#409EFF',
+    start_year: y,
     start_month: 1,
+    end_year: y,
     end_month: 3,
     goal: '',
     core_products: '',
@@ -309,6 +324,7 @@ const msEditing = ref(null)
 const msForm = reactive(defaultMsForm())
 function defaultMsForm() {
   return {
+    year: new Date().getFullYear(),
     month: 1,
     title: '',
     description: '',
@@ -400,7 +416,12 @@ async function onDeleteProject() {
 function openPhaseCreate() {
   if (!selected.value) return
   phaseEditing.value = null
-  Object.assign(phaseForm, defaultPhaseForm())
+  const base = defaultPhaseForm()
+  if (selected.value.year) {
+    base.start_year = selected.value.year
+    base.end_year = selected.value.year
+  }
+  Object.assign(phaseForm, base)
   phaseDlg.value = true
 }
 function openPhaseEdit(row) {
@@ -408,7 +429,9 @@ function openPhaseEdit(row) {
   Object.assign(phaseForm, {
     name: row.name,
     color: row.color || '#409EFF',
+    start_year: row.start_year,
     start_month: row.start_month,
+    end_year: row.end_year,
     end_month: row.end_month,
     goal: row.goal || '',
     core_products: row.core_products || '',
@@ -423,8 +446,10 @@ async function onSavePhase() {
     ElMessage.warning('请填写阶段名称')
     return
   }
-  if (phaseForm.end_month < phaseForm.start_month) {
-    ElMessage.warning('结束月份不能早于起始月份')
+  const startAbs = phaseForm.start_year * 12 + (phaseForm.start_month - 1)
+  const endAbs = phaseForm.end_year * 12 + (phaseForm.end_month - 1)
+  if (endAbs < startAbs) {
+    ElMessage.warning('结束时间不能早于起始时间')
     return
   }
   try {
@@ -456,12 +481,15 @@ async function onDeletePhase(row) {
 function openMilestoneCreate() {
   if (!selected.value) return
   msEditing.value = null
-  Object.assign(msForm, defaultMsForm())
+  const base = defaultMsForm()
+  if (selected.value.year) base.year = selected.value.year
+  Object.assign(msForm, base)
   msDlg.value = true
 }
 function openMilestoneEdit(row) {
   msEditing.value = row
   Object.assign(msForm, {
+    year: row.year,
     month: row.month,
     title: row.title || '',
     description: row.description || '',
@@ -486,7 +514,7 @@ async function onSaveMilestone() {
   }
 }
 async function onDeleteMilestone(row) {
-  await ElMessageBox.confirm(`确认删除 ${row.month} 月的里程碑？`, '提示', { type: 'warning' })
+  await ElMessageBox.confirm(`确认删除 ${row.year} 年 ${row.month} 月的里程碑？`, '提示', { type: 'warning' })
   try {
     await roadmapApi.removeMilestone(row.id)
     ElMessage.success('已删除')

@@ -3,9 +3,13 @@
 启动时调用一次，对老数据库平滑升级。仅支持 SQLite 的简单加列场景；
 列重命名、类型变更等复杂迁移仍需借助 Alembic 或手动处理。
 """
+from datetime import datetime
+
 from sqlalchemy import inspect, text
 
 from database import engine
+
+_CUR_YEAR = datetime.utcnow().year
 
 # (表名, 列名, SQLite 列定义)
 _ADDITIONS = [
@@ -33,6 +37,22 @@ _ADDITIONS = [
         "iteration_requirements",
         "remark",
         "TEXT DEFAULT ''",
+    ),
+    # 路线图跨年支持：给已有的阶段/里程碑补年份列，默认当前年份。
+    (
+        "roadmap_phases",
+        "start_year",
+        f"INTEGER NOT NULL DEFAULT {_CUR_YEAR}",
+    ),
+    (
+        "roadmap_phases",
+        "end_year",
+        f"INTEGER NOT NULL DEFAULT {_CUR_YEAR}",
+    ),
+    (
+        "roadmap_milestones",
+        "year",
+        f"INTEGER NOT NULL DEFAULT {_CUR_YEAR}",
     ),
 ]
 

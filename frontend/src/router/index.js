@@ -43,7 +43,7 @@ const routes = [
     path: '/roadmaps',
     name: 'RoadmapManage',
     component: () => import('../views/RoadmapManage.vue'),
-    meta: { title: '路线图管理', icon: 'Guide', requireAdmin: true },
+    meta: { title: '里程碑管理', icon: 'Guide', requireAdmin: true },
   },
   {
     path: '/users',
