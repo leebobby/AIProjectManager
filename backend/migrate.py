@@ -19,16 +19,20 @@ _ADDITIONS = [
         "field_version",
         "VARCHAR(128) DEFAULT ''",
     ),
+    (
+        "customer_status",
+        "model",
+        "VARCHAR(128) DEFAULT ''",
+    ),
 ]
 
 
 def ensure_schema():
     inspector = inspect(engine)
-    if not inspector.has_table("customer_status"):
-        return  # 首次启动，create_all 会建表
-
     with engine.begin() as conn:
         for table, column, definition in _ADDITIONS:
+            if not inspector.has_table(table):
+                continue  # 表都没有，留给 create_all 处理
             cols = {row[1] for row in conn.execute(text(f"PRAGMA table_info({table})"))}
             if column not in cols:
                 conn.execute(text(f"ALTER TABLE {table} ADD COLUMN {column} {definition}"))

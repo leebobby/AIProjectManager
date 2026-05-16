@@ -1,13 +1,21 @@
 from datetime import datetime
-from typing import Optional
+from typing import List, Optional
 
 from pydantic import BaseModel, ConfigDict
 
 
+# Pydantic v2 把 model_ 视为受保护命名空间，CustomerStatus 里有个 `model` 列，
+# 这里全局放开，避免警告/冲突。
+_BASE_CONFIG = ConfigDict(from_attributes=True, protected_namespaces=())
+
+
 # ===== CustomerStatus =====
 class CustomerStatusBase(BaseModel):
+    model_config = ConfigDict(protected_namespaces=())
+
     machine_id: str
     battlefield: str
+    model: Optional[str] = ""
     current_stage: str
     field_version: Optional[str] = ""
     attention_level: Optional[int] = 0
@@ -21,7 +29,13 @@ class CustomerStatusCreate(CustomerStatusBase):
 
 
 class CustomerStatusUpdate(BaseModel):
-    """编辑时 machine_id / battlefield 不能修改，所以单独定义一个 schema。"""
+    """编辑允许的字段；机台编号/客户/型号 创建后锁定，由后端忽略。
+    管理员字段：current_stage / field_version / attention_level
+    所有用户：customer_status / recent_focus / key_issues
+    路由层按角色再做校验。
+    """
+    model_config = ConfigDict(protected_namespaces=())
+
     current_stage: Optional[str] = None
     field_version: Optional[str] = None
     attention_level: Optional[int] = None
@@ -34,7 +48,7 @@ class CustomerStatusOut(CustomerStatusBase):
     id: int
     updated_at: datetime
 
-    model_config = ConfigDict(from_attributes=True)
+    model_config = ConfigDict(from_attributes=True, protected_namespaces=())
 
 
 # ===== Version =====
@@ -60,7 +74,7 @@ class VersionOut(VersionBase):
     model_config = ConfigDict(from_attributes=True)
 
 
-# ===== Iteration =====
+# ===== Iteration (legacy) =====
 class IterationBase(BaseModel):
     name: str
     goal: Optional[str] = ""
@@ -80,6 +94,78 @@ class IterationUpdate(IterationBase):
 
 class IterationOut(IterationBase):
     id: int
+
+    model_config = ConfigDict(from_attributes=True)
+
+
+# ===== AnnualIteration =====
+class AnnualIterationBase(BaseModel):
+    year: int
+    month: int
+    name: Optional[str] = ""
+    owner: Optional[str] = ""
+    status: Optional[str] = "planning"
+    goal: Optional[str] = ""
+
+
+class AnnualIterationCreate(AnnualIterationBase):
+    pass
+
+
+class AnnualIterationUpdate(BaseModel):
+    name: Optional[str] = None
+    owner: Optional[str] = None
+    status: Optional[str] = None
+    goal: Optional[str] = None
+
+
+class AnnualIterationOut(AnnualIterationBase):
+    id: int
+    updated_at: Optional[datetime] = None
+
+    model_config = ConfigDict(from_attributes=True)
+
+
+# ===== IterationRequirement =====
+class IterationRequirementBase(BaseModel):
+    seq: Optional[int] = 0
+    req_no: Optional[str] = ""
+    req_url: Optional[str] = ""
+    title: Optional[str] = ""
+    owner: Optional[str] = ""
+    priority: Optional[str] = "P2"
+    planned_version: Optional[str] = ""
+    progress_walkthrough: Optional[str] = "未开始"
+    progress_reverse: Optional[str] = "未开始"
+    progress_stc: Optional[str] = "未开始"
+    progress_coding: Optional[str] = "未开始"
+    progress_bbit: Optional[str] = "未开始"
+    progress_clarify: Optional[str] = "未开始"
+
+
+class IterationRequirementCreate(IterationRequirementBase):
+    iteration_id: int
+
+
+class IterationRequirementUpdate(BaseModel):
+    seq: Optional[int] = None
+    req_no: Optional[str] = None
+    req_url: Optional[str] = None
+    title: Optional[str] = None
+    owner: Optional[str] = None
+    priority: Optional[str] = None
+    planned_version: Optional[str] = None
+    progress_walkthrough: Optional[str] = None
+    progress_reverse: Optional[str] = None
+    progress_stc: Optional[str] = None
+    progress_coding: Optional[str] = None
+    progress_bbit: Optional[str] = None
+    progress_clarify: Optional[str] = None
+
+
+class IterationRequirementOut(IterationRequirementBase):
+    id: int
+    iteration_id: int
 
     model_config = ConfigDict(from_attributes=True)
 

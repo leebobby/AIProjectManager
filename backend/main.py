@@ -7,6 +7,7 @@ import models
 from auth import get_current_user, hash_password
 from database import Base, SessionLocal, engine
 from migrate import ensure_schema
+from routers import annual_iterations, iteration_requirements
 from routers import auth as auth_router
 from routers import config as config_router
 from routers import customer_status, iterations, users, versions
@@ -33,6 +34,8 @@ authed = [Depends(get_current_user)]
 app.include_router(customer_status.router, dependencies=authed)
 app.include_router(versions.router, dependencies=authed)
 app.include_router(iterations.router, dependencies=authed)
+app.include_router(annual_iterations.router, dependencies=authed)
+app.include_router(iteration_requirements.router, dependencies=authed)
 app.include_router(config_router.router, dependencies=authed)
 
 # 用户管理：路由内部已挂 require_admin
@@ -62,7 +65,8 @@ def seed_initial_data():
             db.add_all([
                 models.CustomerStatus(
                     machine_id="M-001",
-                    battlefield="华东战场",
+                    battlefield="华东客户A",
+                    model="X-100",
                     current_stage="T3 Release",
                     field_version="v2.1.3",
                     attention_level=2,
@@ -72,7 +76,8 @@ def seed_initial_data():
                 ),
                 models.CustomerStatus(
                     machine_id="M-002",
-                    battlefield="华南战场",
+                    battlefield="华南客户B",
+                    model="X-200",
                     current_stage="T1-T2",
                     field_version="v2.0.5-rc2",
                     attention_level=5,
@@ -98,6 +103,50 @@ def seed_initial_data():
                 status="in_progress",
                 owner="admin",
             ))
+
+        # 当前年度 12 个迭代占位 + 1 个示例需求
+        current_year = datetime.now().year
+        has_year = (
+            db.query(models.AnnualIteration)
+            .filter(models.AnnualIteration.year == current_year)
+            .count()
+        )
+        if has_year == 0:
+            for m in range(1, 13):
+                db.add(models.AnnualIteration(
+                    year=current_year,
+                    month=m,
+                    name=f"{current_year}年{m}月迭代",
+                    status="planning",
+                ))
+            db.flush()
+            current_month_it = (
+                db.query(models.AnnualIteration)
+                .filter(
+                    models.AnnualIteration.year == current_year,
+                    models.AnnualIteration.month == datetime.now().month,
+                )
+                .first()
+            )
+            if current_month_it:
+                current_month_it.status = "in_progress"
+                current_month_it.owner = "admin"
+                db.add(models.IterationRequirement(
+                    iteration_id=current_month_it.id,
+                    seq=1,
+                    req_no="REQ-2026-001",
+                    req_url="https://example.com/req/2026-001",
+                    title="客户面状态页增加型号字段",
+                    owner="admin",
+                    priority="P1",
+                    planned_version="v0.5.0",
+                    progress_walkthrough="已完成",
+                    progress_reverse="已完成",
+                    progress_stc="进行中",
+                    progress_coding="进行中",
+                    progress_bbit="未开始",
+                    progress_clarify="未开始",
+                ))
         db.commit()
     finally:
         db.close()

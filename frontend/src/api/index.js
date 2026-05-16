@@ -48,6 +48,7 @@ export const customerStatusApi = {
   create: (data) => http.post('/customer-status', data),
   update: (id, data) => http.put(`/customer-status/${id}`, data),
   remove: (id) => http.delete(`/customer-status/${id}`),
+  exportPptx: () => http.get('/customer-status/export.pptx', { responseType: 'blob' }),
 }
 
 export const versionApi = {
@@ -62,6 +63,32 @@ export const iterationApi = {
   create: (data) => http.post('/iterations', data),
   update: (id, data) => http.put(`/iterations/${id}`, data),
   remove: (id) => http.delete(`/iterations/${id}`),
+}
+
+export const annualIterationApi = {
+  years: () => http.get('/annual-iterations/years'),
+  list: (year) => http.get('/annual-iterations', { params: { year } }),
+  get: (id) => http.get(`/annual-iterations/${id}`),
+  update: (id, data) => http.put(`/annual-iterations/${id}`, data),
+  exportPptx: (id) => http.get(`/annual-iterations/${id}/export.pptx`, { responseType: 'blob' }),
+}
+
+export const iterationRequirementApi = {
+  list: (iteration_id) => http.get('/iteration-requirements', { params: { iteration_id } }),
+  create: (data) => http.post('/iteration-requirements', data),
+  update: (id, data) => http.put(`/iteration-requirements/${id}`, data),
+  remove: (id) => http.delete(`/iteration-requirements/${id}`),
+}
+
+export function downloadBlob(blob, filename) {
+  const url = window.URL.createObjectURL(blob)
+  const a = document.createElement('a')
+  a.href = url
+  a.download = filename
+  document.body.appendChild(a)
+  a.click()
+  a.remove()
+  window.URL.revokeObjectURL(url)
 }
 
 export default http

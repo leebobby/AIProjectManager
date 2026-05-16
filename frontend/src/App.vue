@@ -56,6 +56,7 @@ const router = useRouter()
 const menuRoutes = computed(() =>
   router.options.routes.filter((r) => {
     if (!r.meta?.title) return false
+    if (r.meta.hidden) return false
     if (r.meta.requireAdmin && !auth.isAdmin.value) return false
     return true
   })

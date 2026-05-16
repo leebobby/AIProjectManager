@@ -124,6 +124,40 @@ npm run dev
 
 ## 更新日志
 
+### v0.5.0 — 2026-05-16
+
+**客户面状态页改造**
+- 列结构调整：机台编号 / 客户（原战场，仅 UI 重命名）/ 型号（新字段 `model`） / 当前阶段 / 现场版本 / 近期关注度 / 当前进展 / 近期现场关键诉求 / 软件类风险和问题。
+- 创建后锁定：机台编号、客户、型号（编辑弹窗禁用，后端 schema 也不接受）。
+- 字段级权限：
+  - **仅管理员可改**：当前阶段、现场版本、近期关注度（前端控件 disable，后端 PUT 校验返回 403）。
+  - **所有登录用户可改**：当前进展、近期现场关键诉求、软件类风险和问题（行内双击编辑，立即保存）。
+- 新增 / 编辑 / 删除按钮均收紧为管理员可见。
+- 新增「导出 PPT」按钮（admin 限定），调用 `GET /api/customer-status/export.pptx`，单页 16:9 表格输出当前全量数据。
+
+**迭代管理页面重构**
+- 顶层视图改为年度规划：年份切换器 + 12 行月度迭代表格（不存在的月份自动占位）。
+  - 列：月份 / 迭代名称 / 负责人 / 状态 / 迭代目标。
+  - 迭代名称、负责人、目标、状态：仅管理员可改（双击或下拉切换）。
+  - 点击「迭代名称」或「进入」跳转 `/iterations/:id` 子页面。
+- 子页面 `IterationDetail`：需求清单表格。
+  - 列：序号 / 需求编号（带超链接）/ 需求标题 / 责任人 / 优先级 / 计划交付版本 / 交付进展跟踪（含 6 个子状态列：需求串讲 / 反串讲 / STC设计 / 编码 / BBIT / 转测澄清）。
+  - 子状态枚举：未开始 / 进行中 / 已完成 / 已延期 / 不涉及，直接下拉即时保存。
+  - 普通字段支持双击行内编辑或「完整编辑」弹窗。
+  - 「导出 PPT」按钮（admin 限定）：调用 `GET /api/annual-iterations/{id}/export.pptx`，输出该迭代全量需求的单页 16:9 表格。
+
+**数据模型 & 路由**
+- 新增 `AnnualIteration`（年/月唯一）、`IterationRequirement`（外键挂到年度迭代）两张表，旧的 `iterations` 表保留兼容。
+- 新增 [routers/annual_iterations.py](backend/routers/annual_iterations.py)、[routers/iteration_requirements.py](backend/routers/iteration_requirements.py)、[pptx_utils.py](backend/pptx_utils.py)（PPT 生成）。
+- [migrate.py](backend/migrate.py) 自动给老库补 `customer_status.model` 列；新增的两张表通过 `Base.metadata.create_all` 自动建。
+- 启动种子：当前自然年自动生成 12 个迭代占位 + 当前月份示例需求一条。
+
+**依赖**
+- requirements.txt 新增 `python-pptx==1.0.2`，请在后端环境执行 `pip install -r requirements.txt`。
+
+**升级提示**
+- 老库（v0.4.0 → v0.5.0）无需删 `app.db`，启动会自动迁移并补齐种子。
+
 ### v0.4.0 — 2026-05-14
 
 **客户面状态页：新增「现场版本」列**
