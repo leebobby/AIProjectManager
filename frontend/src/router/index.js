@@ -46,6 +46,12 @@ const routes = [
     meta: { title: '问题单管理', icon: 'Warning' },
   },
   {
+    path: '/stakeholders',
+    name: 'StakeholderManagement',
+    component: () => import('../views/StakeholderManagement.vue'),
+    meta: { title: '干系人管理', icon: 'Avatar' },
+  },
+  {
     path: '/roadmaps',
     name: 'RoadmapManage',
     component: () => import('../views/RoadmapManage.vue'),

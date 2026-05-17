@@ -278,6 +278,112 @@ class RoadmapProjectDetailOut(RoadmapProjectOut):
     milestones: List[RoadmapMilestoneOut] = []
 
 
+# ===== MajorVersion / IterationVersion =====
+class IterationVersionBase(BaseModel):
+    version_no: str
+    title: Optional[str] = ""
+    planned_date: Optional[datetime] = None
+    sort_order: Optional[int] = 0
+
+
+class IterationVersionCreate(IterationVersionBase):
+    major_version_id: int
+
+
+class IterationVersionUpdate(BaseModel):
+    version_no: Optional[str] = None
+    title: Optional[str] = None
+    planned_date: Optional[datetime] = None
+    sort_order: Optional[int] = None
+
+
+class IterationVersionOut(IterationVersionBase):
+    id: int
+    major_version_id: int
+
+    model_config = ConfigDict(from_attributes=True)
+
+
+class MajorVersionBase(BaseModel):
+    version_no: str
+    title: Optional[str] = ""
+    description: Optional[str] = ""
+    range_start: Optional[datetime] = None
+    range_end: Optional[datetime] = None
+    actual_release_date: Optional[datetime] = None
+    sort_order: Optional[int] = 0
+
+
+class MajorVersionCreate(MajorVersionBase):
+    project_id: Optional[int] = None
+
+
+class MajorVersionUpdate(BaseModel):
+    version_no: Optional[str] = None
+    title: Optional[str] = None
+    description: Optional[str] = None
+    range_start: Optional[datetime] = None
+    range_end: Optional[datetime] = None
+    actual_release_date: Optional[datetime] = None
+    sort_order: Optional[int] = None
+
+
+class MajorVersionOut(MajorVersionBase):
+    id: int
+    project_id: Optional[int] = None
+
+    model_config = ConfigDict(from_attributes=True)
+
+
+class MajorVersionDetailOut(MajorVersionOut):
+    iteration_versions: List[IterationVersionOut] = []
+
+
+# ===== Stakeholder =====
+class ProjectContactBase(BaseModel):
+    col1: Optional[str] = ""
+    col2: Optional[str] = ""
+
+
+class ProjectContactCreate(ProjectContactBase):
+    pass
+
+
+class ProjectContactUpdate(ProjectContactBase):
+    pass
+
+
+class ProjectContactOut(ProjectContactBase):
+    id: int
+    sort_order: int = 0
+
+    model_config = ConfigDict(from_attributes=True)
+
+
+class BattlefieldBase(BaseModel):
+    battlefield: Optional[str] = ""
+    region: Optional[str] = ""
+    service: Optional[str] = ""
+    contact1: Optional[str] = ""
+    apps: Optional[str] = ""
+    contact2: Optional[str] = ""
+
+
+class BattlefieldCreate(BattlefieldBase):
+    pass
+
+
+class BattlefieldUpdate(BattlefieldBase):
+    pass
+
+
+class BattlefieldOut(BattlefieldBase):
+    id: int
+    sort_order: int = 0
+
+    model_config = ConfigDict(from_attributes=True)
+
+
 # ===== Auth / User =====
 class UserBase(BaseModel):
     username: str

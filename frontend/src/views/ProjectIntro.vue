@@ -2,16 +2,16 @@
   <div class="intro-page">
     <div class="hero">
       <div class="hero-inner">
-        <div class="hero-tag">AI · Project Manager</div>
-        <h1 class="hero-title">AI 项目管理系统</h1>
+        <div class="hero-tag">岳麓山 · 项目管理</div>
+        <h1 class="hero-title">岳麓山项目管理系统</h1>
         <p class="hero-sub">
           统一管理客户面状态、版本发布与迭代规划，让团队成员实时同步进度、关键问题与变更。
         </p>
         <div class="hero-stack">
-          <span class="badge badge-py">Python · FastAPI</span>
-          <span class="badge badge-vue">Vue 3 · Element Plus</span>
-          <span class="badge badge-db">SQLite · SQLAlchemy</span>
-          <span class="badge badge-auth">JWT · bcrypt</span>
+          <span v-for="(b, i) in heroBadges" :key="i" class="badge" :class="`badge-c${i % 4}`">{{ b }}</span>
+          <button v-if="isAdmin" class="badge-edit-btn" title="编辑标签" @click="startEditBadges">
+            <el-icon><Edit /></el-icon>
+          </button>
         </div>
         <div class="hero-stats">
           <div class="stat-item">
@@ -66,24 +66,54 @@
       </el-row>
     </el-card>
 
+    <!-- 标签编辑 Dialog -->
+    <el-dialog v-model="badgesDialogVisible" title="编辑标签" width="400px" @close="cancelEditBadges">
+      <div v-for="(b, i) in badgesDraft" :key="i" class="badge-draft-row">
+        <el-input v-model="badgesDraft[i]" placeholder="标签文字" size="small" />
+        <el-button :icon="Delete" circle size="small" type="danger" plain @click="badgesDraft.splice(i, 1)" />
+      </div>
+      <el-button
+        v-if="badgesDraft.length < 8"
+        :icon="Plus"
+        size="small"
+        style="margin-top: 8px"
+        @click="badgesDraft.push('')"
+      >添加标签</el-button>
+      <template #footer>
+        <el-button @click="cancelEditBadges">取消</el-button>
+        <el-button type="primary" :loading="badgesSaving" @click="saveBadges">保存</el-button>
+      </template>
+    </el-dialog>
+
     <el-card shadow="never" class="about-card">
       <template #header>
         <span class="card-title"><el-icon><InfoFilled /></el-icon> 关于</span>
+        <el-button v-if="isAdmin && !aboutEditing" size="small" :icon="Edit" @click="startEditAbout">编辑</el-button>
+        <div v-if="isAdmin && aboutEditing" style="display:inline-flex;gap:8px">
+          <el-button size="small" type="primary" :loading="aboutSaving" @click="saveAbout">保存</el-button>
+          <el-button size="small" @click="cancelEditAbout">取消</el-button>
+        </div>
       </template>
-      <ul class="about-list">
-        <li><strong>技术栈：</strong>Python (FastAPI) + Vue 3 + Element Plus + SQLite</li>
-        <li><strong>当前版本：</strong>v0.6.0</li>
-        <li><strong>维护：</strong>项目管理组</li>
-      </ul>
+      <el-input
+        v-if="aboutEditing"
+        v-model="aboutDraft"
+        type="textarea"
+        :rows="6"
+        placeholder="输入关于内容（支持换行）"
+      />
+      <div v-else class="about-content">{{ aboutContent }}</div>
     </el-card>
   </div>
 </template>
 
 <script setup>
 import { onMounted, reactive, ref } from 'vue'
+import { ElMessage } from 'element-plus'
+import { Delete, Edit, Plus } from '@element-plus/icons-vue'
 import { auth } from '../store/auth'
 import {
   annualIterationApi,
+  configApi,
   customerStatusApi,
   roadmapApi,
   versionApi,
@@ -130,6 +160,76 @@ const stats = reactive({ versions: '-', iterations: '-', machines: '-' })
 const roadmaps = ref([])
 const roadmapsLoading = ref(true)
 
+// ── 标签（hero badges）──────────────────────────────
+const DEFAULT_BADGES = ['Python · FastAPI', 'Vue 3 · Element Plus', 'SQLite · SQLAlchemy', 'JWT · bcrypt']
+const heroBadges          = ref([...DEFAULT_BADGES])
+const badgesDialogVisible = ref(false)
+const badgesDraft         = ref([])
+const badgesSaving        = ref(false)
+
+function startEditBadges() {
+  badgesDraft.value = [...heroBadges.value]
+  badgesDialogVisible.value = true
+}
+
+function cancelEditBadges() {
+  badgesDialogVisible.value = false
+}
+
+async function saveBadges() {
+  badgesSaving.value = true
+  try {
+    const filtered = badgesDraft.value.map(b => b.trim()).filter(Boolean)
+    await configApi.save({ hero_badges: filtered })
+    heroBadges.value = filtered.length ? filtered : [...DEFAULT_BADGES]
+    badgesDialogVisible.value = false
+    ElMessage.success('已保存')
+  } catch (e) {
+    ElMessage.error(e.response?.data?.detail || '保存失败')
+  } finally {
+    badgesSaving.value = false
+  }
+}
+
+// ── 关于内容 ──────────────────────────────────────────
+const aboutContent  = ref('')
+const aboutEditing  = ref(false)
+const aboutDraft    = ref('')
+const aboutSaving   = ref(false)
+
+async function loadAbout() {
+  try {
+    const { data } = await configApi.get()
+    aboutContent.value = data.about_content || ''
+    if (Array.isArray(data.hero_badges) && data.hero_badges.length) {
+      heroBadges.value = data.hero_badges
+    }
+  } catch { /* 非阻塞 */ }
+}
+
+function startEditAbout() {
+  aboutDraft.value  = aboutContent.value
+  aboutEditing.value = true
+}
+
+function cancelEditAbout() {
+  aboutEditing.value = false
+}
+
+async function saveAbout() {
+  aboutSaving.value = true
+  try {
+    await configApi.save({ about_content: aboutDraft.value })
+    aboutContent.value = aboutDraft.value
+    aboutEditing.value = false
+    ElMessage.success('已保存')
+  } catch (e) {
+    ElMessage.error(e.response?.data?.detail || '保存失败')
+  } finally {
+    aboutSaving.value = false
+  }
+}
+
 async function loadRoadmaps() {
   roadmapsLoading.value = true
   try {
@@ -161,6 +261,7 @@ async function loadStats() {
 onMounted(() => {
   loadStats()
   loadRoadmaps()
+  loadAbout()
 })
 </script>
 
@@ -226,10 +327,37 @@ onMounted(() => {
   background: rgba(255,255,255,0.15);
   border: 1px solid rgba(255,255,255,0.2);
 }
-.badge-py    { background: rgba(255, 209, 102, 0.18); border-color: rgba(255, 209, 102, 0.5); }
-.badge-vue   { background: rgba(102, 217, 171, 0.18); border-color: rgba(102, 217, 171, 0.5); }
-.badge-db    { background: rgba(110, 172, 255, 0.20); border-color: rgba(110, 172, 255, 0.55); }
-.badge-auth  { background: rgba(245, 130, 130, 0.18); border-color: rgba(245, 130, 130, 0.5); }
+.badge-c0 { background: rgba(255, 209, 102, 0.18); border-color: rgba(255, 209, 102, 0.5); }
+.badge-c1 { background: rgba(102, 217, 171, 0.18); border-color: rgba(102, 217, 171, 0.5); }
+.badge-c2 { background: rgba(110, 172, 255, 0.20); border-color: rgba(110, 172, 255, 0.55); }
+.badge-c3 { background: rgba(245, 130, 130, 0.18); border-color: rgba(245, 130, 130, 0.5); }
+
+.badge-edit-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 26px;
+  height: 26px;
+  border-radius: 4px;
+  border: 1px solid rgba(255, 255, 255, 0.25);
+  background: rgba(255, 255, 255, 0.1);
+  color: rgba(255, 255, 255, 0.7);
+  cursor: pointer;
+  font-size: 13px;
+  transition: all 0.15s;
+  padding: 0;
+}
+.badge-edit-btn:hover {
+  background: rgba(255, 255, 255, 0.2);
+  color: #fff;
+}
+
+.badge-draft-row {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  margin-bottom: 8px;
+}
 
 .hero-stats {
   display: flex;
@@ -305,10 +433,10 @@ onMounted(() => {
   font-size: 12px; color: #409EFF; font-weight: 500;
 }
 
-.about-list {
-  margin: 0;
-  padding-left: 20px;
+.about-content {
   color: #606266;
   line-height: 1.9;
+  white-space: pre-wrap;
+  font-size: 14px;
 }
 </style>

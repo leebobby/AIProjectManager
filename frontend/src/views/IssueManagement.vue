@@ -29,13 +29,6 @@
         </el-button>
       </el-button-group>
 
-      <el-button
-        :loading="loading"
-        :icon="Refresh"
-        @click="refresh"
-        style="margin-left:12px"
-      >刷新</el-button>
-
       <span v-if="fileHint" class="file-hint">
         <el-icon><Document /></el-icon> {{ fileHint }}
       </span>
@@ -55,7 +48,7 @@
     <!-- ══════════════════════════════════════════════ -->
     <template v-if="mode==='today'">
       <div v-if="loading" class="hint">加载中…</div>
-      <el-empty v-else-if="!todayData?.configured" description="请配置报表目录后点击「刷新」" />
+      <el-empty v-else-if="!todayData?.configured" description="请配置报表目录" />
 
       <template v-else-if="todayData?.raw">
         <!-- 统计卡片 -->
@@ -81,11 +74,6 @@
         <!-- 主内容 -->
         <el-card shadow="never" class="main-card">
           <el-tabs v-model="subTab" @tab-change="onSubTabChange">
-
-            <!-- 月度趋势折线图 -->
-            <el-tab-pane label="月度趋势" name="trend-line">
-              <div ref="monthlyLineEl" class="chart-lg" />
-            </el-tab-pane>
 
             <!-- 统计明细（表格 + 直方图） -->
             <el-tab-pane label="统计明细" name="stats">
@@ -195,7 +183,20 @@
           脚本路径已在上方管理员配置区设置（issue_script_path）。
           点击「执行」后系统将运行该脚本，执行完毕后可点「查看最新数据」切换至当天数据视图。
         </p>
-        <el-button type="danger" size="large" :loading="scriptRunning" :icon="VideoPlay" @click="doRunScript">
+        <el-alert
+          v-if="remoteRunning && !scriptRunning"
+          type="warning"
+          :title="`脚本正在执行中，请等待完成后再操作${remoteStartedAt ? '（开始于 ' + new Date(remoteStartedAt).toLocaleTimeString() + '）' : ''}`"
+          show-icon :closable="false"
+          style="margin-bottom:14px"
+        />
+        <el-button
+          type="danger" size="large"
+          :loading="scriptRunning"
+          :disabled="remoteRunning && !scriptRunning"
+          :icon="VideoPlay"
+          @click="doRunScript"
+        >
           执行脚本
         </el-button>
         <template v-if="scriptResult">
@@ -232,7 +233,7 @@
 <script setup>
 import { computed, defineComponent, h, nextTick, onMounted, onUnmounted, ref, watch } from 'vue'
 import { ElMessage, ElTable, ElTableColumn, ElTag } from 'element-plus'
-import { DataLine, Document, Download, Refresh, Search, TrendCharts, VideoPlay } from '@element-plus/icons-vue'
+import { DataLine, Document, Download, Search, TrendCharts, VideoPlay } from '@element-plus/icons-vue'
 import * as echarts from 'echarts'
 import { configApi, downloadBlob, issueApi } from '../api'
 import { auth } from '../store/auth'
@@ -314,9 +315,11 @@ async function saveCfg(key) {
 // ── 模式切换 ──────────────────────────────────────────
 const mode = ref('today')
 async function switchMode(m) {
+  if (mode.value === 'script' && m !== 'script') stopStatusPoll()
   mode.value = m
-  if (m === 'trend' && !trendData.value) await loadTrend()
-  if (m === 'today' && !todayData.value) await loadToday()
+  if (m === 'script') startStatusPoll()
+  else if (m === 'trend' && !trendData.value) await loadTrend()
+  else if (m === 'today' && !todayData.value) await loadToday()
   await nextTick()
   if (m === 'trend') initTrendCharts()
 }
@@ -324,7 +327,7 @@ async function switchMode(m) {
 // ── 当天数据 ──────────────────────────────────────────
 const todayData  = ref(null)
 const loading    = ref(false)
-const subTab     = ref('trend-line')
+const subTab     = ref('stats')
 const rawSearch  = ref('')
 
 async function loadToday() {
@@ -370,9 +373,31 @@ async function loadTrend() {
   }
 }
 
-// ── 脚本执行 ──────────────────────────────────────────
-const scriptRunning = ref(false)
-const scriptResult  = ref(null)
+// ── 脚本执行 & 状态轮询 ───────────────────────────────
+const scriptRunning   = ref(false)
+const scriptResult    = ref(null)
+const remoteRunning   = ref(false)
+const remoteStartedAt = ref(null)
+let   _statusTimer    = null
+
+async function fetchScriptStatus() {
+  try {
+    const { data } = await issueApi.scriptStatus()
+    remoteRunning.value   = data.running
+    remoteStartedAt.value = data.started_at
+  } catch {}
+}
+
+function startStatusPoll() {
+  fetchScriptStatus()
+  _statusTimer = setInterval(fetchScriptStatus, 3000)
+}
+
+function stopStatusPoll() {
+  if (_statusTimer) { clearInterval(_statusTimer); _statusTimer = null }
+  remoteRunning.value   = false
+  remoteStartedAt.value = null
+}
 
 async function doRunScript() {
   scriptRunning.value = true
@@ -383,9 +408,11 @@ async function doRunScript() {
     if (data.ok) ElMessage.success('脚本执行成功')
     else         ElMessage.warning('脚本执行完毕，退出码非 0，请检查输出')
   } catch (e) {
-    ElMessage.error(e.response?.data?.detail || '执行失败')
+    const msg = e.response?.data?.detail || '执行失败'
+    ElMessage.error(msg)
   } finally {
     scriptRunning.value = false
+    fetchScriptStatus()
   }
 }
 
@@ -412,7 +439,16 @@ async function exportPptx() {
     downloadBlob(resp.data, `缺陷统计报表_${ts}.pptx`)
     ElMessage.success('已导出')
   } catch (e) {
-    ElMessage.error(e.response?.data?.detail || '导出失败')
+    let msg = '导出失败'
+    try {
+      if (e.response?.data instanceof Blob) {
+        const text = await e.response.data.text()
+        msg = JSON.parse(text).detail || msg
+      } else {
+        msg = e.response?.data?.detail || msg
+      }
+    } catch {}
+    ElMessage.error(msg)
   } finally {
     exporting.value = false
   }
@@ -465,7 +501,6 @@ function onFeatureClick(group, col, v) {
 }
 
 // ── ECharts 管理 ─────────────────────────────────────
-const monthlyLineEl  = ref(null)
 const monthlyBarEl   = ref(null)
 const customerBarEl  = ref(null)
 const featureBarEl   = ref(null)
@@ -475,42 +510,14 @@ const trendSeverityEl = ref(null)
 const instances = {}
 function setChart(key, el, option) {
   if (!el) return
-  if (!instances[key]) {
-    instances[key] = echarts.init(el)
-    instances[key].on('click', params => {
-      if (key === 'monthlyLine' && params.componentType === 'series') {
-        openDrill({ group: params.seriesName, year_month: params.name },
-                   `${params.seriesName} · ${params.name}`)
-      }
-    })
-  }
+  if (!instances[key]) instances[key] = echarts.init(el)
   instances[key].setOption(option, { notMerge: true })
 }
 
 function onSubTabChange(tab) {
   nextTick(() => {
-    if (tab === 'trend-line') initMonthlyLineChart()
-    if (tab === 'stats')      initStatsBarCharts()
+    if (tab === 'stats') initStatsBarCharts()
     Object.values(instances).forEach(c => c.resize())
-  })
-}
-
-function initMonthlyLineChart() {
-  const d = todayData.value?.monthly_by_group
-  if (!d?.rows?.length || !monthlyLineEl.value) return
-  const months = d.columns.filter(c => c !== '合计')
-  const groups = d.rows.filter(r => r.label !== '合计')
-  setChart('monthlyLine', monthlyLineEl.value, {
-    tooltip: { trigger: 'axis' },
-    legend: { data: groups.map(g => g.label), bottom: 0 },
-    grid:   { top: 20, left: 50, right: 20, bottom: 50 },
-    xAxis:  { type: 'category', data: months },
-    yAxis:  { type: 'value', minInterval: 1, name: '缺陷数' },
-    series: groups.map((g, i) => ({
-      name: g.label, type: 'line', smooth: true,
-      symbolSize: 7, color: PAL[i % PAL.length],
-      data: months.map(m => g[m] ?? 0),
-    })),
   })
 }
 
@@ -543,8 +550,7 @@ function initStatsBarCharts() {
 
 function initTodayCharts() {
   nextTick(() => {
-    if (subTab.value === 'trend-line') initMonthlyLineChart()
-    if (subTab.value === 'stats')      initStatsBarCharts()
+    if (subTab.value === 'stats') initStatsBarCharts()
   })
 }
 
@@ -610,6 +616,7 @@ onMounted(async () => {
 })
 
 onUnmounted(() => {
+  stopStatusPoll()
   Object.values(instances).forEach(c => c.dispose())
   window.removeEventListener('resize', onResize)
 })

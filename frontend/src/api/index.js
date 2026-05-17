@@ -49,10 +49,11 @@ export const configApi = {
 }
 
 export const issueApi = {
-  getData:    ()  => http.get('/issues/data'),
-  getTrend:   ()  => http.get('/issues/trend'),
-  runScript:  ()  => http.post('/issues/run-script'),
-  exportPptx: ()  => http.get('/issues/export.pptx', { responseType: 'blob' }),
+  getData:      ()  => http.get('/issues/data'),
+  getTrend:     ()  => http.get('/issues/trend'),
+  scriptStatus: ()  => http.get('/issues/run-script/status'),
+  runScript:    ()  => http.post('/issues/run-script'),
+  exportPptx:   ()  => http.get('/issues/export.pptx', { responseType: 'blob' }),
 }
 
 export const customerStatusApi = {
@@ -68,6 +69,17 @@ export const versionApi = {
   create: (data) => http.post('/versions', data),
   update: (id, data) => http.put(`/versions/${id}`, data),
   remove: (id) => http.delete(`/versions/${id}`),
+}
+
+export const majorVersionApi = {
+  list: (project_id) => http.get('/major-versions', { params: project_id != null ? { project_id } : {} }),
+  create: (data) => http.post('/major-versions', data),
+  update: (id, data) => http.put(`/major-versions/${id}`, data),
+  remove: (id) => http.delete(`/major-versions/${id}`),
+  allIterationVersions: () => http.get('/iteration-versions/all'),
+  createIterVersion: (data) => http.post('/iteration-versions', data),
+  updateIterVersion: (id, data) => http.put(`/iteration-versions/${id}`, data),
+  removeIterVersion: (id) => http.delete(`/iteration-versions/${id}`),
 }
 
 export const iterationApi = {
@@ -99,6 +111,18 @@ export const iterationRequirementApi = {
       headers: { 'Content-Type': 'multipart/form-data' },
     })
   },
+}
+
+export const stakeholderApi = {
+  listProjectContacts: () => http.get('/stakeholders/project-contacts'),
+  createProjectContact: (data) => http.post('/stakeholders/project-contacts', data),
+  updateProjectContact: (id, data) => http.put(`/stakeholders/project-contacts/${id}`, data),
+  removeProjectContact: (id) => http.delete(`/stakeholders/project-contacts/${id}`),
+
+  listBattlefields: () => http.get('/stakeholders/battlefields'),
+  createBattlefield: (data) => http.post('/stakeholders/battlefields', data),
+  updateBattlefield: (id, data) => http.put(`/stakeholders/battlefields/${id}`, data),
+  removeBattlefield: (id) => http.delete(`/stakeholders/battlefields/${id}`),
 }
 
 export const roadmapApi = {

@@ -1,4 +1,4 @@
-# AI 项目管理系统
+# 岳麓山项目管理系统
 
 基于 **FastAPI + SQLite + Vue 3 + Element Plus** 搭建的前后端分离项目管理系统。
 
@@ -14,12 +14,17 @@
 │   ├── auth.py              密码哈希 + JWT + get_current_user / require_admin
 │   ├── config.json          可配置项（当前阶段下拉选项等）
 │   ├── routers/
-│   │   ├── auth.py          /api/auth/login /register /me
-│   │   ├── users.py         /api/users  (仅 admin)
-│   │   ├── config.py        /api/config 读取配置
+│   │   ├── auth.py              /api/auth/login /register /me /change-password
+│   │   ├── users.py             /api/users  (仅 admin)
+│   │   ├── config.py            /api/config 读写配置
 │   │   ├── customer_status.py
-│   │   ├── versions.py
-│   │   └── iterations.py
+│   │   ├── versions.py          旧版版本 CRUD（兼容保留）
+│   │   ├── major_versions.py    /api/major-versions + /api/iteration-versions
+│   │   ├── iterations.py
+│   │   ├── annual_iterations.py
+│   │   ├── iteration_requirements.py
+│   │   ├── roadmap.py
+│   │   └── issues.py            /api/issues/* 问题单数据 / 趋势 / 脚本 / PPT
 │   └── requirements.txt
 └── frontend/                Vue 3 前端
     ├── package.json
@@ -29,14 +34,17 @@
         ├── App.vue          整体布局（侧边导航 + 顶部用户条）
         ├── router/          路由 + 登录守卫
         ├── store/auth.js    简易全局 auth 状态
-        ├── api/index.js     axios 封装（自动带 token + 401 跳登录）
+        ├── api/index.js     axios 封装（自动带 token + 401/409 拦截）
         └── views/
             ├── Login.vue                    登录 / 注册
             ├── ProjectIntro.vue             项目简介
             ├── CustomerStatus.vue           客户面状态
-            ├── VersionManagement.vue        版本管理
+            ├── VersionManagement.vue        版本管理（大版本 + 迭代版本二级结构）
             ├── IterationManagement.vue      迭代管理
-            └── UserManagement.vue           用户管理（仅 admin 可见）
+            ├── IterationDetail.vue          迭代详情（需求清单）
+            ├── IssueManagement.vue          问题单管理
+            ├── RoadmapManage.vue            里程碑管理（仅 admin）
+            └── UserManagement.vue           用户管理（仅 admin）
 ```
 
 ## 启动
@@ -79,10 +87,12 @@ npm run dev
 | 页面 | 路径 | 权限 | 说明 |
 | --- | --- | --- | --- |
 | 登录 | `/login` | 公开 | 支持登录与自助注册（注册默认 normal 角色） |
-| 项目简介 | `/intro` | 登录用户 | 静态展示 |
-| 客户面状态 | `/customer-status` | 登录用户 | 列：机台编号 / 战场 / 当前阶段 / 现场版本 / 近期关注度 / 客户面进展 / 近期重点事务 / 关键问题 |
-| 版本管理 | `/versions` | 登录用户 | 含跳转链接 |
-| 迭代管理 | `/iterations` | 登录用户 | 含状态、负责人、起止时间 |
+| 项目简介 | `/intro` | 登录用户 | 品牌横幅 + 实时统计 + 模块导航卡片 |
+| 客户面状态 | `/customer-status` | 登录用户 | 列：机台编号 / 战场 / 当前阶段 / 现场版本 / 近期关注度 / 客户面进展 / 近期重点事务 / 关键问题 / 问题单链接 |
+| 版本管理 | `/versions` | 登录用户 | 按里程碑项目分 Tab；大版本含版本范围 / 实际发布时间；大版本下可展开迭代版本列表 |
+| 迭代管理 | `/iterations` | 登录用户 | 年度视图；点击月份进入需求清单详情页 |
+| 问题单管理 | `/issues` | 登录用户 | 读取 Excel 报表；当天数据 / 趋势图 / 实时刷新三种模式；支持导出 PPT |
+| 里程碑管理 | `/roadmaps` | 仅 admin | 甘特式路线图，可管理项目 / 阶段 / 里程碑 |
 | 用户管理 | `/users` | 仅 admin | 增删用户、改角色、禁用、重置密码 |
 
 ### 客户面状态特性
@@ -97,7 +107,9 @@ npm run dev
 
 ```json
 {
-  "current_stages": ["装机", "T0-T1", "T1-T2", "T2-T3", "T3 Release", "验收完成"]
+  "current_stages": ["BFI", "岳麓山", "明场"],
+  "issue_report_path": "报表目录路径",
+  "about_content": "关于页面的文本内容（管理员可在页面内编辑）"
 }
 ```
 
@@ -123,6 +135,71 @@ npm run dev
 - Docker Compose 一键部署 + Nginx 反向代理
 
 ## 更新日志
+
+### v0.9.0 — 2026-05-17
+
+**品牌重命名 & 配置调整**
+- 系统名称全面改为「岳麓山项目管理系统」：浏览器标签页（`index.html`）、侧边栏 Logo（`App.vue`）、首页横幅（`ProjectIntro.vue`）同步更新。
+- `config.json` 中 `current_stages` 调整为 `["BFI", "岳麓山", "明场"]`，与实际项目阶段对齐。
+
+**首页「关于」卡片可编辑**
+- 管理员在首页「关于」卡片右上角点击「编辑」，可直接在页面内修改内容（textarea），保存后通过 `PUT /api/config` 持久化到 `config.json`。
+- 非管理员只读展示，内容支持换行（`white-space: pre-wrap`）。
+
+**问题单管理优化**
+- 删除「当天数据」模式下的「月度趋势」子 Tab（数据口径有误，移除避免误导）。
+- 删除 mode-bar 中的独立「刷新」按钮（功能已被「实时刷新」模式覆盖，减少 UI 冗余）。
+
+---
+
+### v0.8.0 — 2026-05-17
+
+**版本管理重构**
+- 版本管理页面完全重写，支持按里程碑项目分 Tab 展示（从 `GET /api/roadmap/projects` 加载），另有「全局版本」Tab 存放不挂项目的版本。
+- 引入二级版本结构：
+  - **大版本**（`major_versions` 表）：版本号、标题、版本说明、版本范围（起止日期）、实际发布时间；约每 1.5 个月一个。
+  - **迭代版本**（`iteration_versions` 表）：隶属于某个大版本，版本号、标题、预计发布日期；约每周一个；在大版本行展开后显示子表格。
+- 新增后端路由 [routers/major_versions.py](backend/routers/major_versions.py)：
+  - `GET /api/major-versions?project_id=...` — 按项目查询大版本列表（含嵌套迭代版本）
+  - `POST/PUT/DELETE /api/major-versions/{id}` — 大版本 CRUD（admin 写，所有登录用户读）
+  - `POST/PUT/DELETE /api/iteration-versions/{id}` — 迭代版本 CRUD（admin 写）
+  - `GET /api/iteration-versions/all` — 返回所有迭代版本的扁平列表，含项目 / 大版本归属信息
+- **迭代需求「计划交付版本」改为下拉选择**：从 `/api/iteration-versions/all` 加载候选项，按「项目 · 大版本」分组展示；保留 `allow-create` + `filterable`，仍可手动输入自定义版本号。
+- 两张新表通过 `Base.metadata.create_all` 在启动时自动建，无需迁移脚本。
+
+**升级提示**
+- 老库（v0.7.0 → v0.8.0）无需删 `app.db`，新表自动建。
+
+---
+
+### v0.7.0 — 2026-05-17
+
+**并发安全：乐观锁**
+- 对三张高频多管理员编辑的表添加 `version` 乐观锁字段：`customer_status`、`iteration_requirements`、`roadmap_phases`。
+- 每次 `PUT` 请求需携带当前 `version`；后端比对不一致时返回 `HTTP 409 Conflict`（提示「数据已被他人修改，请刷新后重试」）；成功则 `version += 1` 并返回新值给前端。
+- axios 响应拦截器全局处理 409：自动弹 `ElMessage.warning`，无需各页面单独处理。
+- [migrate.py](backend/migrate.py) 自动为老库三张表补 `version INTEGER NOT NULL DEFAULT 0` 列。
+- 影响页面：CustomerStatus、IterationDetail、RoadmapManage。
+
+**问题单管理（新页面）**
+- 新页面 `/issues`（`IssueManagement.vue`），侧边栏菜单可见。
+- **数据来源**：读取服务器指定目录下的 Excel 报表（格式 `缺陷统计报表_YYYYMMDD.xlsx`，6 个 sheet：原始数据 / 按组统计 / 按严重性统计 / 按模块统计 / 按负责人统计 / 月度趋势）；自动按文件名日期后缀选取最新文件。
+- **三种浏览模式**（按钮切换）：
+  - 「当天数据」：统计卡片（合计 / 严重 / 一般 / 提示，可点击展开明细抽屉）+ 3 张统计表各配对一个 ECharts 堆叠条形图 + 原始数据搜索表格。
+  - 「查看趋势」：扫描目录下所有日期报表，绘制两条每日趋势折线图（按组 / 按严重性）+ 每日汇总表。
+  - 「实时刷新」（admin）：触发后端执行配置的刷新脚本（`.py` / `.bat` / `.exe`），实时显示 stdout / stderr，成功后可一键切换至最新数据。
+- **PPT 导出**：`GET /api/issues/export.pptx`，生成含彩色统计卡片 + 3 张统计明细表的演示文档。
+- **管理员配置区**：报表目录路径 + 脚本路径，通过 `PUT /api/config` 持久化写入 `config.json`。
+- 新增后端路由 [routers/issues.py](backend/routers/issues.py)：`GET /data`、`GET /trend`、`POST /run-script`、`GET /export.pptx`。
+
+**配置接口**
+- `GET /api/config` 已存在；本版新增 `PUT /api/config`（admin 限定），前端可保存任意配置键值到 [config.json](backend/config.json)。
+
+**升级提示**
+- 老库（v0.6.0 → v0.7.0）无需删 `app.db`，启动自动补三列。
+- 需安装新依赖 `openpyxl`（若 v0.6.0 已安装则已满足）。
+
+---
 
 ### v0.6.0 — 2026-05-16
 

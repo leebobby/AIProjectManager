@@ -82,20 +82,34 @@
             </el-select>
           </template>
         </el-table-column>
-        <el-table-column label="计划交付版本" width="150">
+        <el-table-column label="计划交付版本" width="170">
           <template #default="{ row }">
-            <el-input
-              v-if="isEditing(row, 'planned_version')"
-              v-model="row.planned_version"
+            <el-select
+              :model-value="row.planned_version"
               size="small"
-              autofocus
-              @blur="commit(row, 'planned_version')"
-              @keyup.enter="commit(row, 'planned_version')"
-              @keyup.esc="cancel(row, 'planned_version')"
-            />
-            <div v-else class="editable-cell" @dblclick="startEdit(row, 'planned_version')">
-              {{ row.planned_version || '—' }}
-            </div>
+              clearable
+              filterable
+              allow-create
+              placeholder="选择或输入版本"
+              style="width: 100%"
+              @change="(v) => onFieldChange(row, 'planned_version', v)"
+            >
+              <el-option-group
+                v-for="group in versionGroups"
+                :key="group.label"
+                :label="group.label"
+              >
+                <el-option
+                  v-for="ver in group.options"
+                  :key="ver.id"
+                  :label="ver.version_no"
+                  :value="ver.version_no"
+                >
+                  <span>{{ ver.version_no }}</span>
+                  <span v-if="ver.title" style="color:#909399; margin-left:6px; font-size:12px">{{ ver.title }}</span>
+                </el-option>
+              </el-option-group>
+            </el-select>
           </template>
         </el-table-column>
 
@@ -176,7 +190,30 @@
           </el-select>
         </el-form-item>
         <el-form-item label="计划交付版本">
-          <el-input v-model="form.planned_version" />
+          <el-select
+            v-model="form.planned_version"
+            clearable
+            filterable
+            allow-create
+            placeholder="选择或输入版本"
+            style="width: 100%"
+          >
+            <el-option-group
+              v-for="group in versionGroups"
+              :key="group.label"
+              :label="group.label"
+            >
+              <el-option
+                v-for="ver in group.options"
+                :key="ver.id"
+                :label="ver.version_no"
+                :value="ver.version_no"
+              >
+                <span>{{ ver.version_no }}</span>
+                <span v-if="ver.title" style="color:#909399; margin-left:6px; font-size:12px">{{ ver.title }}</span>
+              </el-option>
+            </el-option-group>
+          </el-select>
         </el-form-item>
         <el-form-item v-for="col in PROGRESS_COLS" :key="col.field" :label="col.label">
           <el-select v-model="form[col.field]" style="width: 100%">
@@ -244,7 +281,7 @@ import { onMounted, reactive, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { Download, Plus, Refresh, Upload, UploadFilled } from '@element-plus/icons-vue'
-import { annualIterationApi, downloadBlob, iterationRequirementApi } from '../api'
+import { annualIterationApi, downloadBlob, iterationRequirementApi, majorVersionApi } from '../api'
 import { auth } from '../store/auth'
 
 const route = useRoute()
@@ -265,6 +302,7 @@ const PRIORITIES = ['P0', 'P1', 'P2', 'P3']
 const iterationId = Number(route.params.id)
 const iteration = ref(null)
 const list = ref([])
+const versionGroups = ref([])
 const loading = ref(false)
 const dialogVisible = ref(false)
 const editing = ref(null)
@@ -303,6 +341,24 @@ async function loadIteration() {
   } catch (e) {
     ElMessage.error('迭代不存在')
     router.push('/iterations')
+  }
+}
+
+async function loadVersionGroups() {
+  try {
+    const { data } = await majorVersionApi.allIterationVersions()
+    // Group by project_name > major_version_no
+    const map = new Map()
+    for (const v of data) {
+      const groupLabel = v.project_name
+        ? `${v.project_name} · ${v.major_version_no}`
+        : v.major_version_no
+      if (!map.has(groupLabel)) map.set(groupLabel, [])
+      map.get(groupLabel).push(v)
+    }
+    versionGroups.value = Array.from(map.entries()).map(([label, options]) => ({ label, options }))
+  } catch (e) {
+    // non-fatal: dropdown just empty
   }
 }
 
@@ -468,6 +524,7 @@ async function onSubmitImport() {
 onMounted(() => {
   loadIteration()
   load()
+  loadVersionGroups()
 })
 </script>
 

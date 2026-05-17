@@ -1,56 +1,176 @@
 <template>
   <div>
+    <!-- Project tabs -->
+    <el-tabs v-model="activeTab" @tab-change="onTabChange" class="project-tabs">
+      <el-tab-pane
+        v-for="proj in projects"
+        :key="proj.id"
+        :label="proj.name"
+        :name="String(proj.id)"
+      />
+      <el-tab-pane label="全局版本" name="global" />
+    </el-tabs>
+
     <el-card shadow="never">
       <div class="toolbar">
-        <el-button type="primary" :icon="Plus" @click="openCreate">发布新版本</el-button>
+        <el-button v-if="isAdmin" type="primary" :icon="Plus" @click="openCreateMajor">新增大版本</el-button>
         <el-button :icon="Refresh" @click="load">刷新</el-button>
+        <span class="tip">大版本约 1.5 个月一个，迭代版本约每周一个</span>
       </div>
 
-      <el-table :data="list" v-loading="loading" border stripe style="width: 100%">
-        <el-table-column prop="version_no" label="版本号" width="140" />
-        <el-table-column prop="title" label="标题" min-width="200" />
-        <el-table-column prop="description" label="说明" min-width="240" show-overflow-tooltip />
-        <el-table-column prop="released_at" label="发布时间" width="180">
-          <template #default="{ row }">{{ formatDate(row.released_at) }}</template>
-        </el-table-column>
-        <el-table-column label="跳转" width="120">
+      <el-table
+        :data="majorVersions"
+        v-loading="loading"
+        row-key="id"
+        border
+        stripe
+        style="width: 100%"
+      >
+        <el-table-column type="expand">
           <template #default="{ row }">
-            <el-link v-if="row.release_url" type="primary" :href="row.release_url" target="_blank">
-              前往
-            </el-link>
-            <span v-else style="color:#bbb">—</span>
+            <div class="expand-area">
+              <div class="expand-header">
+                <span class="expand-title">迭代版本（共 {{ row.iteration_versions?.length || 0 }} 个）</span>
+                <el-button
+                  v-if="isAdmin"
+                  size="small"
+                  type="primary"
+                  :icon="Plus"
+                  @click.stop="openCreateIter(row)"
+                >
+                  新增迭代版本
+                </el-button>
+              </div>
+              <el-table
+                :data="row.iteration_versions || []"
+                border
+                size="small"
+                style="width: 100%"
+              >
+                <el-table-column prop="version_no" label="版本号" width="130" />
+                <el-table-column prop="title" label="标题" min-width="200" show-overflow-tooltip />
+                <el-table-column label="预计发布日期" width="150">
+                  <template #default="{ row: ir }">{{ formatDate(ir.planned_date) }}</template>
+                </el-table-column>
+                <el-table-column v-if="isAdmin" label="操作" width="140" fixed="right">
+                  <template #default="{ row: ir }">
+                    <el-button size="small" @click.stop="openEditIter(ir)">编辑</el-button>
+                    <el-button size="small" type="danger" @click.stop="onDeleteIter(ir)">删除</el-button>
+                  </template>
+                </el-table-column>
+              </el-table>
+            </div>
           </template>
         </el-table-column>
-        <el-table-column label="操作" width="160" fixed="right">
+
+        <el-table-column prop="version_no" label="版本号" width="120" />
+        <el-table-column prop="title" label="标题" min-width="160" />
+        <el-table-column prop="description" label="版本说明" min-width="200" show-overflow-tooltip />
+        <el-table-column label="版本范围" width="230">
           <template #default="{ row }">
-            <el-button size="small" @click="openEdit(row)">编辑</el-button>
-            <el-button size="small" type="danger" @click="onDelete(row)">删除</el-button>
+            <span v-if="row.range_start || row.range_end">
+              {{ formatDate(row.range_start) }} ~ {{ formatDate(row.range_end) }}
+            </span>
+            <span v-else style="color:#c0c4cc">—</span>
+          </template>
+        </el-table-column>
+        <el-table-column label="实际发布" width="120">
+          <template #default="{ row }">
+            <el-tag v-if="row.actual_release_date" type="success" size="small">
+              {{ formatDate(row.actual_release_date) }}
+            </el-tag>
+            <span v-else style="color:#c0c4cc">待发布</span>
+          </template>
+        </el-table-column>
+        <el-table-column label="迭代数" width="70" align="center">
+          <template #default="{ row }">
+            <el-tag type="info" size="small">{{ row.iteration_versions?.length || 0 }}</el-tag>
+          </template>
+        </el-table-column>
+        <el-table-column v-if="isAdmin" label="操作" width="160" fixed="right">
+          <template #default="{ row }">
+            <el-button size="small" @click="openEditMajor(row)">编辑</el-button>
+            <el-button size="small" type="danger" @click="onDeleteMajor(row)">删除</el-button>
           </template>
         </el-table-column>
       </el-table>
     </el-card>
 
-    <el-dialog v-model="dialogVisible" :title="editing ? '编辑版本' : '发布新版本'" width="600px">
-      <el-form :model="form" label-width="100px">
-        <el-form-item label="版本号">
-          <el-input v-model="form.version_no" placeholder="例如 v1.2.0" />
+    <!-- Major version dialog -->
+    <el-dialog
+      v-model="majorDialogVisible"
+      :title="editingMajor ? '编辑大版本' : '新增大版本'"
+      width="600px"
+      @closed="editingMajor = null"
+    >
+      <el-form :model="majorForm" label-width="110px">
+        <el-form-item label="版本号" required>
+          <el-input v-model="majorForm.version_no" placeholder="例如 V2.5" />
         </el-form-item>
         <el-form-item label="标题">
-          <el-input v-model="form.title" />
+          <el-input v-model="majorForm.title" placeholder="例如 春季正式版" />
         </el-form-item>
-        <el-form-item label="说明">
-          <el-input v-model="form.description" type="textarea" :rows="3" />
+        <el-form-item label="版本说明">
+          <el-input v-model="majorForm.description" type="textarea" :rows="3" />
         </el-form-item>
-        <el-form-item label="跳转链接">
-          <el-input v-model="form.release_url" placeholder="https://..." />
+        <el-form-item label="版本范围开始">
+          <el-date-picker
+            v-model="majorForm.range_start"
+            type="date"
+            value-format="YYYY-MM-DDTHH:mm:ss"
+            style="width: 100%"
+          />
         </el-form-item>
-        <el-form-item label="发布时间">
-          <el-date-picker v-model="form.released_at" type="datetime" value-format="YYYY-MM-DDTHH:mm:ss" />
+        <el-form-item label="版本范围结束">
+          <el-date-picker
+            v-model="majorForm.range_end"
+            type="date"
+            value-format="YYYY-MM-DDTHH:mm:ss"
+            style="width: 100%"
+          />
+        </el-form-item>
+        <el-form-item label="实际发布时间">
+          <el-date-picker
+            v-model="majorForm.actual_release_date"
+            type="date"
+            value-format="YYYY-MM-DDTHH:mm:ss"
+            placeholder="发布后填写"
+            style="width: 100%"
+          />
         </el-form-item>
       </el-form>
       <template #footer>
-        <el-button @click="dialogVisible = false">取消</el-button>
-        <el-button type="primary" @click="onSubmit">保存</el-button>
+        <el-button @click="majorDialogVisible = false">取消</el-button>
+        <el-button type="primary" @click="onSubmitMajor">保存</el-button>
+      </template>
+    </el-dialog>
+
+    <!-- Iteration version dialog -->
+    <el-dialog
+      v-model="iterDialogVisible"
+      :title="editingIter ? '编辑迭代版本' : '新增迭代版本'"
+      width="520px"
+      @closed="editingIter = null"
+    >
+      <el-form :model="iterForm" label-width="110px">
+        <el-form-item label="版本号" required>
+          <el-input v-model="iterForm.version_no" placeholder="例如 V2.5.1" />
+        </el-form-item>
+        <el-form-item label="标题">
+          <el-input v-model="iterForm.title" placeholder="例如 第1迭代" />
+        </el-form-item>
+        <el-form-item label="预计发布日期">
+          <el-date-picker
+            v-model="iterForm.planned_date"
+            type="date"
+            value-format="YYYY-MM-DDTHH:mm:ss"
+            style="width: 100%"
+          />
+        </el-form-item>
+      </el-form>
+      <template #footer>
+        <el-button @click="iterDialogVisible = false">取消</el-button>
+        <el-button type="primary" @click="onSubmitIter">保存</el-button>
       </template>
     </el-dialog>
   </div>
@@ -60,81 +180,223 @@
 import { onMounted, reactive, ref } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { Plus, Refresh } from '@element-plus/icons-vue'
-import { versionApi } from '../api'
+import { majorVersionApi, roadmapApi } from '../api'
+import { auth } from '../store/auth'
 
-const list = ref([])
+const isAdmin = auth.isAdmin
+
+const projects = ref([])
+const activeTab = ref('global')
+const majorVersions = ref([])
 const loading = ref(false)
-const dialogVisible = ref(false)
-const editing = ref(null)
-const form = reactive(defaultForm())
 
-function defaultForm() {
+// major version dialog
+const majorDialogVisible = ref(false)
+const editingMajor = ref(null)
+const majorForm = reactive(defaultMajorForm())
+
+// iteration version dialog
+const iterDialogVisible = ref(false)
+const editingIter = ref(null)
+const currentMajorId = ref(null)
+const iterForm = reactive(defaultIterForm())
+
+function defaultMajorForm() {
   return {
     version_no: '',
     title: '',
     description: '',
-    release_url: '',
-    released_at: null,
+    range_start: null,
+    range_end: null,
+    actual_release_date: null,
+  }
+}
+
+function defaultIterForm() {
+  return {
+    version_no: '',
+    title: '',
+    planned_date: null,
+  }
+}
+
+async function loadProjects() {
+  try {
+    const { data } = await roadmapApi.listProjects(true)
+    projects.value = data
+    if (data.length > 0 && activeTab.value === 'global') {
+      activeTab.value = String(data[0].id)
+    }
+    load()
+  } catch (e) {
+    ElMessage.error('加载项目列表失败')
   }
 }
 
 async function load() {
   loading.value = true
   try {
-    const { data } = await versionApi.list()
-    list.value = data
+    const projectId = activeTab.value === 'global' ? null : Number(activeTab.value)
+    const { data } = await majorVersionApi.list(projectId)
+    majorVersions.value = data
   } catch (e) {
-    ElMessage.error('加载失败')
+    ElMessage.error('加载版本失败')
   } finally {
     loading.value = false
   }
 }
 
-function openCreate() {
-  editing.value = null
-  Object.assign(form, defaultForm())
-  dialogVisible.value = true
+function onTabChange() {
+  load()
 }
 
-function openEdit(row) {
-  editing.value = row
-  Object.assign(form, row)
-  dialogVisible.value = true
+// ===== Major version CRUD =====
+function openCreateMajor() {
+  editingMajor.value = null
+  Object.assign(majorForm, defaultMajorForm())
+  majorDialogVisible.value = true
 }
 
-async function onSubmit() {
+function openEditMajor(row) {
+  editingMajor.value = row
+  Object.assign(majorForm, {
+    version_no: row.version_no,
+    title: row.title,
+    description: row.description,
+    range_start: row.range_start,
+    range_end: row.range_end,
+    actual_release_date: row.actual_release_date,
+  })
+  majorDialogVisible.value = true
+}
+
+async function onSubmitMajor() {
+  if (!majorForm.version_no.trim()) {
+    ElMessage.warning('版本号不能为空')
+    return
+  }
   try {
-    if (editing.value) {
-      await versionApi.update(editing.value.id, form)
+    const projectId = activeTab.value === 'global' ? null : Number(activeTab.value)
+    if (editingMajor.value) {
+      await majorVersionApi.update(editingMajor.value.id, majorForm)
       ElMessage.success('已更新')
     } else {
-      await versionApi.create(form)
-      ElMessage.success('已发布')
+      await majorVersionApi.create({ ...majorForm, project_id: projectId })
+      ElMessage.success('已创建')
     }
-    dialogVisible.value = false
+    majorDialogVisible.value = false
     load()
   } catch (e) {
-    ElMessage.error('保存失败')
+    ElMessage.error(e.response?.data?.detail || '保存失败')
   }
 }
 
-async function onDelete(row) {
-  await ElMessageBox.confirm(`确认删除版本 ${row.version_no} 吗？`, '提示', { type: 'warning' })
-  await versionApi.remove(row.id)
-  ElMessage.success('已删除')
-  load()
+async function onDeleteMajor(row) {
+  await ElMessageBox.confirm(
+    `确认删除大版本「${row.version_no}」及其所有迭代版本吗？`,
+    '警告',
+    { type: 'warning' }
+  )
+  try {
+    await majorVersionApi.remove(row.id)
+    ElMessage.success('已删除')
+    load()
+  } catch (e) {
+    ElMessage.error(e.response?.data?.detail || '删除失败')
+  }
+}
+
+// ===== Iteration version CRUD =====
+function openCreateIter(majorRow) {
+  editingIter.value = null
+  currentMajorId.value = majorRow.id
+  const nextSort = (majorRow.iteration_versions?.length || 0)
+  Object.assign(iterForm, { ...defaultIterForm(), sort_order: nextSort })
+  iterDialogVisible.value = true
+}
+
+function openEditIter(row) {
+  editingIter.value = row
+  Object.assign(iterForm, {
+    version_no: row.version_no,
+    title: row.title,
+    planned_date: row.planned_date,
+  })
+  iterDialogVisible.value = true
+}
+
+async function onSubmitIter() {
+  if (!iterForm.version_no.trim()) {
+    ElMessage.warning('版本号不能为空')
+    return
+  }
+  try {
+    if (editingIter.value) {
+      await majorVersionApi.updateIterVersion(editingIter.value.id, iterForm)
+      ElMessage.success('已更新')
+    } else {
+      await majorVersionApi.createIterVersion({
+        ...iterForm,
+        major_version_id: currentMajorId.value,
+        sort_order: iterForm.sort_order ?? 0,
+      })
+      ElMessage.success('已创建')
+    }
+    iterDialogVisible.value = false
+    load()
+  } catch (e) {
+    ElMessage.error(e.response?.data?.detail || '保存失败')
+  }
+}
+
+async function onDeleteIter(row) {
+  await ElMessageBox.confirm(`确认删除迭代版本「${row.version_no}」吗？`, '提示', { type: 'warning' })
+  try {
+    await majorVersionApi.removeIterVersion(row.id)
+    ElMessage.success('已删除')
+    load()
+  } catch (e) {
+    ElMessage.error(e.response?.data?.detail || '删除失败')
+  }
 }
 
 function formatDate(d) {
   if (!d) return ''
-  return new Date(d).toLocaleString()
+  const dt = new Date(d)
+  return `${dt.getFullYear()}-${String(dt.getMonth() + 1).padStart(2, '0')}-${String(dt.getDate()).padStart(2, '0')}`
 }
 
-onMounted(load)
+onMounted(loadProjects)
 </script>
 
 <style scoped>
+.project-tabs {
+  margin-bottom: 0;
+}
 .toolbar {
   margin-bottom: 12px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.tip {
+  margin-left: auto;
+  color: #909399;
+  font-size: 12px;
+}
+.expand-area {
+  padding: 12px 20px 12px 40px;
+  background: #fafafa;
+}
+.expand-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 8px;
+}
+.expand-title {
+  font-size: 13px;
+  font-weight: 600;
+  color: #606266;
 }
 </style>

@@ -128,6 +128,12 @@ class RoadmapProject(Base):
         cascade="all, delete-orphan",
         order_by="(RoadmapMilestone.year, RoadmapMilestone.month, RoadmapMilestone.sort_order)",
     )
+    major_versions = relationship(
+        "MajorVersion",
+        back_populates="project",
+        cascade="all, delete-orphan",
+        order_by="MajorVersion.sort_order",
+    )
 
 
 class RoadmapPhase(Base):
@@ -164,6 +170,74 @@ class RoadmapMilestone(Base):
     sort_order = Column(Integer, default=0, comment="同月内排序")
 
     project = relationship("RoadmapProject", back_populates="milestones")
+
+
+class MajorVersion(Base):
+    """大版本：归属于某个里程碑项目，包含若干迭代版本。"""
+    __tablename__ = "major_versions"
+
+    id = Column(Integer, primary_key=True, index=True)
+    project_id = Column(Integer, ForeignKey("roadmap_projects.id", ondelete="SET NULL"), nullable=True, index=True)
+    version_no = Column(String(64), nullable=False, comment="大版本号")
+    title = Column(String(256), default="", comment="标题")
+    description = Column(Text, default="", comment="版本说明")
+    range_start = Column(DateTime, nullable=True, comment="版本范围开始")
+    range_end = Column(DateTime, nullable=True, comment="版本范围结束")
+    actual_release_date = Column(DateTime, nullable=True, comment="实际发布时间")
+    sort_order = Column(Integer, default=0, comment="排序")
+    created_at = Column(DateTime, default=datetime.utcnow)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+    project = relationship("RoadmapProject", back_populates="major_versions")
+    iteration_versions = relationship(
+        "IterationVersion",
+        back_populates="major_version",
+        cascade="all, delete-orphan",
+        order_by="IterationVersion.sort_order",
+    )
+
+
+class IterationVersion(Base):
+    """迭代版本：隶属于大版本，预计每周一个。"""
+    __tablename__ = "iteration_versions"
+
+    id = Column(Integer, primary_key=True, index=True)
+    major_version_id = Column(Integer, ForeignKey("major_versions.id", ondelete="CASCADE"), nullable=False, index=True)
+    version_no = Column(String(64), nullable=False, comment="迭代版本号")
+    title = Column(String(256), default="", comment="标题")
+    planned_date = Column(DateTime, nullable=True, comment="预计发布日期")
+    sort_order = Column(Integer, default=0, comment="排序")
+    created_at = Column(DateTime, default=datetime.utcnow)
+
+    major_version = relationship("MajorVersion", back_populates="iteration_versions")
+
+
+class StakeholderProjectContact(Base):
+    """项目组沟通地图条目（两列表格）"""
+    __tablename__ = "stakeholder_project_contacts"
+
+    id = Column(Integer, primary_key=True, index=True)
+    sort_order = Column(Integer, default=0, comment="排序")
+    col1 = Column(String(256), default="", comment="列1（角色）")
+    col2 = Column(String(256), default="", comment="列2（姓名/工号）")
+    created_at = Column(DateTime, default=datetime.utcnow)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+
+class StakeholderBattlefield(Base):
+    """战场沟通矩阵条目（六列表格）"""
+    __tablename__ = "stakeholder_battlefields"
+
+    id = Column(Integer, primary_key=True, index=True)
+    sort_order = Column(Integer, default=0, comment="排序")
+    battlefield = Column(String(128), default="", comment="战场")
+    region = Column(String(128), default="", comment="地域")
+    service = Column(String(256), default="", comment="服务")
+    contact1 = Column(Text, default="", comment="联系方式（服务）")
+    apps = Column(String(256), default="", comment="APPS")
+    contact2 = Column(Text, default="", comment="联系方式（APPS）")
+    created_at = Column(DateTime, default=datetime.utcnow)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
 
 
 class User(Base):

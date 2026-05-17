@@ -1,10 +1,11 @@
 """问题单报表接口：读取服务器侧 Excel，解析后返回给前端。
 
 权限：
-- GET  /api/issues/data         —— 所有登录用户（加载最新单张报表）
-- GET  /api/issues/trend        —— 所有登录用户（扫描全目录按天聚合趋势）
-- POST /api/issues/run-script   —— 仅管理员（执行外部刷新脚本）
-- GET  /api/issues/export.pptx  —— 所有登录用户（导出 PPT）
+- GET  /api/issues/data              —— 所有登录用户（加载最新单张报表）
+- GET  /api/issues/trend             —— 所有登录用户（扫描全目录按天聚合趋势）
+- GET  /api/issues/run-script/status —— 所有登录用户（查询脚本是否正在运行）
+- POST /api/issues/run-script        —— 仅管理员（执行外部刷新脚本）
+- GET  /api/issues/export.pptx       —— 所有登录用户（导出 PPT）
 
 配置项（via PUT /api/config）：
   issue_report_path  —— Excel 目录或文件路径
@@ -15,8 +16,9 @@ import pathlib
 import re
 import subprocess
 import sys
+import threading
 from datetime import datetime
-from typing import Any, Dict, List
+from typing import Any, Dict, List, Optional
 
 from fastapi import APIRouter, Depends, HTTPException
 from fastapi.responses import StreamingResponse
@@ -26,6 +28,10 @@ from auth import get_current_user, require_admin
 from routers.config import _load as _load_config
 
 router = APIRouter(prefix="/api/issues", tags=["issues"])
+
+# 全局锁：防止脚本并发执行
+_script_lock: threading.Lock = threading.Lock()
+_script_started_at: Optional[datetime] = None
 
 _RAW_COLS = [
     "version", "issue_id", "title", "owner", "group",
@@ -194,6 +200,20 @@ def _build_pptx(data: dict) -> io.BytesIO:
         run.font.bold = bold
         run.font.color.rgb = color
 
+    def _cell_run(cell, text: str, size: int, bold: bool, color: RGBColor,
+                  align=PP_ALIGN.LEFT, bg: RGBColor = None):
+        """Set cell text via a run (avoids paragraph.font issues)."""
+        if bg is not None:
+            cell.fill.solid()
+            cell.fill.fore_color.rgb = bg
+        p = cell.text_frame.paragraphs[0]
+        p.alignment = align
+        run = p.add_run()
+        run.text = text
+        run.font.size = Pt(size)
+        run.font.bold = bold
+        run.font.color.rgb = color
+
     def _table_slide(title: str, columns: List[str], rows_data: List[List[str]]):
         slide = prs.slides.add_slide(blank)
         _txt(slide, title, 0.4, 0.15, 12.5, 0.6, size=20, bold=True, color=C_BLUE)
@@ -210,25 +230,15 @@ def _build_pptx(data: dict) -> io.BytesIO:
         col_w = [2.0] + [10.5 / max(n_cols - 1, 1)] * (n_cols - 1)
 
         for c, h in enumerate(columns):
-            cell = tbl.cell(0, c)
-            cell.text = h
-            cell.fill.solid(); cell.fill.fore_color.rgb = C_BLUE
-            p = cell.text_frame.paragraphs[0]
-            p.font.size = Pt(10); p.font.bold = True
-            p.font.color.rgb = C_WHITE; p.alignment = PP_ALIGN.CENTER
+            _cell_run(tbl.cell(0, c), h, 10, True, C_WHITE,
+                      align=PP_ALIGN.CENTER, bg=C_BLUE)
 
         for r, row_vals in enumerate(rows_data):
-            is_total = row_vals and row_vals[0] == "合计"
+            is_total = bool(row_vals) and row_vals[0] == "合计"
             for c, val in enumerate(row_vals):
-                cell = tbl.cell(r + 1, c)
-                cell.text = str(val)
-                if is_total:
-                    cell.fill.solid(); cell.fill.fore_color.rgb = C_LIGHT
-                p = cell.text_frame.paragraphs[0]
-                p.font.size = Pt(10); p.font.bold = is_total
-                p.font.color.rgb = C_DARK
-                if c > 0:
-                    p.alignment = PP_ALIGN.CENTER
+                _cell_run(tbl.cell(r + 1, c), str(val), 10, is_total, C_DARK,
+                          align=PP_ALIGN.CENTER if c > 0 else PP_ALIGN.LEFT,
+                          bg=C_LIGHT if is_total else None)
 
         for c, w in enumerate(col_w):
             tbl.columns[c].width = Inches(w)
@@ -246,15 +256,24 @@ def _build_pptx(data: dict) -> io.BytesIO:
     cx = 0.7
     for label, val, clr in cards:
         shp = slide1.shapes.add_shape(1, Inches(cx), Inches(4.4), Inches(2.8), Inches(1.7))
-        shp.fill.solid(); shp.fill.fore_color.rgb = clr
+        shp.fill.solid()
+        shp.fill.fore_color.rgb = clr
         shp.line.color.rgb = clr
-        tf = shp.text_frame; tf.word_wrap = False
+        tf = shp.text_frame
+        tf.word_wrap = False
         p1 = tf.paragraphs[0]
-        p1.text = str(val); p1.font.size = Pt(40); p1.font.bold = True
-        p1.font.color.rgb = C_WHITE; p1.alignment = PP_ALIGN.CENTER
+        p1.alignment = PP_ALIGN.CENTER
+        r1 = p1.add_run()
+        r1.text = str(val)
+        r1.font.size = Pt(40)
+        r1.font.bold = True
+        r1.font.color.rgb = C_WHITE
         p2 = tf.add_paragraph()
-        p2.text = label; p2.font.size = Pt(14)
-        p2.font.color.rgb = C_WHITE; p2.alignment = PP_ALIGN.CENTER
+        p2.alignment = PP_ALIGN.CENTER
+        r2 = p2.add_run()
+        r2.text = label
+        r2.font.size = Pt(14)
+        r2.font.color.rgb = C_WHITE
         cx += 3.0
 
     # ── Slide 2: Monthly by group ─────────────────────────────────
@@ -358,35 +377,55 @@ def get_trend(_: models.User = Depends(get_current_user)):
     }
 
 
+@router.get("/run-script/status")
+def run_script_status(_: models.User = Depends(get_current_user)):
+    """查询刷新脚本是否正在执行（所有登录用户可查）。"""
+    return {
+        "running":    _script_lock.locked(),
+        "started_at": _script_started_at.isoformat() if _script_started_at else None,
+    }
+
+
 @router.post("/run-script")
 def run_script(_: models.User = Depends(require_admin)):
-    """执行管理员配置的外部刷新脚本。"""
-    cfg = _load_config()
-    script = cfg.get("issue_script_path", "").strip()
-    if not script:
-        raise HTTPException(400, "未配置刷新脚本路径（issue_script_path）")
+    """执行管理员配置的外部刷新脚本（全局互斥，同时只能有一个实例）。"""
+    global _script_started_at
 
-    sp = pathlib.Path(script)
-    if not sp.exists():
-        raise HTTPException(404, f"脚本不存在：{script}")
+    if not _script_lock.acquire(blocking=False):
+        raise HTTPException(423, "脚本正在执行中，请等待完成后再试")
 
-    cmd = [sys.executable, str(sp)] if sp.suffix.lower() == ".py" else [str(sp)]
-
+    _script_started_at = datetime.utcnow()
     try:
+        cfg = _load_config()
+        script = cfg.get("issue_script_path", "").strip()
+        if not script:
+            raise HTTPException(400, "未配置刷新脚本路径（issue_script_path）")
+
+        sp = pathlib.Path(script)
+        if not sp.exists():
+            raise HTTPException(404, f"脚本不存在：{script}")
+
+        cmd = [sys.executable, str(sp)] if sp.suffix.lower() == ".py" else [str(sp)]
+
         result = subprocess.run(
             cmd, capture_output=True, text=True,
             timeout=300, cwd=str(sp.parent),
         )
         return {
-            "ok":       result.returncode == 0,
+            "ok":        result.returncode == 0,
             "exit_code": result.returncode,
-            "stdout":   result.stdout[-3000:] if result.stdout else "",
-            "stderr":   result.stderr[-1000:] if result.stderr else "",
+            "stdout":    result.stdout[-3000:] if result.stdout else "",
+            "stderr":    result.stderr[-1000:] if result.stderr else "",
         }
+    except HTTPException:
+        raise
     except subprocess.TimeoutExpired:
         raise HTTPException(500, "脚本执行超时（>5分钟）")
     except Exception as exc:
         raise HTTPException(500, f"脚本启动失败：{exc}")
+    finally:
+        _script_started_at = None
+        _script_lock.release()
 
 
 @router.get("/export.pptx")
@@ -401,7 +440,10 @@ def export_pptx(_: models.User = Depends(get_current_user)):
     data   = _parse_excel(str(target))
     data["actual_file"] = target.name
 
-    buf      = _build_pptx(data)
+    try:
+        buf = _build_pptx(data)
+    except Exception as exc:
+        raise HTTPException(500, f"PPT 生成失败：{exc}")
     filename = f"缺陷统计报表_{datetime.now().strftime('%Y%m%d_%H%M%S')}.pptx"
     return StreamingResponse(
         buf,

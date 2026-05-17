@@ -3,7 +3,7 @@
 
   <el-container v-else class="app-root">
     <el-aside width="220px" class="app-aside">
-      <div class="app-logo">AI 项目管理</div>
+      <div class="app-logo">岳麓山管理系统</div>
       <el-menu
         :default-active="route.path"
         router
