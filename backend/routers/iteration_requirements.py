@@ -87,8 +87,13 @@ def update_item(item_id: int, payload: schemas.IterationRequirementUpdate, db: S
     )
     if not item:
         raise HTTPException(status_code=404, detail="Not found")
-    for k, v in payload.model_dump(exclude_unset=True).items():
+    if item.version != payload.version:
+        raise HTTPException(status_code=409, detail="数据已被他人修改，请刷新后重试")
+    changes = payload.model_dump(exclude_unset=True)
+    changes.pop("version", None)
+    for k, v in changes.items():
         setattr(item, k, v)
+    item.version += 1
     db.commit()
     db.refresh(item)
     return item

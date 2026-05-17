@@ -119,7 +119,10 @@ def update_phase(
     item = db.query(models.RoadmapPhase).filter(models.RoadmapPhase.id == phase_id).first()
     if not item:
         raise HTTPException(status_code=404, detail="阶段不存在")
+    if item.version != payload.version:
+        raise HTTPException(status_code=409, detail="数据已被他人修改，请刷新后重试")
     data = payload.model_dump(exclude_unset=True)
+    data.pop("version", None)
     sy = data.get("start_year", item.start_year)
     sm = data.get("start_month", item.start_month)
     ey = data.get("end_year", item.end_year)
@@ -127,6 +130,7 @@ def update_phase(
     _validate_phase_range(sy, sm, ey, em)
     for k, v in data.items():
         setattr(item, k, v)
+    item.version += 1
     db.commit()
     db.refresh(item)
     return item

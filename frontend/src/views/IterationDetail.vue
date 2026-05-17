@@ -340,14 +340,16 @@ async function onSubmit() {
     if (editing.value) {
       await iterationRequirementApi.update(editing.value.id, form)
       ElMessage.success('已更新')
+      dialogVisible.value = false
+      load()
     } else {
       await iterationRequirementApi.create({ ...form, iteration_id: iterationId })
       ElMessage.success('已创建')
+      dialogVisible.value = false
+      load()
     }
-    dialogVisible.value = false
-    load()
   } catch (e) {
-    ElMessage.error(e.response?.data?.detail || '保存失败')
+    if (e.response?.status !== 409) ElMessage.error(e.response?.data?.detail || '保存失败')
   }
 }
 
@@ -380,11 +382,13 @@ async function commit(row, field) {
   editingCell.value = null
   if (newVal === original) return
   try {
-    await iterationRequirementApi.update(row.id, { [field]: newVal })
+    const { data } = await iterationRequirementApi.update(row.id, { [field]: newVal, version: row.version })
+    row.version = data.version
     ElMessage.success('已保存')
   } catch (e) {
     row[field] = original
-    ElMessage.error(e.response?.data?.detail || '保存失败')
+    if (e.response?.status !== 409) ElMessage.error(e.response?.data?.detail || '保存失败')
+    else load()
   }
 }
 
@@ -392,10 +396,13 @@ async function onFieldChange(row, field, value) {
   const original = row[field]
   if (value === original) return
   try {
-    await iterationRequirementApi.update(row.id, { [field]: value })
+    const { data } = await iterationRequirementApi.update(row.id, { [field]: value, version: row.version })
     row[field] = value
+    row.version = data.version
   } catch (e) {
-    ElMessage.error(e.response?.data?.detail || '保存失败')
+    row[field] = original
+    if (e.response?.status !== 409) ElMessage.error(e.response?.data?.detail || '保存失败')
+    else load()
   }
 }
 

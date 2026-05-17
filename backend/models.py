@@ -20,6 +20,7 @@ class CustomerStatus(Base):
     recent_focus = Column(Text, default="", comment="近期现场关键诉求")
     key_issues = Column(Text, default="", comment="软件类风险和问题")
     issue_url = Column(String(512), default="", comment="问题单链接")
+    version = Column(Integer, nullable=False, default=0, comment="乐观锁版本号")
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
 
 
@@ -94,6 +95,7 @@ class IterationRequirement(Base):
 
     remark = Column(Text, default="", comment="备注（是否存在变更等）")
 
+    version = Column(Integer, nullable=False, default=0, comment="乐观锁版本号")
     created_at = Column(DateTime, default=datetime.utcnow)
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
 
@@ -144,6 +146,7 @@ class RoadmapPhase(Base):
     core_products = Column(String(256), default="", comment="核心产品")
     scenarios = Column(Text, default="", comment="主要应用场景（多行）")
     sort_order = Column(Integer, default=0, comment="排序")
+    version = Column(Integer, nullable=False, default=0, comment="乐观锁版本号")
 
     project = relationship("RoadmapProject", back_populates="phases")
 

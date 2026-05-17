@@ -63,15 +63,18 @@ def update_item(
     item = db.query(models.CustomerStatus).filter(models.CustomerStatus.id == item_id).first()
     if not item:
         raise HTTPException(status_code=404, detail="Not found")
+    if item.version != payload.version:
+        raise HTTPException(status_code=409, detail="数据已被他人修改，请刷新后重试")
     changes = payload.model_dump(exclude_unset=True)
+    changes.pop("version", None)
     is_admin = current_user.role == "admin"
     for k, v in changes.items():
         if k in _ADMIN_ONLY_FIELDS and not is_admin:
             raise HTTPException(status_code=403, detail=f"字段「{k}」仅管理员可修改")
         if k not in _ADMIN_ONLY_FIELDS and k not in _USER_FIELDS:
-            # schema 已经只保留可改字段，这里兜底防御
             raise HTTPException(status_code=400, detail=f"字段「{k}」不允许修改")
         setattr(item, k, v)
+    item.version += 1
     db.commit()
     db.refresh(item)
     return item

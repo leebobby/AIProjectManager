@@ -37,6 +37,7 @@ class CustomerStatusUpdate(BaseModel):
     """
     model_config = ConfigDict(protected_namespaces=())
 
+    version: int
     current_stage: Optional[str] = None
     field_version: Optional[str] = None
     attention_level: Optional[int] = None
@@ -48,6 +49,7 @@ class CustomerStatusUpdate(BaseModel):
 
 class CustomerStatusOut(CustomerStatusBase):
     id: int
+    version: int
     updated_at: datetime
 
     model_config = ConfigDict(from_attributes=True, protected_namespaces=())
@@ -151,6 +153,7 @@ class IterationRequirementCreate(IterationRequirementBase):
 
 
 class IterationRequirementUpdate(BaseModel):
+    version: int
     seq: Optional[int] = None
     req_no: Optional[str] = None
     req_url: Optional[str] = None
@@ -170,6 +173,7 @@ class IterationRequirementUpdate(BaseModel):
 class IterationRequirementOut(IterationRequirementBase):
     id: int
     iteration_id: int
+    version: int
 
     model_config = ConfigDict(from_attributes=True)
 
@@ -193,6 +197,7 @@ class RoadmapPhaseCreate(RoadmapPhaseBase):
 
 
 class RoadmapPhaseUpdate(BaseModel):
+    version: int
     name: Optional[str] = None
     color: Optional[str] = None
     start_year: Optional[int] = None
@@ -208,6 +213,7 @@ class RoadmapPhaseUpdate(BaseModel):
 class RoadmapPhaseOut(RoadmapPhaseBase):
     id: int
     project_id: int
+    version: int
 
     model_config = ConfigDict(from_attributes=True)
 

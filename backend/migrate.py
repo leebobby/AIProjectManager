@@ -54,6 +54,10 @@ _ADDITIONS = [
         "year",
         f"INTEGER NOT NULL DEFAULT {_CUR_YEAR}",
     ),
+    # 乐观锁版本号
+    ("customer_status", "version", "INTEGER NOT NULL DEFAULT 0"),
+    ("iteration_requirements", "version", "INTEGER NOT NULL DEFAULT 0"),
+    ("roadmap_phases", "version", "INTEGER NOT NULL DEFAULT 0"),
 ]
 
 

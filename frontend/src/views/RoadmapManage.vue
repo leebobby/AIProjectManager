@@ -315,6 +315,7 @@ function defaultPhaseForm() {
     core_products: '',
     scenarios: '',
     sort_order: 0,
+    version: 0,
   }
 }
 
@@ -437,6 +438,7 @@ function openPhaseEdit(row) {
     core_products: row.core_products || '',
     scenarios: row.scenarios || '',
     sort_order: row.sort_order ?? 0,
+    version: row.version ?? 0,
   })
   phaseDlg.value = true
 }
@@ -456,14 +458,16 @@ async function onSavePhase() {
     if (phaseEditing.value) {
       await roadmapApi.updatePhase(phaseEditing.value.id, phaseForm)
       ElMessage.success('已更新')
+      phaseDlg.value = false
+      await loadProjects()
     } else {
       await roadmapApi.createPhase({ ...phaseForm, project_id: selected.value.id })
       ElMessage.success('已创建')
+      phaseDlg.value = false
+      await loadProjects()
     }
-    phaseDlg.value = false
-    await loadProjects()
   } catch (e) {
-    ElMessage.error(e.response?.data?.detail || '保存失败')
+    if (e.response?.status !== 409) ElMessage.error(e.response?.data?.detail || '保存失败')
   }
 }
 async function onDeletePhase(row) {

@@ -301,18 +301,21 @@ async function onSubmit() {
   }
   try {
     if (editing.value) {
-      const payload = {}
+      const payload = { version: form.version }
       for (const k of [...ADMIN_FIELDS, ...USER_FIELDS]) payload[k] = form[k]
       await customerStatusApi.update(editing.value.id, payload)
       ElMessage.success('已更新')
+      dialogVisible.value = false
+      load()
     } else {
       await customerStatusApi.create(form)
       ElMessage.success('已创建')
+      dialogVisible.value = false
+      load()
     }
-    dialogVisible.value = false
-    load()
   } catch (e) {
-    ElMessage.error(e.response?.data?.detail || '保存失败')
+    if (e.response?.status !== 409) ElMessage.error(e.response?.data?.detail || '保存失败')
+    // 409: 拦截器已提示，对话框保持打开，让用户手动刷新后重试
   }
 }
 
@@ -349,11 +352,13 @@ async function commit(row, field) {
   editingCell.value = null
   if (newVal === original) return
   try {
-    await customerStatusApi.update(row.id, { [field]: newVal })
+    const { data } = await customerStatusApi.update(row.id, { [field]: newVal, version: row.version })
+    row.version = data.version
     ElMessage.success('已保存')
   } catch (e) {
     row[field] = original
-    ElMessage.error(e.response?.data?.detail || '保存失败')
+    if (e.response?.status !== 409) ElMessage.error(e.response?.data?.detail || '保存失败')
+    else load()
   }
 }
 
@@ -365,12 +370,14 @@ async function onRateChange(row, value) {
   const original = row.attention_level || 0
   if (value === original) return
   try {
-    await customerStatusApi.update(row.id, { attention_level: value })
-    row.attention_level = value
+    const { data } = await customerStatusApi.update(row.id, { attention_level: value, version: row.version })
+    row.attention_level = data.attention_level
+    row.version = data.version
     ElMessage.success('已保存')
   } catch (e) {
     row.attention_level = original
-    ElMessage.error(e.response?.data?.detail || '保存失败')
+    if (e.response?.status !== 409) ElMessage.error(e.response?.data?.detail || '保存失败')
+    else load()
   }
 }
 
@@ -378,11 +385,14 @@ async function onStageChange(row, value) {
   const original = row.current_stage
   if (value === original) return
   try {
-    await customerStatusApi.update(row.id, { current_stage: value })
-    row.current_stage = value
+    const { data } = await customerStatusApi.update(row.id, { current_stage: value, version: row.version })
+    row.current_stage = data.current_stage
+    row.version = data.version
     ElMessage.success('已保存')
   } catch (e) {
-    ElMessage.error(e.response?.data?.detail || '保存失败')
+    row.current_stage = original
+    if (e.response?.status !== 409) ElMessage.error(e.response?.data?.detail || '保存失败')
+    else load()
   }
 }
 
@@ -390,11 +400,14 @@ async function onVersionChange(row, value) {
   const original = row.field_version
   if (value === original) return
   try {
-    await customerStatusApi.update(row.id, { field_version: value })
-    row.field_version = value
+    const { data } = await customerStatusApi.update(row.id, { field_version: value, version: row.version })
+    row.field_version = data.field_version
+    row.version = data.version
     ElMessage.success('已保存')
   } catch (e) {
-    ElMessage.error(e.response?.data?.detail || '保存失败')
+    row.field_version = original
+    if (e.response?.status !== 409) ElMessage.error(e.response?.data?.detail || '保存失败')
+    else load()
   }
 }
 

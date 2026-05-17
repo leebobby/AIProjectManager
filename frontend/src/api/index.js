@@ -1,4 +1,5 @@
 import axios from 'axios'
+import { ElMessage } from 'element-plus'
 import { auth } from '../store/auth'
 
 const http = axios.create({
@@ -21,6 +22,8 @@ http.interceptors.response.use(
       if (location.pathname !== '/login') {
         location.replace('/login')
       }
+    } else if (error.response?.status === 409) {
+      ElMessage.warning(error.response.data?.detail || '数据已被他人修改，请刷新后重试')
     }
     return Promise.reject(error)
   }
