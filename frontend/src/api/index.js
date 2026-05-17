@@ -45,6 +45,14 @@ export const userApi = {
 
 export const configApi = {
   get: () => http.get('/config'),
+  save: (data) => http.put('/config', data),
+}
+
+export const issueApi = {
+  getData:    ()  => http.get('/issues/data'),
+  getTrend:   ()  => http.get('/issues/trend'),
+  runScript:  ()  => http.post('/issues/run-script'),
+  exportPptx: ()  => http.get('/issues/export.pptx', { responseType: 'blob' }),
 }
 
 export const customerStatusApi = {

@@ -10,7 +10,7 @@ from migrate import ensure_schema
 from routers import annual_iterations, iteration_requirements
 from routers import auth as auth_router
 from routers import config as config_router
-from routers import customer_status, iterations, roadmap, users, versions
+from routers import customer_status, issues, iterations, roadmap, users, versions
 
 # 先做轻量迁移（给老库加列），再 create_all 补齐缺失的表。
 ensure_schema()
@@ -38,6 +38,7 @@ app.include_router(annual_iterations.router, dependencies=authed)
 app.include_router(iteration_requirements.router, dependencies=authed)
 app.include_router(config_router.router, dependencies=authed)
 app.include_router(roadmap.router, dependencies=authed)
+app.include_router(issues.router, dependencies=authed)
 
 # 用户管理：路由内部已挂 require_admin
 app.include_router(users.router)

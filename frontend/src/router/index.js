@@ -40,6 +40,12 @@ const routes = [
     meta: { title: '迭代详情', hidden: true },
   },
   {
+    path: '/issues',
+    name: 'IssueManagement',
+    component: () => import('../views/IssueManagement.vue'),
+    meta: { title: '问题单管理', icon: 'Warning' },
+  },
+  {
     path: '/roadmaps',
     name: 'RoadmapManage',
     component: () => import('../views/RoadmapManage.vue'),
