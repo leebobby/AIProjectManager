@@ -26,8 +26,9 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# 公开路由（登录/注册不需要 token）
+# 公开路由（登录/注册、以及前端启动时需要读取的配置不需要 token）
 app.include_router(auth_router.router)
+app.include_router(config_router.router)   # GET 公开读，PUT 内部已限 require_admin
 
 # 业务路由：全部需要登录
 authed = [Depends(get_current_user)]
@@ -36,7 +37,6 @@ app.include_router(versions.router, dependencies=authed)
 app.include_router(iterations.router, dependencies=authed)
 app.include_router(annual_iterations.router, dependencies=authed)
 app.include_router(iteration_requirements.router, dependencies=authed)
-app.include_router(config_router.router, dependencies=authed)
 app.include_router(roadmap.router, dependencies=authed)
 app.include_router(issues.router, dependencies=authed)
 app.include_router(major_versions.router, dependencies=authed)

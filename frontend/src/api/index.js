@@ -49,11 +49,12 @@ export const configApi = {
 }
 
 export const issueApi = {
-  getData:      ()  => http.get('/issues/data'),
-  getTrend:     ()  => http.get('/issues/trend'),
-  scriptStatus: ()  => http.get('/issues/run-script/status'),
-  runScript:    ()  => http.post('/issues/run-script'),
-  exportPptx:   ()  => http.get('/issues/export.pptx', { responseType: 'blob' }),
+  listDates:    ()     => http.get('/issues/dates'),
+  getData:      (date) => http.get('/issues/data', date ? { params: { date } } : {}),
+  getTrend:     ()     => http.get('/issues/trend'),
+  scriptStatus: ()     => http.get('/issues/run-script/status'),
+  runScript:    ()     => http.post('/issues/run-script'),
+  exportPptx:   (date) => http.get('/issues/export.pptx', { responseType: 'blob', ...(date ? { params: { date } } : {}) }),
 }
 
 export const customerStatusApi = {

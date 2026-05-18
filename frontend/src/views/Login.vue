@@ -2,7 +2,7 @@
   <div class="login-bg">
     <el-card class="login-card" shadow="always">
       <div class="brand">
-        <h2>AI 项目管理系统</h2>
+        <h2>{{ appName }}</h2>
         <p>登录后访问业务模块</p>
       </div>
       <el-tabs v-model="tab">
@@ -25,7 +25,6 @@
               登录
             </el-button>
           </el-form>
-          <p class="hint">默认管理员账号：admin / admin123（首次登录请尽快修改）</p>
         </el-tab-pane>
 
         <el-tab-pane label="注册" name="register">
@@ -57,12 +56,22 @@
 </template>
 
 <script setup>
-import { reactive, ref } from 'vue'
+import { onMounted, reactive, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
 import { Lock, User } from '@element-plus/icons-vue'
-import { authApi } from '../api'
+import { authApi, configApi } from '../api'
 import { auth } from '../store/auth'
+
+const appName = ref('AI 项目管理系统')
+
+onMounted(async () => {
+  try {
+    const { data } = await configApi.get()
+    const firstLine = (data.about_content || '').split('\n')[0].trim()
+    if (firstLine) appName.value = firstLine
+  } catch { /* 非阻塞，保留默认标题 */ }
+})
 
 const router = useRouter()
 const route = useRoute()

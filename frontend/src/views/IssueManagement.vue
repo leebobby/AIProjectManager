@@ -24,10 +24,24 @@
         <el-button :type="mode==='trend'  ? 'primary' : ''" @click="switchMode('trend')">
           <el-icon><TrendCharts /></el-icon> 查看趋势
         </el-button>
-        <el-button v-if="isAdmin" :type="mode==='script' ? 'danger'  : ''" @click="switchMode('script')">
-          <el-icon><VideoPlay /></el-icon> 实时刷新
-        </el-button>
       </el-button-group>
+
+      <!-- 日期选择器（当天数据模式） -->
+      <el-select
+        v-if="mode==='today' && availableDates.length"
+        v-model="selectedDate"
+        placeholder="选择日期"
+        size="small"
+        style="width:150px"
+        @change="onDateChange"
+      >
+        <el-option
+          v-for="d in availableDates"
+          :key="d"
+          :label="d"
+          :value="d"
+        />
+      </el-select>
 
       <span v-if="fileHint" class="file-hint">
         <el-icon><Document /></el-icon> {{ fileHint }}
@@ -234,6 +248,7 @@
 import { computed, defineComponent, h, nextTick, onMounted, onUnmounted, ref, watch } from 'vue'
 import { ElMessage, ElTable, ElTableColumn, ElTag } from 'element-plus'
 import { DataLine, Document, Download, Search, TrendCharts, VideoPlay } from '@element-plus/icons-vue'
+// VideoPlay kept for script mode template (mode still accessible but button removed)
 import * as echarts from 'echarts'
 import { configApi, downloadBlob, issueApi } from '../api'
 import { auth } from '../store/auth'
@@ -277,17 +292,15 @@ const IssueTable = defineComponent({
       data: props.data || [], border: true, stripe: true, size: 'small', maxHeight: props.maxHeight,
     }, {
       default: () => [
-        h(ElTableColumn, { prop: 'issue_id', label: '缺陷编号', width: 200 }),
-        h(ElTableColumn, { prop: 'title', label: '标题', minWidth: 280, showOverflowTooltip: true }),
+        h(ElTableColumn, { prop: 'version',  label: '版本信息',           width: 180, showOverflowTooltip: true }),
+        h(ElTableColumn, { prop: 'issue_id', label: '缺陷业务编号',       width: 200 }),
+        h(ElTableColumn, { prop: 'title',    label: '标题', minWidth: 260, showOverflowTooltip: true }),
+        h(ElTableColumn, { prop: 'owner',    label: '当前责任人',          width: 110 }),
+        h(ElTableColumn, { prop: 'group',    label: '当前责任人所属小组',  width: 160 }),
+        h(ElTableColumn, { prop: 'progress', label: '进展',                width: 100 }),
         h(ElTableColumn, { prop: 'severity', label: '严重程度', width: 90, align: 'center' }, {
           default: ({ row }) => h(ElTag, { type: sevType(row.severity), size: 'small' }, () => row.severity),
         }),
-        h(ElTableColumn, { prop: 'group',      label: '小组',   width: 150 }),
-        h(ElTableColumn, { prop: 'feature',    label: '特性',   width: 110 }),
-        h(ElTableColumn, { prop: 'owner',      label: '责任人', width: 90 }),
-        h(ElTableColumn, { prop: 'category',   label: '分类',   width: 100 }),
-        h(ElTableColumn, { prop: 'year_month', label: '年月',   width: 90, align: 'center' }),
-        h(ElTableColumn, { prop: 'version',    label: '版本',   width: 220, showOverflowTooltip: true }),
       ],
     })
   },
@@ -324,6 +337,27 @@ async function switchMode(m) {
   if (m === 'trend') initTrendCharts()
 }
 
+// ── 日期选择 ──────────────────────────────────────────
+const availableDates = ref([])
+const selectedDate   = ref(null)
+
+async function loadDates() {
+  try {
+    const { data } = await issueApi.listDates()
+    availableDates.value = data
+    if (data.length && !selectedDate.value) {
+      selectedDate.value = data[0]
+    }
+  } catch { /* 忽略，可能是平铺结构 */ }
+}
+
+async function onDateChange() {
+  todayData.value = null
+  await loadToday()
+  await nextTick()
+  initTodayCharts()
+}
+
 // ── 当天数据 ──────────────────────────────────────────
 const todayData  = ref(null)
 const loading    = ref(false)
@@ -333,7 +367,7 @@ const rawSearch  = ref('')
 async function loadToday() {
   loading.value = true
   try {
-    const { data } = await issueApi.getData()
+    const { data } = await issueApi.getData(selectedDate.value || null)
     todayData.value = data
   } catch (e) {
     ElMessage.error(e.response?.data?.detail || '读取失败')
@@ -347,7 +381,7 @@ const filteredRaw = computed(() => {
   const q = rawSearch.value.trim().toLowerCase()
   if (!q) return todayData.value.raw
   return todayData.value.raw.filter(r =>
-    [r.issue_id, r.title, r.owner, r.group].some(v => v?.toLowerCase().includes(q))
+    [r.issue_id, r.title, r.owner, r.group, r.progress].some(v => v?.toLowerCase().includes(q))
   )
 })
 
@@ -434,7 +468,7 @@ const exporting = ref(false)
 async function exportPptx() {
   exporting.value = true
   try {
-    const resp = await issueApi.exportPptx()
+    const resp = await issueApi.exportPptx(selectedDate.value || null)
     const ts   = new Date().toISOString().replace(/[:.T]/g, '-').slice(0, 19)
     downloadBlob(resp.data, `缺陷统计报表_${ts}.pptx`)
     ElMessage.success('已导出')
@@ -611,6 +645,7 @@ function onResize() { Object.values(instances).forEach(c => c.resize()) }
 // ── 生命周期 ─────────────────────────────────────────
 onMounted(async () => {
   await loadCfg()
+  await loadDates()   // 先拿到日期列表，selectedDate 会自动设为最新
   await loadToday()
   window.addEventListener('resize', onResize)
 })

@@ -34,12 +34,11 @@ _script_lock: threading.Lock = threading.Lock()
 _script_started_at: Optional[datetime] = None
 
 _RAW_COLS = [
-    "version", "issue_id", "title", "owner", "group",
-    "severity", "feature", "module", "is_sdts",
-    "year", "month", "date", "year_month", "category",
+    "version", "issue_id", "title", "owner", "group", "progress", "severity",
 ]
 
-_DATE_PAT = re.compile(r"_(\d{8})\.", re.IGNORECASE)
+_DATE_PAT      = re.compile(r"_(\d{8})\.",           re.IGNORECASE)
+_DATE_DIR_PAT  = re.compile(r"^\d{4}-\d{2}-\d{2}$")
 
 COLORS = ["#4073ba", "#67C23A", "#E6A23C", "#F56C6C", "#909399", "#8E7AD8", "#26C9C3"]
 
@@ -164,6 +163,47 @@ def _parse_raw_from_wb(wb) -> List[Dict]:
     except KeyError:
         pass
     return raw
+
+
+def _list_date_dirs(root: pathlib.Path) -> list:
+    """Return date subdirs (YYYY-MM-DD) containing xlsx files, sorted newest-first."""
+    result = [
+        d for d in root.iterdir()
+        if d.is_dir() and _DATE_DIR_PAT.match(d.name) and any(d.glob("*.xlsx"))
+    ]
+    return sorted(result, key=lambda d: d.name, reverse=True)
+
+
+def _resolve_for_date(path_str: str, date: Optional[str] = None):
+    """Resolve to a single xlsx path, supporting both flat dirs and date-subdir structures."""
+    p = pathlib.Path(path_str)
+    if not p.exists():
+        raise HTTPException(404, f"路径不存在：{path_str}")
+    if p.is_file():
+        return p
+
+    if p.is_dir():
+        date_dirs = _list_date_dirs(p)
+        if date_dirs:
+            if date:
+                target_dir = p / date
+                if not target_dir.is_dir():
+                    raise HTTPException(404, f"日期目录不存在：{date}")
+                xlsxes = sorted(target_dir.glob("*.xlsx"), key=lambda f: f.name, reverse=True)
+                if not xlsxes:
+                    raise HTTPException(404, f"日期 {date} 目录中无 xlsx 文件")
+            else:
+                target_dir = date_dirs[0]
+                xlsxes = sorted(target_dir.glob("*.xlsx"), key=lambda f: f.name, reverse=True)
+            return xlsxes[0]
+
+        # Flat directory fallback
+        candidates = sorted(p.glob("*.xlsx"), key=_file_sort_key, reverse=True)
+        if not candidates:
+            raise HTTPException(404, f"目录 {path_str} 中未找到 .xlsx 文件")
+        return candidates[0]
+
+    raise HTTPException(400, f"无法识别路径：{path_str}")
 
 
 # ─── PPT builder ────────────────────────────────────────────────────────────
@@ -305,22 +345,36 @@ def _build_pptx(data: dict) -> io.BytesIO:
 
 # ─── endpoints ──────────────────────────────────────────────────────────────
 
+@router.get("/dates")
+def list_dates(_: models.User = Depends(get_current_user)):
+    """列出报表目录下所有含 xlsx 文件的日期子目录（YYYY-MM-DD），最新在前。"""
+    cfg = _load_config()
+    path_str = cfg.get("issue_report_path", "").strip()
+    if not path_str:
+        return []
+    p = pathlib.Path(path_str)
+    if not p.is_dir():
+        return []
+    return [d.name for d in _list_date_dirs(p)]
+
+
 @router.get("/data")
-def get_data(_: models.User = Depends(get_current_user)):
-    """加载最新单张报表（按文件名日期优先）。"""
+def get_data(date: Optional[str] = None, _: models.User = Depends(get_current_user)):
+    """加载单张报表。date 参数为 YYYY-MM-DD，不传则取最新一天。"""
     cfg = _load_config()
     path_str = cfg.get("issue_report_path", "").strip()
     if not path_str:
         return {"configured": False}
-    target = _resolve_target(path_str)
+    target = _resolve_for_date(path_str, date)
     result = _parse_excel(str(target))
     result["actual_file"] = target.name
+    result["date_dir"] = target.parent.name if _DATE_DIR_PAT.match(target.parent.name) else None
     return {"configured": True, **result}
 
 
 @router.get("/trend")
 def get_trend(_: models.User = Depends(get_current_user)):
-    """扫描目录内全部带日期的 xlsx，按天聚合趋势数据。"""
+    """扫描目录内全部报表，按天聚合趋势数据。支持日期子目录和平铺两种结构。"""
     import openpyxl
 
     cfg = _load_config()
@@ -334,21 +388,35 @@ def get_trend(_: models.User = Depends(get_current_user)):
     if not p.is_dir():
         raise HTTPException(404, f"目录不存在：{path_str}")
 
-    candidates = sorted(
-        (f for f in p.glob("*.xlsx") if _DATE_PAT.search(f.name)),
-        key=_file_sort_key,
-    )
-    if not candidates:
-        raise HTTPException(404, "目录中无含日期后缀的报表文件（期望格式 _YYYYMMDD）")
+    # 日期子目录结构（优先）
+    date_dirs = _list_date_dirs(p)
+    if date_dirs:
+        file_list = []
+        for d in reversed(date_dirs):  # 升序用于趋势
+            xlsxes = sorted(d.glob("*.xlsx"), key=lambda f: f.name, reverse=True)
+            if xlsxes:
+                file_list.append((d.name, xlsxes[0]))
+        if not file_list:
+            raise HTTPException(404, "无有效报表数据")
+    else:
+        # 平铺目录兼容
+        flat = sorted(
+            (f for f in p.glob("*.xlsx") if _DATE_PAT.search(f.name)),
+            key=_file_sort_key,
+        )
+        if not flat:
+            raise HTTPException(404, "目录中无含日期后缀的报表文件")
+        file_list = []
+        for f in flat:
+            m = _DATE_PAT.search(f.name)
+            ds = m.group(1)
+            file_list.append((f"{ds[:4]}-{ds[4:6]}-{ds[6:]}", f))
 
     daily: List[Dict] = []
     all_groups:     set = set()
     all_severities: set = set()
 
-    for f in candidates:
-        m = _DATE_PAT.search(f.name)
-        ds = m.group(1)
-        date_fmt = f"{ds[:4]}-{ds[4:6]}-{ds[6:]}"
+    for date_str, f in file_list:
         try:
             wb  = openpyxl.load_workbook(str(f), data_only=True)
             raw = _parse_raw_from_wb(wb)
@@ -362,7 +430,7 @@ def get_trend(_: models.User = Depends(get_current_user)):
         all_severities.update(bs.keys())
 
         daily.append({
-            "date":        date_fmt,
+            "date":        date_str,
             "file":        f.name,
             "total":       len(raw),
             "by_group":    bg,
@@ -429,14 +497,14 @@ def run_script(_: models.User = Depends(require_admin)):
 
 
 @router.get("/export.pptx")
-def export_pptx(_: models.User = Depends(get_current_user)):
-    """将当前最新报表导出为 PPT。"""
+def export_pptx(date: Optional[str] = None, _: models.User = Depends(get_current_user)):
+    """将指定日期报表导出为 PPT，不传 date 则取最新。"""
     cfg = _load_config()
     path_str = cfg.get("issue_report_path", "").strip()
     if not path_str:
         raise HTTPException(400, "未配置报表路径")
 
-    target = _resolve_target(path_str)
+    target = _resolve_for_date(path_str, date)
     data   = _parse_excel(str(target))
     data["actual_file"] = target.name
 

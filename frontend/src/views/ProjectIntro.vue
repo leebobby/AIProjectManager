@@ -370,6 +370,10 @@ onMounted(() => {
 .stat-label { font-size: 12px; color: rgba(255,255,255,0.7); }
 .stat-divider { width: 1px; height: 28px; background: rgba(255,255,255,0.2); }
 
+.modules-card :deep(.el-row) {
+  row-gap: 16px;
+}
+
 .modules-card :deep(.el-card__header),
 .about-card   :deep(.el-card__header),
 .roadmap-section :deep(.el-card__header) {
