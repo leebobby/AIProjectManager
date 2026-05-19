@@ -13,7 +13,7 @@ import io
 from datetime import datetime
 from typing import List
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Request
 from fastapi.responses import StreamingResponse
 from sqlalchemy.orm import Session
 
@@ -21,6 +21,7 @@ import models
 import schemas
 from auth import get_current_user, require_admin
 from database import get_db
+from op_log import log_op
 
 router = APIRouter(prefix="/api/customer-status", tags=["customer-status"])
 
@@ -36,8 +37,9 @@ def list_items(db: Session = Depends(get_db)):
 @router.post("", response_model=schemas.CustomerStatusOut)
 def create_item(
     payload: schemas.CustomerStatusCreate,
+    request: Request,
     db: Session = Depends(get_db),
-    _: models.User = Depends(require_admin),
+    current_admin: models.User = Depends(require_admin),
 ):
     exists = (
         db.query(models.CustomerStatus)
@@ -50,6 +52,9 @@ def create_item(
     db.add(item)
     db.commit()
     db.refresh(item)
+    log_op(db, action="新增", target="客户面状态", target_id=item.id,
+           detail=f"machine_id={item.machine_id} battlefield={item.battlefield}",
+           user=current_admin, request=request)
     return item
 
 
@@ -57,6 +62,7 @@ def create_item(
 def update_item(
     item_id: int,
     payload: schemas.CustomerStatusUpdate,
+    request: Request,
     db: Session = Depends(get_db),
     current_user: models.User = Depends(get_current_user),
 ):
@@ -77,27 +83,35 @@ def update_item(
     item.version += 1
     db.commit()
     db.refresh(item)
+    log_op(db, action="修改", target="客户面状态", target_id=item.id,
+           detail=f"machine_id={item.machine_id} fields={','.join(changes.keys()) or '无'}",
+           user=current_user, request=request)
     return item
 
 
 @router.delete("/{item_id}")
 def delete_item(
     item_id: int,
+    request: Request,
     db: Session = Depends(get_db),
-    _: models.User = Depends(require_admin),
+    current_admin: models.User = Depends(require_admin),
 ):
     item = db.query(models.CustomerStatus).filter(models.CustomerStatus.id == item_id).first()
     if not item:
         raise HTTPException(status_code=404, detail="Not found")
+    snapshot = f"machine_id={item.machine_id} battlefield={item.battlefield}"
     db.delete(item)
     db.commit()
+    log_op(db, action="删除", target="客户面状态", target_id=item_id,
+           detail=snapshot, user=current_admin, request=request)
     return {"ok": True}
 
 
 @router.get("/export.pptx")
 def export_pptx(
+    request: Request,
     db: Session = Depends(get_db),
-    _: models.User = Depends(require_admin),
+    current_admin: models.User = Depends(require_admin),
 ):
     """导出当前所有客户面状态为 PPT（单页表格）。"""
     from pptx_utils import build_customer_status_pptx
@@ -105,6 +119,8 @@ def export_pptx(
     rows = db.query(models.CustomerStatus).order_by(models.CustomerStatus.id.asc()).all()
     stream = build_customer_status_pptx(rows)
     filename = f"customer-status-{datetime.now().strftime('%Y%m%d-%H%M%S')}.pptx"
+    log_op(db, action="导出PPT", target="客户面状态",
+           detail=f"rows={len(rows)}", user=current_admin, request=request)
     return StreamingResponse(
         stream,
         media_type="application/vnd.openxmlformats-officedocument.presentationml.presentation",

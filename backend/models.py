@@ -251,3 +251,19 @@ class User(Base):
     auth_provider = Column(String(32), default="local", comment="local / company_sso (预留)")
     is_active = Column(Boolean, default=True, comment="是否启用")
     created_at = Column(DateTime, default=datetime.utcnow)
+
+
+class OperationLog(Base):
+    """登录与关键业务写操作日志，供管理员审计。"""
+    __tablename__ = "operation_logs"
+
+    id = Column(Integer, primary_key=True, index=True)
+    created_at = Column(DateTime, default=datetime.utcnow, index=True)
+    user_id = Column(Integer, nullable=True, index=True, comment="登录失败时可为空")
+    username = Column(String(64), default="", index=True, comment="冗余存储,便于查询")
+    action = Column(String(32), nullable=False, index=True, comment="登录/登出/登录失败/新增/修改/删除/...")
+    target = Column(String(64), default="", index=True, comment="目标类型,如 用户/客户面状态/...")
+    target_id = Column(String(64), default="", comment="目标主键,可为空")
+    detail = Column(Text, default="", comment="补充说明 (摘要,不存敏感字段)")
+    ip = Column(String(64), default="")
+    user_agent = Column(String(256), default="")

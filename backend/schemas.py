@@ -434,3 +434,24 @@ class TokenResponse(BaseModel):
     access_token: str
     token_type: str = "bearer"
     user: UserOut
+
+
+# ===== OperationLog =====
+class OperationLogOut(BaseModel):
+    id: int
+    created_at: datetime
+    user_id: Optional[int] = None
+    username: str
+    action: str
+    target: str
+    target_id: str
+    detail: str
+    ip: str
+    user_agent: str
+
+    model_config = ConfigDict(from_attributes=True)
+
+
+class OperationLogPage(BaseModel):
+    total: int
+    items: List[OperationLogOut]

@@ -20,11 +20,14 @@ import threading
 from datetime import datetime
 from typing import Any, Dict, List, Optional
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Request
 from fastapi.responses import StreamingResponse
+from sqlalchemy.orm import Session
 
 import models
 from auth import get_current_user, require_admin
+from database import get_db
+from op_log import log_op
 from routers.config import _load as _load_config
 
 router = APIRouter(prefix="/api/issues", tags=["issues"])
@@ -473,7 +476,11 @@ def run_script_status(_: models.User = Depends(get_current_user)):
 
 
 @router.post("/run-script")
-def run_script(_: models.User = Depends(require_admin)):
+def run_script(
+    request: Request,
+    db: Session = Depends(get_db),
+    current_admin: models.User = Depends(require_admin),
+):
     """执行管理员配置的外部刷新脚本（全局互斥，同时只能有一个实例）。"""
     global _script_started_at
 
@@ -497,6 +504,9 @@ def run_script(_: models.User = Depends(require_admin)):
             cmd, capture_output=True, text=True,
             timeout=300, cwd=str(sp.parent),
         )
+        log_op(db, action="运行脚本", target="问题单",
+               detail=f"script={sp.name} exit={result.returncode}",
+               user=current_admin, request=request)
         return {
             "ok":        result.returncode == 0,
             "exit_code": result.returncode,
@@ -515,7 +525,12 @@ def run_script(_: models.User = Depends(require_admin)):
 
 
 @router.get("/export.pptx")
-def export_pptx(date: Optional[str] = None, _: models.User = Depends(get_current_user)):
+def export_pptx(
+    request: Request,
+    date: Optional[str] = None,
+    db: Session = Depends(get_db),
+    current_user: models.User = Depends(get_current_user),
+):
     """将指定日期报表导出为 PPT，不传 date 则取最新。"""
     cfg = _load_config()
     path_str = cfg.get("issue_report_path", "").strip()
@@ -531,6 +546,9 @@ def export_pptx(date: Optional[str] = None, _: models.User = Depends(get_current
     except Exception as exc:
         raise HTTPException(500, f"PPT 生成失败：{exc}")
     filename = f"缺陷统计报表_{datetime.now().strftime('%Y%m%d_%H%M%S')}.pptx"
+    log_op(db, action="导出PPT", target="问题单",
+           detail=f"date={date or '最新'} file={target.name}",
+           user=current_user, request=request)
     return StreamingResponse(
         buf,
         media_type="application/vnd.openxmlformats-officedocument.presentationml.presentation",

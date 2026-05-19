@@ -1,10 +1,13 @@
 import json
 import pathlib
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Request
+from sqlalchemy.orm import Session
 
 import models
 from auth import require_admin
+from database import get_db
+from op_log import log_op
 
 router = APIRouter(prefix="/api/config", tags=["config"])
 
@@ -30,7 +33,9 @@ def get_config():
 @router.put("")
 def save_config(
     payload: dict,
-    _: models.User = Depends(require_admin),
+    request: Request,
+    db: Session = Depends(get_db),
+    current_admin: models.User = Depends(require_admin),
 ):
     """保存项目级配置（仅管理员）。只更新 payload 中携带的键，不影响其余字段。"""
     try:
@@ -38,6 +43,9 @@ def save_config(
         cfg.update(payload)
         with open(CONFIG_PATH, "w", encoding="utf-8") as f:
             json.dump(cfg, f, ensure_ascii=False, indent=2)
+        log_op(db, action="修改", target="配置",
+               detail=f"keys={','.join(payload.keys())}",
+               user=current_admin, request=request)
         return cfg
     except Exception as exc:
         raise HTTPException(status_code=500, detail=f"保存配置失败: {exc}")

@@ -18,7 +18,8 @@ http.interceptors.response.use(
   (resp) => resp,
   (error) => {
     if (error.response?.status === 401) {
-      auth.clear()
+      // 让其它 tab 一起退出
+      auth.signalLogout('401')
       if (location.pathname !== '/login') {
         location.replace('/login')
       }
@@ -33,7 +34,13 @@ export const authApi = {
   login: (data) => http.post('/auth/login', data),
   register: (data) => http.post('/auth/register', data),
   me: () => http.get('/auth/me'),
+  logout: () => http.post('/auth/logout'),
   changePassword: (data) => http.post('/auth/change-password', data),
+}
+
+export const opLogApi = {
+  list: (params) => http.get('/op-logs', { params }),
+  options: () => http.get('/op-logs/options'),
 }
 
 export const userApi = {

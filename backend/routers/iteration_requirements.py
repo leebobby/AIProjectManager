@@ -6,13 +6,15 @@
 import io
 from typing import List
 
-from fastapi import APIRouter, Depends, File, HTTPException, Query, UploadFile
+from fastapi import APIRouter, Depends, File, HTTPException, Query, Request, UploadFile
 from fastapi.responses import StreamingResponse
 from sqlalchemy.orm import Session
 
 import models
 import schemas
+from auth import get_current_user
 from database import get_db
+from op_log import log_op
 
 router = APIRouter(prefix="/api/iteration-requirements", tags=["iteration-requirements"])
 
@@ -54,7 +56,12 @@ def list_by_iteration(
 
 
 @router.post("", response_model=schemas.IterationRequirementOut)
-def create_item(payload: schemas.IterationRequirementCreate, db: Session = Depends(get_db)):
+def create_item(
+    payload: schemas.IterationRequirementCreate,
+    request: Request,
+    db: Session = Depends(get_db),
+    current_user: models.User = Depends(get_current_user),
+):
     parent = (
         db.query(models.AnnualIteration)
         .filter(models.AnnualIteration.id == payload.iteration_id)
@@ -75,11 +82,20 @@ def create_item(payload: schemas.IterationRequirementCreate, db: Session = Depen
     db.add(item)
     db.commit()
     db.refresh(item)
+    log_op(db, action="新增", target="迭代需求", target_id=item.id,
+           detail=f"iteration_id={item.iteration_id} title={item.title}",
+           user=current_user, request=request)
     return item
 
 
 @router.put("/{item_id}", response_model=schemas.IterationRequirementOut)
-def update_item(item_id: int, payload: schemas.IterationRequirementUpdate, db: Session = Depends(get_db)):
+def update_item(
+    item_id: int,
+    payload: schemas.IterationRequirementUpdate,
+    request: Request,
+    db: Session = Depends(get_db),
+    current_user: models.User = Depends(get_current_user),
+):
     item = (
         db.query(models.IterationRequirement)
         .filter(models.IterationRequirement.id == item_id)
@@ -96,11 +112,19 @@ def update_item(item_id: int, payload: schemas.IterationRequirementUpdate, db: S
     item.version += 1
     db.commit()
     db.refresh(item)
+    log_op(db, action="修改", target="迭代需求", target_id=item.id,
+           detail=f"title={item.title} fields={','.join(changes.keys()) or '无'}",
+           user=current_user, request=request)
     return item
 
 
 @router.delete("/{item_id}")
-def delete_item(item_id: int, db: Session = Depends(get_db)):
+def delete_item(
+    item_id: int,
+    request: Request,
+    db: Session = Depends(get_db),
+    current_user: models.User = Depends(get_current_user),
+):
     item = (
         db.query(models.IterationRequirement)
         .filter(models.IterationRequirement.id == item_id)
@@ -108,8 +132,11 @@ def delete_item(item_id: int, db: Session = Depends(get_db)):
     )
     if not item:
         raise HTTPException(status_code=404, detail="Not found")
+    snapshot = f"title={item.title}"
     db.delete(item)
     db.commit()
+    log_op(db, action="删除", target="迭代需求", target_id=item_id,
+           detail=snapshot, user=current_user, request=request)
     return {"ok": True}
 
 
@@ -172,9 +199,11 @@ def download_import_template():
 
 @router.post("/import")
 async def import_from_excel(
+    request: Request,
     iteration_id: int = Query(..., description="目标迭代 ID"),
     file: UploadFile = File(..., description="xlsx 文件"),
     db: Session = Depends(get_db),
+    current_user: models.User = Depends(get_current_user),
 ):
     """从 xlsx 批量导入需求到指定迭代。返回 {created, errors}。"""
     parent = (
@@ -278,4 +307,7 @@ async def import_from_excel(
         created += 1
     db.commit()
 
+    log_op(db, action="导入", target="迭代需求", target_id=iteration_id,
+           detail=f"created={created} errors={len(errors)} file={file.filename or ''}",
+           user=current_user, request=request)
     return {"created": created, "errors": errors}

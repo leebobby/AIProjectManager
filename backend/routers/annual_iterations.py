@@ -7,7 +7,7 @@
 from datetime import datetime
 from typing import List, Optional
 
-from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from fastapi.responses import StreamingResponse
 from sqlalchemy import distinct
 from sqlalchemy.orm import Session
@@ -16,6 +16,7 @@ import models
 import schemas
 from auth import get_current_user, require_admin
 from database import get_db
+from op_log import log_op
 
 router = APIRouter(prefix="/api/annual-iterations", tags=["annual-iterations"])
 
@@ -74,24 +75,30 @@ def get_one(item_id: int, db: Session = Depends(get_db)):
 def update_item(
     item_id: int,
     payload: schemas.AnnualIterationUpdate,
+    request: Request,
     db: Session = Depends(get_db),
-    _: models.User = Depends(require_admin),
+    current_admin: models.User = Depends(require_admin),
 ):
     item = db.query(models.AnnualIteration).filter(models.AnnualIteration.id == item_id).first()
     if not item:
         raise HTTPException(status_code=404, detail="Not found")
-    for k, v in payload.model_dump(exclude_unset=True).items():
+    changes = payload.model_dump(exclude_unset=True)
+    for k, v in changes.items():
         setattr(item, k, v)
     db.commit()
     db.refresh(item)
+    log_op(db, action="修改", target="年度迭代", target_id=item.id,
+           detail=f"{item.year}-{item.month:02d} fields={','.join(changes.keys()) or '无'}",
+           user=current_admin, request=request)
     return item
 
 
 @router.get("/{item_id}/export.pptx")
 def export_pptx(
     item_id: int,
+    request: Request,
     db: Session = Depends(get_db),
-    _: models.User = Depends(require_admin),
+    current_admin: models.User = Depends(require_admin),
 ):
     from pptx_utils import build_iteration_pptx
 
@@ -106,6 +113,9 @@ def export_pptx(
     )
     stream = build_iteration_pptx(item, reqs)
     filename = f"iteration-{item.year}-{item.month:02d}-{datetime.now().strftime('%H%M%S')}.pptx"
+    log_op(db, action="导出PPT", target="年度迭代", target_id=item.id,
+           detail=f"{item.year}-{item.month:02d} reqs={len(reqs)}",
+           user=current_admin, request=request)
     return StreamingResponse(
         stream,
         media_type="application/vnd.openxmlformats-officedocument.presentationml.presentation",

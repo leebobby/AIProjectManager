@@ -4,13 +4,14 @@
 """
 from typing import List
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Request
 from sqlalchemy.orm import Session
 
 import models
 import schemas
 from auth import require_admin
 from database import get_db
+from op_log import log_op
 
 router = APIRouter(prefix="/api/stakeholders", tags=["stakeholders"])
 
@@ -30,14 +31,18 @@ def list_project_contacts(db: Session = Depends(get_db)):
 @router.post("/project-contacts", response_model=schemas.ProjectContactOut)
 def create_project_contact(
     payload: schemas.ProjectContactCreate,
+    request: Request,
     db: Session = Depends(get_db),
-    _: models.User = Depends(require_admin),
+    current_admin: models.User = Depends(require_admin),
 ):
     max_order = db.query(models.StakeholderProjectContact).count()
     item = models.StakeholderProjectContact(**payload.model_dump(), sort_order=max_order)
     db.add(item)
     db.commit()
     db.refresh(item)
+    log_op(db, action="新增", target="项目组联系人", target_id=item.id,
+           detail=f"col1={item.col1} col2={item.col2}",
+           user=current_admin, request=request)
     return item
 
 
@@ -45,8 +50,9 @@ def create_project_contact(
 def update_project_contact(
     item_id: int,
     payload: schemas.ProjectContactUpdate,
+    request: Request,
     db: Session = Depends(get_db),
-    _: models.User = Depends(require_admin),
+    current_admin: models.User = Depends(require_admin),
 ):
     item = db.query(models.StakeholderProjectContact).filter(
         models.StakeholderProjectContact.id == item_id
@@ -57,22 +63,29 @@ def update_project_contact(
         setattr(item, k, v)
     db.commit()
     db.refresh(item)
+    log_op(db, action="修改", target="项目组联系人", target_id=item.id,
+           detail=f"col1={item.col1} col2={item.col2}",
+           user=current_admin, request=request)
     return item
 
 
 @router.delete("/project-contacts/{item_id}")
 def delete_project_contact(
     item_id: int,
+    request: Request,
     db: Session = Depends(get_db),
-    _: models.User = Depends(require_admin),
+    current_admin: models.User = Depends(require_admin),
 ):
     item = db.query(models.StakeholderProjectContact).filter(
         models.StakeholderProjectContact.id == item_id
     ).first()
     if not item:
         raise HTTPException(404, "Not found")
+    snapshot = f"col1={item.col1} col2={item.col2}"
     db.delete(item)
     db.commit()
+    log_op(db, action="删除", target="项目组联系人", target_id=item_id,
+           detail=snapshot, user=current_admin, request=request)
     return {"ok": True}
 
 
@@ -91,14 +104,18 @@ def list_battlefields(db: Session = Depends(get_db)):
 @router.post("/battlefields", response_model=schemas.BattlefieldOut)
 def create_battlefield(
     payload: schemas.BattlefieldCreate,
+    request: Request,
     db: Session = Depends(get_db),
-    _: models.User = Depends(require_admin),
+    current_admin: models.User = Depends(require_admin),
 ):
     max_order = db.query(models.StakeholderBattlefield).count()
     item = models.StakeholderBattlefield(**payload.model_dump(), sort_order=max_order)
     db.add(item)
     db.commit()
     db.refresh(item)
+    log_op(db, action="新增", target="战场矩阵", target_id=item.id,
+           detail=f"battlefield={item.battlefield}",
+           user=current_admin, request=request)
     return item
 
 
@@ -106,8 +123,9 @@ def create_battlefield(
 def update_battlefield(
     item_id: int,
     payload: schemas.BattlefieldUpdate,
+    request: Request,
     db: Session = Depends(get_db),
-    _: models.User = Depends(require_admin),
+    current_admin: models.User = Depends(require_admin),
 ):
     item = db.query(models.StakeholderBattlefield).filter(
         models.StakeholderBattlefield.id == item_id
@@ -118,20 +136,27 @@ def update_battlefield(
         setattr(item, k, v)
     db.commit()
     db.refresh(item)
+    log_op(db, action="修改", target="战场矩阵", target_id=item.id,
+           detail=f"battlefield={item.battlefield}",
+           user=current_admin, request=request)
     return item
 
 
 @router.delete("/battlefields/{item_id}")
 def delete_battlefield(
     item_id: int,
+    request: Request,
     db: Session = Depends(get_db),
-    _: models.User = Depends(require_admin),
+    current_admin: models.User = Depends(require_admin),
 ):
     item = db.query(models.StakeholderBattlefield).filter(
         models.StakeholderBattlefield.id == item_id
     ).first()
     if not item:
         raise HTTPException(404, "Not found")
+    snapshot = f"battlefield={item.battlefield}"
     db.delete(item)
     db.commit()
+    log_op(db, action="删除", target="战场矩阵", target_id=item_id,
+           detail=snapshot, user=current_admin, request=request)
     return {"ok": True}

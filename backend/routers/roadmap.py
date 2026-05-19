@@ -5,13 +5,14 @@
 """
 from typing import List
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Request
 from sqlalchemy.orm import Session
 
 import models
 import schemas
-from auth import require_admin
+from auth import get_current_user, require_admin
 from database import get_db
+from op_log import log_op
 
 router = APIRouter(prefix="/api/roadmap", tags=["roadmap"])
 
@@ -37,43 +38,62 @@ def get_project(project_id: int, db: Session = Depends(get_db)):
 @router.post(
     "/projects",
     response_model=schemas.RoadmapProjectDetailOut,
-    dependencies=[Depends(require_admin)],
 )
-def create_project(payload: schemas.RoadmapProjectCreate, db: Session = Depends(get_db)):
+def create_project(
+    payload: schemas.RoadmapProjectCreate,
+    request: Request,
+    db: Session = Depends(get_db),
+    current_admin: models.User = Depends(require_admin),
+):
     item = models.RoadmapProject(**payload.model_dump())
     db.add(item)
     db.commit()
     db.refresh(item)
+    log_op(db, action="新增", target="路线图项目", target_id=item.id,
+           detail=f"name={item.name}", user=current_admin, request=request)
     return item
 
 
 @router.put(
     "/projects/{project_id}",
     response_model=schemas.RoadmapProjectDetailOut,
-    dependencies=[Depends(require_admin)],
 )
 def update_project(
     project_id: int,
     payload: schemas.RoadmapProjectUpdate,
+    request: Request,
     db: Session = Depends(get_db),
+    current_admin: models.User = Depends(require_admin),
 ):
     item = db.query(models.RoadmapProject).filter(models.RoadmapProject.id == project_id).first()
     if not item:
         raise HTTPException(status_code=404, detail="项目不存在")
-    for k, v in payload.model_dump(exclude_unset=True).items():
+    changes = payload.model_dump(exclude_unset=True)
+    for k, v in changes.items():
         setattr(item, k, v)
     db.commit()
     db.refresh(item)
+    log_op(db, action="修改", target="路线图项目", target_id=item.id,
+           detail=f"name={item.name} fields={','.join(changes.keys()) or '无'}",
+           user=current_admin, request=request)
     return item
 
 
-@router.delete("/projects/{project_id}", dependencies=[Depends(require_admin)])
-def delete_project(project_id: int, db: Session = Depends(get_db)):
+@router.delete("/projects/{project_id}")
+def delete_project(
+    project_id: int,
+    request: Request,
+    db: Session = Depends(get_db),
+    current_admin: models.User = Depends(require_admin),
+):
     item = db.query(models.RoadmapProject).filter(models.RoadmapProject.id == project_id).first()
     if not item:
         raise HTTPException(status_code=404, detail="项目不存在")
+    snapshot = f"name={item.name}"
     db.delete(item)
     db.commit()
+    log_op(db, action="删除", target="路线图项目", target_id=project_id,
+           detail=snapshot, user=current_admin, request=request)
     return {"ok": True}
 
 
@@ -92,9 +112,13 @@ def _validate_phase_range(start_year: int, start_month: int, end_year: int, end_
 @router.post(
     "/phases",
     response_model=schemas.RoadmapPhaseOut,
-    dependencies=[Depends(require_admin)],
 )
-def create_phase(payload: schemas.RoadmapPhaseCreate, db: Session = Depends(get_db)):
+def create_phase(
+    payload: schemas.RoadmapPhaseCreate,
+    request: Request,
+    db: Session = Depends(get_db),
+    current_admin: models.User = Depends(require_admin),
+):
     project = db.query(models.RoadmapProject).filter(models.RoadmapProject.id == payload.project_id).first()
     if not project:
         raise HTTPException(status_code=404, detail="项目不存在")
@@ -103,18 +127,22 @@ def create_phase(payload: schemas.RoadmapPhaseCreate, db: Session = Depends(get_
     db.add(item)
     db.commit()
     db.refresh(item)
+    log_op(db, action="新增", target="路线图阶段", target_id=item.id,
+           detail=f"project_id={item.project_id} name={item.name}",
+           user=current_admin, request=request)
     return item
 
 
 @router.put(
     "/phases/{phase_id}",
     response_model=schemas.RoadmapPhaseOut,
-    dependencies=[Depends(require_admin)],
 )
 def update_phase(
     phase_id: int,
     payload: schemas.RoadmapPhaseUpdate,
+    request: Request,
     db: Session = Depends(get_db),
+    current_admin: models.User = Depends(require_admin),
 ):
     item = db.query(models.RoadmapPhase).filter(models.RoadmapPhase.id == phase_id).first()
     if not item:
@@ -133,16 +161,27 @@ def update_phase(
     item.version += 1
     db.commit()
     db.refresh(item)
+    log_op(db, action="修改", target="路线图阶段", target_id=item.id,
+           detail=f"name={item.name} fields={','.join(data.keys()) or '无'}",
+           user=current_admin, request=request)
     return item
 
 
-@router.delete("/phases/{phase_id}", dependencies=[Depends(require_admin)])
-def delete_phase(phase_id: int, db: Session = Depends(get_db)):
+@router.delete("/phases/{phase_id}")
+def delete_phase(
+    phase_id: int,
+    request: Request,
+    db: Session = Depends(get_db),
+    current_admin: models.User = Depends(require_admin),
+):
     item = db.query(models.RoadmapPhase).filter(models.RoadmapPhase.id == phase_id).first()
     if not item:
         raise HTTPException(status_code=404, detail="阶段不存在")
+    snapshot = f"name={item.name}"
     db.delete(item)
     db.commit()
+    log_op(db, action="删除", target="路线图阶段", target_id=phase_id,
+           detail=snapshot, user=current_admin, request=request)
     return {"ok": True}
 
 
@@ -157,9 +196,13 @@ def _validate_milestone(year: int, month: int):
 @router.post(
     "/milestones",
     response_model=schemas.RoadmapMilestoneOut,
-    dependencies=[Depends(require_admin)],
 )
-def create_milestone(payload: schemas.RoadmapMilestoneCreate, db: Session = Depends(get_db)):
+def create_milestone(
+    payload: schemas.RoadmapMilestoneCreate,
+    request: Request,
+    db: Session = Depends(get_db),
+    current_admin: models.User = Depends(require_admin),
+):
     project = db.query(models.RoadmapProject).filter(models.RoadmapProject.id == payload.project_id).first()
     if not project:
         raise HTTPException(status_code=404, detail="项目不存在")
@@ -168,18 +211,22 @@ def create_milestone(payload: schemas.RoadmapMilestoneCreate, db: Session = Depe
     db.add(item)
     db.commit()
     db.refresh(item)
+    log_op(db, action="新增", target="路线图里程碑", target_id=item.id,
+           detail=f"project_id={item.project_id} {item.year}-{item.month:02d} title={item.title}",
+           user=current_admin, request=request)
     return item
 
 
 @router.put(
     "/milestones/{milestone_id}",
     response_model=schemas.RoadmapMilestoneOut,
-    dependencies=[Depends(require_admin)],
 )
 def update_milestone(
     milestone_id: int,
     payload: schemas.RoadmapMilestoneUpdate,
+    request: Request,
     db: Session = Depends(get_db),
+    current_admin: models.User = Depends(require_admin),
 ):
     item = db.query(models.RoadmapMilestone).filter(models.RoadmapMilestone.id == milestone_id).first()
     if not item:
@@ -192,14 +239,25 @@ def update_milestone(
         setattr(item, k, v)
     db.commit()
     db.refresh(item)
+    log_op(db, action="修改", target="路线图里程碑", target_id=item.id,
+           detail=f"{item.year}-{item.month:02d} fields={','.join(data.keys()) or '无'}",
+           user=current_admin, request=request)
     return item
 
 
-@router.delete("/milestones/{milestone_id}", dependencies=[Depends(require_admin)])
-def delete_milestone(milestone_id: int, db: Session = Depends(get_db)):
+@router.delete("/milestones/{milestone_id}")
+def delete_milestone(
+    milestone_id: int,
+    request: Request,
+    db: Session = Depends(get_db),
+    current_admin: models.User = Depends(require_admin),
+):
     item = db.query(models.RoadmapMilestone).filter(models.RoadmapMilestone.id == milestone_id).first()
     if not item:
         raise HTTPException(status_code=404, detail="里程碑不存在")
+    snapshot = f"{item.year}-{item.month:02d} title={item.title}"
     db.delete(item)
     db.commit()
+    log_op(db, action="删除", target="路线图里程碑", target_id=milestone_id,
+           detail=snapshot, user=current_admin, request=request)
     return {"ok": True}

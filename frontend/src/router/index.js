@@ -63,6 +63,12 @@ const routes = [
     component: () => import('../views/UserManagement.vue'),
     meta: { title: '用户管理', icon: 'User', requireAdmin: true },
   },
+  {
+    path: '/op-logs',
+    name: 'OperationLogs',
+    component: () => import('../views/OperationLogs.vue'),
+    meta: { title: '操作日志', icon: 'Document', requireAdmin: true },
+  },
 ]
 
 const router = createRouter({

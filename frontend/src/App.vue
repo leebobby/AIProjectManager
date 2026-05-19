@@ -88,12 +88,13 @@
 </template>
 
 <script setup>
-import { computed, reactive, ref } from 'vue'
+import { computed, onBeforeUnmount, onMounted, reactive, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
 import { Expand, Fold } from '@element-plus/icons-vue'
 import { authApi } from './api'
-import { auth } from './store/auth'
+import { auth, installCrossTabAuth } from './store/auth'
+import { startIdleWatcher } from './store/idleWatcher'
 
 const sidebarCollapsed = ref(localStorage.getItem('sidebarCollapsed') === '1')
 function toggleSidebar() {
@@ -146,7 +147,7 @@ async function onSubmitPwd() {
     })
     ElMessage.success('密码已修改，请重新登录')
     pwdVisible.value = false
-    auth.clear()
+    auth.signalLogout('password-changed')
     router.replace('/login')
   } catch (e) {
     ElMessage.error(e.response?.data?.detail || '修改失败')
@@ -155,14 +156,40 @@ async function onSubmitPwd() {
   }
 }
 
-function onCommand(cmd) {
+async function onCommand(cmd) {
   if (cmd === 'logout') {
-    auth.clear()
+    try { await authApi.logout() } catch { /* 后端日志失败不阻塞登出 */ }
+    auth.signalLogout('manual')
     router.replace('/login')
   } else if (cmd === 'changePassword') {
     openChangePassword()
   }
 }
+
+const IDLE_MS = 15 * 60 * 1000 // 15 分钟
+let stopIdle = null
+
+function gotoLogin(reason) {
+  if (route.path === '/login') return
+  if (reason === 'idle') ElMessage.warning('因长时间未操作，已自动退出登录')
+  router.replace({ path: '/login', query: { redirect: route.fullPath } })
+}
+
+onMounted(() => {
+  installCrossTabAuth((reason) => gotoLogin(reason))
+  stopIdle = startIdleWatcher({
+    idleMs: IDLE_MS,
+    isActive: () => auth.isLoggedIn.value,
+    onIdle: () => {
+      auth.signalLogout('idle')
+      gotoLogin('idle')
+    },
+  })
+})
+
+onBeforeUnmount(() => {
+  if (stopIdle) stopIdle()
+})
 </script>
 
 <style>
