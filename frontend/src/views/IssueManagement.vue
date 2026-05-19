@@ -91,50 +91,62 @@
 
             <!-- 统计明细（表格 + 直方图） -->
             <el-tab-pane label="统计明细" name="stats">
+              <!-- 视图切换 -->
+              <div class="stats-toolbar">
+                <span class="stats-toolbar-label">视图：</span>
+                <el-button-group size="small">
+                  <el-button :type="statsView==='both' ? 'primary' : ''" @click="statsView='both'">双视图</el-button>
+                  <el-button :type="statsView==='table' ? 'primary' : ''" @click="statsView='table'">表格</el-button>
+                  <el-button :type="statsView==='chart' ? 'primary' : ''" @click="statsView='chart'">图表</el-button>
+                </el-button-group>
+              </div>
+
               <!-- 按小组×月度 -->
               <div class="section-title">按小组 × 月度</div>
               <el-row :gutter="16">
-                <el-col :span="14">
+                <el-col v-show="statsView !== 'chart'" :span="statsView === 'both' ? 14 : 24">
                   <StatsTable
                     :columns="todayData.monthly_by_group.columns"
                     :rows="todayData.monthly_by_group.rows"
                     @cell-click="(r,c,v)=>onMonthlyClick(r,c,v)"
                   />
                 </el-col>
-                <el-col :span="10">
-                  <div ref="monthlyBarEl" class="chart-sm" />
+                <el-col v-show="statsView !== 'table'" :span="statsView === 'both' ? 10 : 24">
+                  <div ref="monthlyBarEl" class="chart-sm" :class="{ 'chart-wide': statsView === 'chart' }" />
                 </el-col>
               </el-row>
 
               <!-- 按客户分布 -->
               <div class="section-title" style="margin-top:20px">按客户分布</div>
               <el-row :gutter="16">
-                <el-col :span="14">
+                <el-col v-show="statsView !== 'chart'" :span="statsView === 'both' ? 14 : 24">
                   <StatsTable
                     :columns="todayData.by_customer.columns"
                     :rows="todayData.by_customer.rows"
                     @cell-click="(r,c,v)=>onCustomerClick(r,c,v)"
                   />
                 </el-col>
-                <el-col :span="10">
-                  <div ref="customerBarEl" class="chart-sm" />
+                <el-col v-show="statsView !== 'table'" :span="statsView === 'both' ? 10 : 24">
+                  <div ref="customerBarEl" class="chart-sm" :class="{ 'chart-wide': statsView === 'chart' }" />
                 </el-col>
               </el-row>
 
-              <!-- 特性×小组 -->
-              <div class="section-title" style="margin-top:20px">特性 × 小组</div>
-              <el-row :gutter="16">
-                <el-col :span="14">
-                  <StatsTable
-                    :columns="todayData.feature_by_group.columns"
-                    :rows="todayData.feature_by_group.rows"
-                    @cell-click="(r,c,v)=>onFeatureClick(r,c,v)"
-                  />
-                </el-col>
-                <el-col :span="10">
-                  <div ref="featureBarEl" class="chart-sm" />
-                </el-col>
-              </el-row>
+              <!-- 特性×小组 —— 暂不展示，待 Excel 增加该数据后开启 -->
+              <template v-if="SHOW_FEATURE">
+                <div class="section-title" style="margin-top:20px">特性 × 小组</div>
+                <el-row :gutter="16">
+                  <el-col v-show="statsView !== 'chart'" :span="statsView === 'both' ? 14 : 24">
+                    <StatsTable
+                      :columns="todayData.feature_by_group.columns"
+                      :rows="todayData.feature_by_group.rows"
+                      @cell-click="(r,c,v)=>onFeatureClick(r,c,v)"
+                    />
+                  </el-col>
+                  <el-col v-show="statsView !== 'table'" :span="statsView === 'both' ? 10 : 24">
+                    <div ref="featureBarEl" class="chart-sm" :class="{ 'chart-wide': statsView === 'chart' }" />
+                  </el-col>
+                </el-row>
+              </template>
             </el-tab-pane>
 
             <!-- 原始数据 -->
@@ -254,6 +266,12 @@ import { configApi, downloadBlob, issueApi } from '../api'
 import { auth } from '../store/auth'
 
 const isAdmin = auth.isAdmin
+
+// 暂时关闭「特性 × 小组」展示（Excel 暂未提供该字段），代码保留待恢复
+const SHOW_FEATURE = false
+
+// 统计明细视图切换：'both' | 'table' | 'chart'
+const statsView = ref('both')
 
 // ── 调色板 ────────────────────────────────────────────
 const PAL = ['#4073ba','#67C23A','#E6A23C','#F56C6C','#909399','#8E7AD8','#26C9C3','#F9A825']
@@ -639,6 +657,12 @@ watch(trendData, async () => {
   initTrendCharts()
 })
 
+// 切换统计明细视图时同步触发 echarts resize（v-show 不会卸载实例）
+watch(statsView, async () => {
+  await nextTick()
+  Object.values(instances).forEach(c => c.resize())
+})
+
 // ── resize ────────────────────────────────────────────
 function onResize() { Object.values(instances).forEach(c => c.resize()) }
 
@@ -694,9 +718,19 @@ onUnmounted(() => {
 /* 主卡 */
 .main-card :deep(.el-card__body) { padding: 0 16px 16px; }
 
+/* 统计明细工具栏 */
+.stats-toolbar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 12px 0 8px;
+}
+.stats-toolbar-label { color: #606266; font-size: 13px; }
+
 /* 图表 */
 .chart-lg { width: 100%; height: 340px; margin-top: 8px; }
 .chart-sm { width: 100%; height: 260px; }
+.chart-sm.chart-wide { height: 380px; }
 
 /* 统计明细 */
 .section-title {

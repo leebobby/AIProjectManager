@@ -153,7 +153,7 @@
         </el-table-column>
 
         <!-- ── 问题单情况 ───────────────────────────── -->
-        <el-table-column label="问题单情况" width="140" align="center">
+        <el-table-column label="问题单情况" width="180" align="center">
           <template #default="{ row }">
             <template v-if="isAdmin && isEditing(row,'issue_url')">
               <el-input v-model="row.issue_url" size="small" autofocus placeholder="https://..."
@@ -162,10 +162,13 @@
                 @keyup.esc="cancel(row,'issue_url')" />
             </template>
             <template v-else>
-              <el-button v-if="row.issue_url" size="small" type="primary" link :icon="Link"
-                @click="openIssue(row)" @dblclick="isAdmin && startEdit(row,'issue_url')">查看</el-button>
-              <el-button v-else-if="isAdmin" size="small" type="info" link @click="startEdit(row,'issue_url')">设置</el-button>
-              <span v-else>—</span>
+              <el-button size="small" type="primary" link @click="openIssueDrill(row)">
+                查看分布<span v-if="row._issueCount != null">（{{ row._issueCount }}）</span>
+              </el-button>
+              <el-button v-if="row.issue_url" size="small" :icon="Link" link
+                title="打开外部链接" @click="openIssue(row)" />
+              <el-button v-if="isAdmin" size="small" :icon="Edit" link
+                :title="row.issue_url ? '修改链接' : '设置链接'" @click="startEdit(row,'issue_url')" />
             </template>
           </template>
         </el-table-column>
@@ -245,14 +248,41 @@
         <el-button type="primary" @click="onSubmit">保存</el-button>
       </template>
     </el-dialog>
+
+    <!-- ── 问题单分布 drawer ── -->
+    <el-drawer v-model="issueDrillVisible" :title="drillTitle" size="42%" direction="rtl">
+      <div v-if="issueDataLoading" class="hint">加载问题单数据…</div>
+      <template v-else-if="issueDataCache && currentDrillRow">
+        <div class="drill-meta">
+          数据来源：{{ issueDataCache.actual_file || '—' }}
+          <span v-if="issueDataCache.file_mtime"> · {{ issueDataCache.file_mtime }}</span>
+        </div>
+        <template v-if="drillRows.length">
+          <div class="drill-summary">
+            合计 <b>{{ drillTotalCount }}</b> 个问题单
+          </div>
+          <el-table :data="drillRows" border stripe size="small" style="margin-top:8px">
+            <el-table-column prop="group" label="责任小组" />
+            <el-table-column prop="count" label="问题单数" align="center" width="140" />
+          </el-table>
+        </template>
+        <el-empty v-else description="该客户在最新报表中无问题单" />
+        <div v-if="currentDrillRow.issue_url" style="margin-top:14px">
+          <el-button type="primary" :icon="Link" @click="openIssue(currentDrillRow)">
+            打开外部问题单链接
+          </el-button>
+        </div>
+      </template>
+      <el-empty v-else description="无问题单数据，请检查是否已配置报表目录" />
+    </el-drawer>
   </div>
 </template>
 
 <script setup>
 import { computed, nextTick, onMounted, reactive, ref } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
-import { Delete, Download, Link, Plus, Refresh } from '@element-plus/icons-vue'
-import { configApi, customerStatusApi, downloadBlob, versionApi } from '../api'
+import { Delete, Download, Edit, Link, Plus, Refresh } from '@element-plus/icons-vue'
+import { configApi, customerStatusApi, downloadBlob, issueApi, versionApi } from '../api'
 import { auth } from '../store/auth'
 
 const isAdmin = auth.isAdmin
@@ -312,6 +342,7 @@ async function load() {
       ...row,
       recent_focus_items: parseChecklist(row.recent_focus),
       key_issues_items:   parseChecklist(row.key_issues),
+      _issueCount: null,   // 由 loadIssueData() 异步填充
     }))
   } catch (e) {
     ElMessage.error(e.response?.data?.detail || '加载失败')
@@ -531,6 +562,62 @@ function openIssue(row) {
   if (row.issue_url) window.open(row.issue_url, '_blank')
 }
 
+// ── 问题单分布 drawer ──────────────────────────────────
+const issueDataCache    = ref(null)
+const issueDataLoading  = ref(false)
+const issueDrillVisible = ref(false)
+const currentDrillRow   = ref(null)
+
+const drillTitle = computed(() =>
+  currentDrillRow.value ? `「${currentDrillRow.value.battlefield}」问题单分布` : '问题单分布'
+)
+
+const drillRows = computed(() => {
+  if (!issueDataCache.value || !currentDrillRow.value) return []
+  const bc = issueDataCache.value.by_customer
+  if (!bc?.columns || !bc?.rows) return []
+  const colName = bc.columns.find(c => c === currentDrillRow.value.battlefield)
+  if (!colName) return []
+  return bc.rows
+    .filter(r => r.label !== '合计')
+    .map(r => ({ group: r.label, count: Number(r[colName]) || 0 }))
+    .filter(r => r.count > 0)
+})
+
+const drillTotalCount = computed(() =>
+  drillRows.value.reduce((s, r) => s + r.count, 0)
+)
+
+async function loadIssueData() {
+  issueDataLoading.value = true
+  try {
+    const { data } = await issueApi.getData()
+    if (!data?.configured) { issueDataCache.value = null; return }
+    issueDataCache.value = data
+    // 给每行注入 _issueCount（方便表格列显示数字）
+    const bc = data.by_customer
+    if (bc?.columns && bc?.rows) {
+      const totalRow = bc.rows.find(r => r.label === '合计')
+      if (totalRow) {
+        for (const row of list.value) {
+          const colName = bc.columns.find(c => c === row.battlefield)
+          row._issueCount = colName ? (Number(totalRow[colName]) || 0) : null
+        }
+      }
+    }
+  } catch {
+    /* 报表未配置/读取失败时静默 —— 链接仍可点，drawer 内提示用户 */
+  } finally {
+    issueDataLoading.value = false
+  }
+}
+
+function openIssueDrill(row) {
+  currentDrillRow.value = row
+  issueDrillVisible.value = true
+  if (!issueDataCache.value && !issueDataLoading.value) loadIssueData()
+}
+
 async function onExport() {
   try {
     const resp = await customerStatusApi.exportPptx()
@@ -542,7 +629,12 @@ async function onExport() {
   }
 }
 
-onMounted(() => { load(); loadConfig(); loadVersions() })
+onMounted(async () => {
+  loadConfig()
+  loadVersions()
+  await load()
+  loadIssueData()   // 后台拉取问题单分布，不阻塞表格渲染
+})
 </script>
 
 <style scoped>
@@ -707,4 +799,17 @@ onMounted(() => { load(); loadConfig(); loadVersions() })
 /* Dialog 清单编辑器 */
 .dialog-cl { display: flex; flex-direction: column; gap: 6px; width: 100%; }
 .dialog-cl-row { display: flex; align-items: center; gap: 6px; }
+
+/* 问题单分布 drawer */
+.drill-meta { color: #909399; font-size: 12px; margin-bottom: 6px; }
+.drill-summary {
+  background: #f5f7fa;
+  padding: 8px 12px;
+  border-radius: 4px;
+  font-size: 13px;
+  color: #606266;
+  margin-bottom: 4px;
+}
+.drill-summary b { color: #409eff; font-size: 15px; margin: 0 2px; }
+.hint { color: #909399; font-size: 13px; padding: 24px 0; text-align: center; }
 </style>
