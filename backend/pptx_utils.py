@@ -9,8 +9,29 @@
 - 标题区域含主标题 + 副标题（导出时间）
 """
 import io
+import json
 from datetime import datetime
 from typing import Iterable, List, Optional, Sequence
+
+
+def checklist_to_text(val: str) -> str:
+    """将清单字段值（JSON 或旧纯文本）转为可读字符串，用于 PPT/导出。
+    格式：每行前缀 ✓（已完成）或 ·（未完成）。
+    """
+    if not val:
+        return ""
+    try:
+        items = json.loads(val)
+        if isinstance(items, list):
+            lines = []
+            for item in items:
+                text = str(item.get("text", "")).strip()
+                if text:
+                    lines.append(("✓ " if item.get("done") else "· ") + text)
+            return "\n".join(lines)
+    except (ValueError, TypeError, AttributeError):
+        pass
+    return val  # 旧纯文本，原样返回
 
 from lxml import etree
 from pptx import Presentation
@@ -219,7 +240,7 @@ def build_customer_status_pptx(rows: Iterable) -> io.BytesIO:
     """传入 CustomerStatus ORM 列表，返回 BytesIO。"""
     leaf_headers = [
         "机台编号", "客户", "型号", "当前阶段", "现场版本", "关注度",
-        "当前进展", "近期现场关键诉求", "软件类风险和问题", "问题单",
+        "当前进展", "现场关键事务", "软件类风险和问题", "问题单",
     ]
     parent_headers: List[Optional[tuple]] = [None] * len(leaf_headers)
     col_widths = [0.85, 1.0, 0.9, 0.95, 0.95, 0.7, 2.0, 2.0, 2.0, 1.15]
@@ -234,8 +255,8 @@ def build_customer_status_pptx(rows: Iterable) -> io.BytesIO:
             r.field_version or "",
             ("★" * (r.attention_level or 0)) or "-",
             r.customer_status or "",
-            r.recent_focus or "",
-            r.key_issues or "",
+            checklist_to_text(r.recent_focus or ""),
+            checklist_to_text(r.key_issues or ""),
             getattr(r, "issue_url", "") or "—",
         ])
 
