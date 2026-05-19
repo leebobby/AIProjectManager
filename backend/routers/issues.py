@@ -34,7 +34,25 @@ _script_lock: threading.Lock = threading.Lock()
 _script_started_at: Optional[datetime] = None
 
 _RAW_COLS = [
-    "version", "issue_id", "title", "owner", "group", "progress", "severity",
+    "version",          # A 版本信息
+    "issue_id",         # B 缺陷业务编号
+    "title",            # C 标题
+    "owner",            # D 当前责任人
+    "group",            # E 当前责任人所属小组
+    "progress",         # F 进展
+    "severity",         # G 严重程度
+    "severity_di",      # H 严重程度DI值
+    "root_cause",       # I 根因
+    "solution",         # J 解决措施
+    "progress_record",  # K 进展记录
+    "estimated_close",  # L 预计闭环时间
+    "priority",         # M 优先级
+    "is_sdts",          # N 是否SDTS
+    "year",             # O 年份
+    "month",            # P 月份
+    "date",             # Q 日期
+    "year_month",       # R 年月（钻取按月度过滤的关键字段）
+    "category",         # S 标题分类（钻取按客户/分类过滤的关键字段）
 ]
 
 _DATE_PAT      = re.compile(r"_(\d{8})\.",           re.IGNORECASE)

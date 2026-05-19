@@ -317,7 +317,7 @@
               <el-button size="small" link @click="drillGroupSelected = null">收起</el-button>
             </div>
             <p class="drill-note">
-              · 原始数据暂未含客户字段，此处展示该小组的全部 {{ drillGroupIssues.length }} 条问题单
+              · 「{{ currentDrillRow.battlefield }} × {{ drillGroupSelected }}」 共 {{ drillGroupIssues.length }} 条
             </p>
             <el-table v-if="drillGroupIssues.length" :data="drillGroupIssues" border stripe size="small" max-height="440">
               <el-table-column prop="issue_id" label="编号" width="170" show-overflow-tooltip />
@@ -717,8 +717,11 @@ function openIssueDrill(row) {
 const drillGroupSelected = ref(null)
 
 const drillGroupIssues = computed(() => {
-  if (!drillGroupSelected.value || !issueDataCache.value?.raw) return []
-  return issueDataCache.value.raw.filter(r => r.group === drillGroupSelected.value)
+  if (!drillGroupSelected.value || !issueDataCache.value?.raw || !currentDrillRow.value) return []
+  const bf = currentDrillRow.value.battlefield
+  return issueDataCache.value.raw.filter(r =>
+    r.group === drillGroupSelected.value && r.category === bf
+  )
 })
 
 function onDrillGroupClick(row) {
