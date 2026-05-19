@@ -2,7 +2,11 @@
   <router-view v-if="route.meta.layout === 'blank'" />
 
   <el-container v-else class="app-root">
-    <el-aside :width="sidebarCollapsed ? '64px' : '220px'" class="app-aside">
+    <el-aside
+      class="app-aside"
+      :class="{ 'is-collapsed': sidebarCollapsed }"
+      :style="{ '--el-aside-width': sidebarCollapsed ? '64px' : '220px' }"
+    >
       <div class="app-logo" :class="{ collapsed: sidebarCollapsed }">
         {{ sidebarCollapsed ? '岳' : '岳麓山管理系统' }}
       </div>
@@ -24,9 +28,17 @@
     <el-container>
       <el-header class="app-header">
         <div class="header-left">
-          <el-button text class="collapse-btn" :title="sidebarCollapsed ? '展开侧栏' : '收起侧栏'" @click="toggleSidebar">
-            <el-icon><component :is="sidebarCollapsed ? Expand : Fold" /></el-icon>
-          </el-button>
+          <button
+            type="button"
+            class="collapse-btn"
+            :title="sidebarCollapsed ? '展开侧栏' : '收起侧栏'"
+            @click="toggleSidebar"
+          >
+            <el-icon :size="22">
+              <Fold v-if="!sidebarCollapsed" />
+              <Expand v-else />
+            </el-icon>
+          </button>
           <span class="page-title">{{ currentTitle }}</span>
         </div>
         <div class="header-right">
@@ -165,7 +177,7 @@ html, body, #app {
 }
 .app-aside {
   background-color: #1f2d3d;
-  transition: width 0.2s ease;
+  transition: width 0.25s ease, --el-aside-width 0.25s ease;
   overflow: hidden;
 }
 .app-logo {
@@ -183,18 +195,39 @@ html, body, #app {
 .header-left {
   display: flex;
   align-items: center;
-  gap: 12px;
+  gap: 8px;
 }
 .collapse-btn {
-  padding: 6px 8px;
-  font-size: 18px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 36px;
+  height: 36px;
+  border: none;
+  background: transparent;
   color: #606266;
+  border-radius: 4px;
+  cursor: pointer;
+  padding: 0;
+  transition: all 0.15s;
 }
-.collapse-btn:hover { color: #409EFF; background: #ecf5ff; }
-/* 折叠态下确保 menu-item 居中 */
+.collapse-btn:hover {
+  background: #ecf5ff;
+  color: #409EFF;
+}
+.collapse-btn:active {
+  background: #d9ecff;
+}
+/* 折叠态下 menu-item 居中显示图标 */
+.app-aside .el-menu--collapse {
+  width: 64px;
+}
 .app-aside .el-menu--collapse .el-menu-item {
   padding: 0 !important;
   text-align: center;
+}
+.app-aside .el-menu--collapse .el-menu-item .el-icon {
+  margin-right: 0;
 }
 .app-aside .el-menu {
   border-right: none;
