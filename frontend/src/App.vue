@@ -2,10 +2,14 @@
   <router-view v-if="route.meta.layout === 'blank'" />
 
   <el-container v-else class="app-root">
-    <el-aside width="220px" class="app-aside">
-      <div class="app-logo">岳麓山管理系统</div>
+    <el-aside :width="sidebarCollapsed ? '64px' : '220px'" class="app-aside">
+      <div class="app-logo" :class="{ collapsed: sidebarCollapsed }">
+        {{ sidebarCollapsed ? '岳' : '岳麓山管理系统' }}
+      </div>
       <el-menu
         :default-active="route.path"
+        :collapse="sidebarCollapsed"
+        :collapse-transition="false"
         router
         background-color="#1f2d3d"
         text-color="#bfcbd9"
@@ -13,13 +17,18 @@
       >
         <el-menu-item v-for="r in menuRoutes" :key="r.path" :index="r.path">
           <el-icon><component :is="r.meta.icon" /></el-icon>
-          <span>{{ r.meta.title }}</span>
+          <template #title>{{ r.meta.title }}</template>
         </el-menu-item>
       </el-menu>
     </el-aside>
     <el-container>
       <el-header class="app-header">
-        <span class="page-title">{{ currentTitle }}</span>
+        <div class="header-left">
+          <el-button text class="collapse-btn" :title="sidebarCollapsed ? '展开侧栏' : '收起侧栏'" @click="toggleSidebar">
+            <el-icon><component :is="sidebarCollapsed ? Expand : Fold" /></el-icon>
+          </el-button>
+          <span class="page-title">{{ currentTitle }}</span>
+        </div>
         <div class="header-right">
           <el-dropdown @command="onCommand">
             <span class="user-trigger">
@@ -70,8 +79,15 @@
 import { computed, reactive, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
+import { Expand, Fold } from '@element-plus/icons-vue'
 import { authApi } from './api'
 import { auth } from './store/auth'
+
+const sidebarCollapsed = ref(localStorage.getItem('sidebarCollapsed') === '1')
+function toggleSidebar() {
+  sidebarCollapsed.value = !sidebarCollapsed.value
+  localStorage.setItem('sidebarCollapsed', sidebarCollapsed.value ? '1' : '0')
+}
 
 const route = useRoute()
 const router = useRouter()
@@ -149,6 +165,8 @@ html, body, #app {
 }
 .app-aside {
   background-color: #1f2d3d;
+  transition: width 0.2s ease;
+  overflow: hidden;
 }
 .app-logo {
   color: #fff;
@@ -158,6 +176,25 @@ html, body, #app {
   font-size: 18px;
   font-weight: 600;
   border-bottom: 1px solid #2d3e53;
+  white-space: nowrap;
+  overflow: hidden;
+}
+.app-logo.collapsed { font-size: 22px; letter-spacing: 0; }
+.header-left {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+.collapse-btn {
+  padding: 6px 8px;
+  font-size: 18px;
+  color: #606266;
+}
+.collapse-btn:hover { color: #409EFF; background: #ecf5ff; }
+/* 折叠态下确保 menu-item 居中 */
+.app-aside .el-menu--collapse .el-menu-item {
+  padding: 0 !important;
+  text-align: center;
 }
 .app-aside .el-menu {
   border-right: none;
