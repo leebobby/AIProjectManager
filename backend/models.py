@@ -82,6 +82,7 @@ class IterationRequirement(Base):
     req_url = Column(String(512), default="", comment="需求超链接")
     title = Column(String(256), default="", comment="需求标题")
     owner = Column(String(64), default="", comment="交付责任人")
+    owner_group = Column(String(64), default="", comment="PL组")
     priority = Column(String(16), default="P2", comment="优先级 P0/P1/P2/P3")
     planned_version = Column(String(64), default="", comment="计划交付版本")
 

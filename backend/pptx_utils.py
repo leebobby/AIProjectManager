@@ -282,13 +282,13 @@ def build_iteration_pptx(iteration, requirements: Iterable) -> io.BytesIO:
     """
     # leaf 列
     leaf_headers = [
-        "序号", "需求编号", "需求标题", "责任人", "优先级", "计划版本",
+        "序号", "需求编号", "需求标题", "责任人", "PL组", "优先级", "计划版本",
         "需求串讲", "反串讲", "STC设计", "编码", "BBIT", "转测澄清",
         "备注",
     ]
-    # 父表头：6 个进展列归到「交付进展跟踪」组
-    parent_headers: List[Optional[tuple]] = [None] * 6 + [("progress", "交付进展跟踪")] * 6 + [None]
-    col_widths = [0.45, 1.0, 2.2, 0.8, 0.6, 0.95, 0.85, 0.85, 0.85, 0.85, 0.85, 0.85, 1.5]
+    # 父表头：6 个基础前缀（含 PL组） + 6 个进展列归到「交付进展跟踪」组 + 备注
+    parent_headers: List[Optional[tuple]] = [None] * 7 + [("progress", "交付进展跟踪")] * 6 + [None]
+    col_widths = [0.45, 1.0, 2.0, 0.75, 0.7, 0.55, 0.85, 0.82, 0.82, 0.82, 0.82, 0.82, 0.82, 1.4]
 
     data: List[List[str]] = []
     for r in requirements:
@@ -297,6 +297,7 @@ def build_iteration_pptx(iteration, requirements: Iterable) -> io.BytesIO:
             r.req_no or "",
             r.title or "",
             r.owner or "",
+            getattr(r, "owner_group", "") or "",
             r.priority or "",
             r.planned_version or "",
             r.progress_walkthrough or "",

@@ -71,6 +71,22 @@
             </div>
           </template>
         </el-table-column>
+        <el-table-column label="PL组" width="120">
+          <template #default="{ row }">
+            <el-input
+              v-if="isEditing(row, 'owner_group')"
+              v-model="row.owner_group"
+              size="small"
+              autofocus
+              @blur="commit(row, 'owner_group')"
+              @keyup.enter="commit(row, 'owner_group')"
+              @keyup.esc="cancel(row, 'owner_group')"
+            />
+            <div v-else class="editable-cell" @dblclick="startEdit(row, 'owner_group')">
+              {{ row.owner_group || '—' }}
+            </div>
+          </template>
+        </el-table-column>
         <el-table-column label="优先级" width="100" align="center">
           <template #default="{ row }">
             <el-select
@@ -184,6 +200,9 @@
         <el-form-item label="责任人">
           <el-input v-model="form.owner" />
         </el-form-item>
+        <el-form-item label="PL组">
+          <el-input v-model="form.owner_group" />
+        </el-form-item>
         <el-form-item label="优先级">
           <el-select v-model="form.priority" style="width: 100%">
             <el-option v-for="p in PRIORITIES" :key="p" :label="p" :value="p" />
@@ -233,7 +252,7 @@
     <el-dialog v-model="importVisible" title="批量导入需求" width="520px">
       <p class="import-tip">
         1. 先下载模板，按格式填写需求清单；<br />
-        2. 表头列名请勿改动；进展列填写「未开始/进行中/已完成/已延期/不涉及」；<br />
+        2. 表头列名请勿改动；进展列填写「未开始/进行中/已完成/已延期/已变更/不涉及」；<br />
         3. 上传 .xlsx 文件，系统将批量创建到当前迭代下。
       </p>
       <el-button :icon="Download" link type="primary" @click="onDownloadTemplate">
@@ -296,7 +315,7 @@ const PROGRESS_COLS = [
   { field: 'progress_bbit', label: 'BBIT' },
   { field: 'progress_clarify', label: '转测澄清' },
 ]
-const PROGRESS_STATUSES = ['未开始', '进行中', '已完成', '已延期', '不涉及']
+const PROGRESS_STATUSES = ['未开始', '进行中', '已完成', '已延期', '已变更', '不涉及']
 const PRIORITIES = ['P0', 'P1', 'P2', 'P3']
 
 const iterationId = Number(route.params.id)
@@ -322,6 +341,7 @@ function defaultForm() {
     req_url: '',
     title: '',
     owner: '',
+    owner_group: '',
     priority: 'P2',
     planned_version: '',
     progress_walkthrough: '未开始',

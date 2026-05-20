@@ -26,6 +26,7 @@ _IMPORT_COLUMNS = [
     ("需求超链接", "req_url", False),
     ("需求标题", "title", True),
     ("责任人", "owner", False),
+    ("PL组", "owner_group", False),
     ("优先级", "priority", False),
     ("计划交付版本", "planned_version", False),
     ("需求串讲", "progress_walkthrough", False),
@@ -37,7 +38,7 @@ _IMPORT_COLUMNS = [
     ("备注", "remark", False),
 ]
 
-_PROGRESS_VALID = {"未开始", "进行中", "已完成", "已延期", "不涉及"}
+_PROGRESS_VALID = {"未开始", "进行中", "已完成", "已延期", "已变更", "不涉及"}
 _PRIORITY_VALID = {"P0", "P1", "P2", "P3"}
 
 
@@ -165,15 +166,15 @@ def download_import_template():
     # 示例行
     example = [
         1, "REQ-2026-001", "https://example.com/req/2026-001", "示例需求标题",
-        "张三", "P1", "v0.6.0",
+        "张三", "AFK", "P1", "v0.6.0",
         "已完成", "已完成", "进行中", "进行中", "未开始", "未开始",
         "需求范围已变更，原范围……",
     ]
     for j, v in enumerate(example, start=1):
         ws.cell(row=2, column=j, value=v).alignment = Alignment(wrap_text=True, vertical="top")
 
-    # 列宽
-    widths = [6, 16, 26, 32, 10, 8, 14, 10, 10, 10, 10, 10, 12, 30]
+    # 列宽（与 _IMPORT_COLUMNS 一一对应）
+    widths = [6, 16, 26, 32, 10, 10, 8, 14, 10, 10, 10, 10, 10, 12, 30]
     for i, w in enumerate(widths[: len(headers)], start=1):
         ws.column_dimensions[get_column_letter(i)].width = w
     ws.row_dimensions[1].height = 28
@@ -181,7 +182,7 @@ def download_import_template():
     # 提示行（合并单元格）
     tip_row = ws.max_row + 2
     ws.cell(row=tip_row, column=1, value=(
-        "提示：进展列填写「未开始/进行中/已完成/已延期/不涉及」之一；优先级填 P0/P1/P2/P3；"
+        "提示：进展列填写「未开始/进行中/已完成/已延期/已变更/不涉及」之一；优先级填 P0/P1/P2/P3；"
         "序号留空将自动按现有最大序号顺序累加；删除示例行后再导入。"
     )).font = Font(italic=True, color="909399")
     ws.merge_cells(start_row=tip_row, start_column=1, end_row=tip_row, end_column=len(headers))

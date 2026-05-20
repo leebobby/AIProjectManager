@@ -66,6 +66,9 @@ _ADDITIONS = [
     ("specials", "email_subject_tpl", "VARCHAR(256) NOT NULL DEFAULT ''"),
     ("special_tasks", "status", "VARCHAR(16) NOT NULL DEFAULT 'open'"),
     ("special_contents", "extra_grids_json", "TEXT NOT NULL DEFAULT '[]'"),
+
+    # v0.15: 迭代需求增加责任人所属小组
+    ("iteration_requirements", "owner_group", "VARCHAR(64) NOT NULL DEFAULT ''"),
 ]
 
 

@@ -137,6 +137,7 @@ class IterationRequirementBase(BaseModel):
     req_url: Optional[str] = ""
     title: Optional[str] = ""
     owner: Optional[str] = ""
+    owner_group: Optional[str] = ""
     priority: Optional[str] = "P2"
     planned_version: Optional[str] = ""
     progress_walkthrough: Optional[str] = "未开始"
@@ -159,6 +160,7 @@ class IterationRequirementUpdate(BaseModel):
     req_url: Optional[str] = None
     title: Optional[str] = None
     owner: Optional[str] = None
+    owner_group: Optional[str] = None
     priority: Optional[str] = None
     planned_version: Optional[str] = None
     progress_walkthrough: Optional[str] = None
