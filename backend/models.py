@@ -241,6 +241,33 @@ class StakeholderBattlefield(Base):
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
 
 
+class ProjectFormationImage(Base):
+    """项目阵型图：全局单张图片/SVG，存 id=1 这一行。"""
+    __tablename__ = "project_formation_image"
+
+    id = Column(Integer, primary_key=True, index=True)
+    image_path = Column(String(512), default="", comment="服务器相对路径")
+    image_name = Column(String(256), default="", comment="原文件名")
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+
+class ProjectFormationMember(Base):
+    """项目阵型 人员名单：投入人员 + 挂靠情况。"""
+    __tablename__ = "project_formation_members"
+
+    id = Column(Integer, primary_key=True, index=True)
+    sort_order = Column(Integer, default=0)
+    name = Column(String(64), nullable=False, comment="姓名")
+    emp_no = Column(String(64), default="", comment="工号")
+    pl_group = Column(String(64), default="", comment="PL组")
+    role = Column(String(64), default="", comment="角色 / 岗位")
+    special_attach = Column(String(128), default="", comment="挂靠专项 / 攻关")
+    allocation = Column(String(32), default="", comment="投入比例 (如 0.5 / 30% / 全职)")
+    remark = Column(Text, default="", comment="备注")
+    created_at = Column(DateTime, default=datetime.utcnow)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+
 class User(Base):
     __tablename__ = "users"
 

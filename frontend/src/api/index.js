@@ -47,6 +47,32 @@ export const systemApi = {
   storage: () => http.get('/system/storage'),
 }
 
+export const formationApi = {
+  imageInfo: () => http.get('/project-formation/image-info'),
+  uploadImage: (file) => {
+    const fd = new FormData()
+    fd.append('file', file)
+    return http.post('/project-formation/image', fd, {
+      headers: { 'Content-Type': 'multipart/form-data' },
+    })
+  },
+  // 真正图片 blob 通过 http.get('/project-formation/image', {responseType:'blob'}) 自取
+  listMembers: () => http.get('/project-formation/members'),
+  createMember: (data) => http.post('/project-formation/members', data),
+  updateMember: (id, data) => http.put(`/project-formation/members/${id}`, data),
+  removeMember: (id) => http.delete(`/project-formation/members/${id}`),
+  importTemplate: () => http.get('/project-formation/import-template.xlsx', { responseType: 'blob' }),
+  importMembers: (file, replace = false) => {
+    const fd = new FormData()
+    fd.append('file', file)
+    return http.post('/project-formation/import', fd, {
+      params: { replace },
+      headers: { 'Content-Type': 'multipart/form-data' },
+    })
+  },
+  exportXlsx: () => http.get('/project-formation/export.xlsx', { responseType: 'blob' }),
+}
+
 export const handbookApi = {
   listCategories: () => http.get('/handbook/categories'),
   createCategory: (data) => http.post('/handbook/categories', data),

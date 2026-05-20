@@ -80,6 +80,159 @@
       </div>
     </el-card>
 
+    <!-- 项目阵型 -->
+    <el-card shadow="never" class="section-card">
+      <template #header>
+        <div class="card-header">
+          <span class="card-title">
+            <el-icon><DataAnalysis /></el-icon> 项目阵型
+          </span>
+        </div>
+      </template>
+
+      <el-tabs v-model="formationTab" class="formation-tabs">
+        <!-- Tab 1: 阵型图 -->
+        <el-tab-pane label="阵型图" name="image">
+          <div class="formation-image-wrap">
+            <div class="formation-image-toolbar">
+              <el-upload
+                v-if="isAdmin"
+                :auto-upload="false"
+                :on-change="onUploadFormationImage"
+                :show-file-list="false"
+                accept="image/*,.svg"
+              >
+                <el-button size="small">{{ formationImage.image_name ? '替换图片' : '上传阵型图' }}</el-button>
+              </el-upload>
+              <span v-if="formationImage.image_name" class="img-name">当前：{{ formationImage.image_name }}</span>
+            </div>
+            <div class="formation-image-body">
+              <img v-if="formationImageSrc" :src="formationImageSrc" alt="项目阵型图" class="formation-img" />
+              <div v-else class="formation-image-empty">尚未上传阵型图</div>
+            </div>
+          </div>
+        </el-tab-pane>
+
+        <!-- Tab 2: 人员名单 -->
+        <el-tab-pane :label="`人员名单 (${members.length})`" name="members">
+          <div class="member-toolbar">
+            <el-input
+              v-model="memberKeyword"
+              placeholder="搜索 姓名/工号/PL组/角色/挂靠专项"
+              clearable
+              style="width: 280px"
+            />
+            <div class="spacer" />
+            <el-button :icon="Download" @click="onDownloadTemplate">下载模板</el-button>
+            <el-button v-if="isAdmin" :icon="Upload" @click="importDialogVisible = true">导入</el-button>
+            <el-button :icon="Download" @click="onExportXlsx">导出</el-button>
+            <el-button v-if="isAdmin" type="primary" :icon="Plus" @click="openMemberDialog()">新增</el-button>
+          </div>
+
+          <el-table :data="filteredMembers" v-loading="memberLoading" border stripe style="width: 100%" size="small">
+            <el-table-column type="index" label="#" width="50" align="center" />
+            <el-table-column prop="name" label="姓名" width="100" />
+            <el-table-column prop="emp_no" label="工号" width="100" />
+            <el-table-column prop="pl_group" label="PL组" width="100" />
+            <el-table-column prop="role" label="角色" width="100" />
+            <el-table-column prop="special_attach" label="挂靠专项" min-width="160" />
+            <el-table-column prop="allocation" label="投入比例" width="100" />
+            <el-table-column prop="remark" label="备注" min-width="180" show-overflow-tooltip />
+            <el-table-column v-if="isAdmin" label="操作" width="160" fixed="right">
+              <template #default="{ row }">
+                <el-button size="small" @click="openMemberDialog(row)">编辑</el-button>
+                <el-popconfirm title="确认删除该成员？" @confirm="onDeleteMember(row.id)">
+                  <template #reference>
+                    <el-button size="small" type="danger">删除</el-button>
+                  </template>
+                </el-popconfirm>
+              </template>
+            </el-table-column>
+          </el-table>
+
+          <div v-if="!memberLoading && members.length === 0" class="empty-hint">
+            暂无人员{{ isAdmin ? '，点击「新增」添加或「导入」批量上传 Excel' : '' }}
+          </div>
+        </el-tab-pane>
+      </el-tabs>
+    </el-card>
+
+    <!-- 项目阵型成员 Dialog -->
+    <el-dialog
+      v-model="memberDialogVisible"
+      :title="memberForm.id ? '编辑成员' : '新增成员'"
+      width="520px"
+      @close="resetMemberForm"
+    >
+      <el-form :model="memberForm" label-width="90px">
+        <el-form-item label="姓名" required>
+          <el-input v-model="memberForm.name" />
+        </el-form-item>
+        <el-form-item label="工号">
+          <el-input v-model="memberForm.emp_no" />
+        </el-form-item>
+        <el-form-item label="PL组">
+          <el-input v-model="memberForm.pl_group" />
+        </el-form-item>
+        <el-form-item label="角色">
+          <el-input v-model="memberForm.role" placeholder="如 开发 / 测试 / 产品" />
+        </el-form-item>
+        <el-form-item label="挂靠专项">
+          <el-input v-model="memberForm.special_attach" placeholder="可填多个，逗号分隔" />
+        </el-form-item>
+        <el-form-item label="投入比例">
+          <el-input v-model="memberForm.allocation" placeholder="0.5 / 30% / 全职" />
+        </el-form-item>
+        <el-form-item label="备注">
+          <el-input v-model="memberForm.remark" type="textarea" :rows="2" />
+        </el-form-item>
+      </el-form>
+      <template #footer>
+        <el-button @click="memberDialogVisible = false">取消</el-button>
+        <el-button type="primary" :loading="memberSaving" @click="saveMember">保存</el-button>
+      </template>
+    </el-dialog>
+
+    <!-- 批量导入 Dialog -->
+    <el-dialog v-model="importDialogVisible" title="批量导入人员" width="500px">
+      <p class="import-tip">
+        1. 先下载模板，按格式填写人员清单；<br />
+        2. 表头列名请勿改动；姓名必填，其它字段可留空；<br />
+        3. 上传 .xlsx 文件批量入库。
+      </p>
+      <el-button :icon="Download" link type="primary" @click="onDownloadTemplate">下载导入模板</el-button>
+      <el-divider />
+      <el-checkbox v-model="importReplace">导入前先清空现有名单（覆盖模式）</el-checkbox>
+      <el-upload
+        ref="memberUploadRef"
+        :auto-upload="false"
+        :limit="1"
+        :on-exceed="onMemberExceed"
+        :on-change="onMemberFileChange"
+        :show-file-list="true"
+        accept=".xlsx"
+        drag
+        style="margin-top: 12px"
+      >
+        <el-icon class="el-icon--upload"><UploadFilled /></el-icon>
+        <div class="el-upload__text">拖拽 .xlsx 文件到此，或<em>点击选择</em></div>
+      </el-upload>
+      <div v-if="importResult" class="import-result">
+        <div v-if="importResult.cleared">已清空旧数据 {{ importResult.cleared }} 条。</div>
+        <div>成功导入 <b>{{ importResult.created }}</b> 条。</div>
+        <div v-if="importResult.errors?.length" class="errors">
+          错误 {{ importResult.errors.length }} 条：
+          <ul>
+            <li v-for="(e, i) in importResult.errors" :key="i">{{ e }}</li>
+          </ul>
+        </div>
+      </div>
+      <template #footer>
+        <el-button @click="importDialogVisible = false">关闭</el-button>
+        <el-button type="primary" :loading="importing" :disabled="!importFile" @click="onSubmitImport">开始导入</el-button>
+      </template>
+    </el-dialog>
+
     <!-- 项目组联系人 Dialog -->
     <el-dialog
       v-model="projectDialogVisible"
@@ -147,11 +300,12 @@
 </template>
 
 <script setup>
-import { onMounted, reactive, ref } from 'vue'
+import { computed, onMounted, reactive, ref } from 'vue'
 import { ElMessage } from 'element-plus'
-import { Delete, Edit as EditIcon, Grid, Plus, UserFilled } from '@element-plus/icons-vue'
+import { DataAnalysis, Delete, Download, Edit as EditIcon, Grid, Plus, Upload, UploadFilled, UserFilled } from '@element-plus/icons-vue'
 import { auth } from '../store/auth'
-import { stakeholderApi } from '../api'
+import http, { downloadBlob, formationApi, stakeholderApi } from '../api'
+import { checkStorageOrWarn } from '../store/storage'
 
 const isAdmin = auth.isAdmin
 
@@ -292,9 +446,200 @@ async function deleteBattlefield(id) {
   }
 }
 
+// ── 项目阵型 ──────────────────────────────────────────────
+const formationTab = ref('image')
+
+// 阵型图
+const formationImage = ref({ image_path: '', image_name: '', updated_at: null })
+const formationImageSrc = ref('')
+
+async function loadFormationImageInfo() {
+  try {
+    const { data } = await formationApi.imageInfo()
+    formationImage.value = data
+    if (data.image_path) await loadFormationImageBlob()
+    else {
+      if (formationImageSrc.value) URL.revokeObjectURL(formationImageSrc.value)
+      formationImageSrc.value = ''
+    }
+  } catch { /* 静默 */ }
+}
+
+async function loadFormationImageBlob() {
+  try {
+    const resp = await http.get('/project-formation/image', { responseType: 'blob' })
+    if (formationImageSrc.value) URL.revokeObjectURL(formationImageSrc.value)
+    formationImageSrc.value = URL.createObjectURL(resp.data)
+  } catch {
+    formationImageSrc.value = ''
+  }
+}
+
+async function onUploadFormationImage(uploadFile) {
+  const file = uploadFile?.raw || uploadFile
+  const ct = (file?.type || '').toLowerCase()
+  const okType =
+    ct.startsWith('image/') ||
+    ct === 'image/svg+xml' ||
+    (file?.name || '').toLowerCase().endsWith('.svg')
+  if (!file || !okType) {
+    ElMessage.warning('仅支持图片或 SVG 文件')
+    return
+  }
+  await checkStorageOrWarn()
+  try {
+    const { data } = await formationApi.uploadImage(file)
+    formationImage.value = data
+    await loadFormationImageBlob()
+    ElMessage.success('阵型图已更新')
+  } catch (e) {
+    ElMessage.error(e.response?.data?.detail || '上传失败')
+  }
+}
+
+// 人员名单
+const members = ref([])
+const memberLoading = ref(false)
+const memberKeyword = ref('')
+const memberDialogVisible = ref(false)
+const memberSaving = ref(false)
+const memberForm = reactive({
+  id: null, name: '', emp_no: '', pl_group: '', role: '',
+  special_attach: '', allocation: '', remark: '',
+})
+
+const filteredMembers = computed(() => {
+  if (!memberKeyword.value.trim()) return members.value
+  const k = memberKeyword.value.trim().toLowerCase()
+  return members.value.filter(m =>
+    (m.name || '').toLowerCase().includes(k) ||
+    (m.emp_no || '').toLowerCase().includes(k) ||
+    (m.pl_group || '').toLowerCase().includes(k) ||
+    (m.role || '').toLowerCase().includes(k) ||
+    (m.special_attach || '').toLowerCase().includes(k)
+  )
+})
+
+async function loadMembers() {
+  memberLoading.value = true
+  try {
+    const { data } = await formationApi.listMembers()
+    members.value = data
+  } catch {
+    ElMessage.error('加载人员名单失败')
+  } finally {
+    memberLoading.value = false
+  }
+}
+
+function openMemberDialog(row = null) {
+  if (row) {
+    Object.assign(memberForm, {
+      id: row.id, name: row.name, emp_no: row.emp_no, pl_group: row.pl_group,
+      role: row.role, special_attach: row.special_attach,
+      allocation: row.allocation, remark: row.remark,
+    })
+  }
+  memberDialogVisible.value = true
+}
+
+function resetMemberForm() {
+  Object.assign(memberForm, {
+    id: null, name: '', emp_no: '', pl_group: '', role: '',
+    special_attach: '', allocation: '', remark: '',
+  })
+}
+
+async function saveMember() {
+  if (!memberForm.name.trim()) {
+    ElMessage.warning('请输入姓名')
+    return
+  }
+  memberSaving.value = true
+  try {
+    const payload = { ...memberForm }
+    delete payload.id
+    if (memberForm.id) {
+      await formationApi.updateMember(memberForm.id, payload)
+    } else {
+      await formationApi.createMember(payload)
+    }
+    ElMessage.success('已保存')
+    memberDialogVisible.value = false
+    await loadMembers()
+  } catch (e) {
+    ElMessage.error(e.response?.data?.detail || '保存失败')
+  } finally {
+    memberSaving.value = false
+  }
+}
+
+async function onDeleteMember(id) {
+  try {
+    await formationApi.removeMember(id)
+    ElMessage.success('已删除')
+    await loadMembers()
+  } catch (e) {
+    ElMessage.error(e.response?.data?.detail || '删除失败')
+  }
+}
+
+// 导入 / 导出
+const importDialogVisible = ref(false)
+const importReplace = ref(false)
+const importFile = ref(null)
+const importing = ref(false)
+const importResult = ref(null)
+const memberUploadRef = ref(null)
+
+async function onDownloadTemplate() {
+  try {
+    const { data } = await formationApi.importTemplate()
+    downloadBlob(data, 'project-formation-template.xlsx')
+  } catch (e) {
+    ElMessage.error(e.response?.data?.detail || '模板下载失败')
+  }
+}
+
+async function onExportXlsx() {
+  try {
+    const { data } = await formationApi.exportXlsx()
+    const ts = new Date().toISOString().slice(0, 10).replace(/-/g, '')
+    downloadBlob(data, `项目阵型人员_${ts}.xlsx`)
+  } catch (e) {
+    ElMessage.error(e.response?.data?.detail || '导出失败')
+  }
+}
+
+function onMemberFileChange(uploadFile) {
+  importFile.value = uploadFile?.raw || uploadFile
+}
+
+function onMemberExceed() {
+  ElMessage.warning('一次只能选一个文件，请先移除再选择')
+}
+
+async function onSubmitImport() {
+  if (!importFile.value) return
+  importing.value = true
+  importResult.value = null
+  try {
+    const { data } = await formationApi.importMembers(importFile.value, importReplace.value)
+    importResult.value = data
+    ElMessage.success(`导入完成：成功 ${data.created} 条，错误 ${data.errors?.length || 0} 条`)
+    await loadMembers()
+  } catch (e) {
+    ElMessage.error(e.response?.data?.detail || '导入失败')
+  } finally {
+    importing.value = false
+  }
+}
+
 onMounted(() => {
   loadProjectContacts()
   loadBattlefields()
+  loadFormationImageInfo()
+  loadMembers()
 })
 </script>
 
@@ -343,5 +688,67 @@ onMounted(() => {
 .battlefield-table :deep(.el-table__cell) {
   vertical-align: top;
   padding: 10px 12px;
+}
+
+/* ── 项目阵型 ── */
+.formation-tabs :deep(.el-tabs__nav) {
+  font-weight: 500;
+}
+.formation-image-wrap {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+.formation-image-toolbar {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+.formation-image-toolbar .img-name {
+  color: #909399;
+  font-size: 13px;
+}
+.formation-image-body {
+  background: #fafafa;
+  border: 1px solid #ebeef5;
+  min-height: 220px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 16px;
+}
+.formation-img {
+  max-width: 100%;
+  max-height: 720px;
+}
+.formation-image-empty {
+  color: #c0c4cc;
+  padding: 60px 0;
+}
+.member-toolbar {
+  display: flex;
+  gap: 8px;
+  margin-bottom: 12px;
+  align-items: center;
+}
+.member-toolbar .spacer { flex: 1; }
+.import-tip {
+  margin: 0;
+  line-height: 1.8;
+  color: #606266;
+  font-size: 13px;
+}
+.import-result {
+  margin-top: 12px;
+  background: #f0f9ff;
+  border-left: 3px solid #409EFF;
+  padding: 8px 12px;
+  font-size: 13px;
+  line-height: 1.6;
+}
+.import-result .errors ul {
+  margin: 4px 0 0 16px;
+  padding: 0;
+  color: #f56c6c;
 }
 </style>

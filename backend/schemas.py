@@ -605,6 +605,46 @@ class SpecialDetailOut(SpecialOut):
     risks: List[SpecialItemOut] = []
 
 
+class FormationMemberBase(BaseModel):
+    name: str
+    emp_no: Optional[str] = ""
+    pl_group: Optional[str] = ""
+    role: Optional[str] = ""
+    special_attach: Optional[str] = ""
+    allocation: Optional[str] = ""
+    remark: Optional[str] = ""
+    sort_order: Optional[int] = 0
+
+
+class FormationMemberCreate(FormationMemberBase):
+    pass
+
+
+class FormationMemberUpdate(BaseModel):
+    name: Optional[str] = None
+    emp_no: Optional[str] = None
+    pl_group: Optional[str] = None
+    role: Optional[str] = None
+    special_attach: Optional[str] = None
+    allocation: Optional[str] = None
+    remark: Optional[str] = None
+    sort_order: Optional[int] = None
+
+
+class FormationMemberOut(FormationMemberBase):
+    id: int
+
+    model_config = ConfigDict(from_attributes=True)
+
+
+class FormationImageOut(BaseModel):
+    image_path: str = ""
+    image_name: str = ""
+    updated_at: Optional[datetime] = None
+
+    model_config = ConfigDict(from_attributes=True)
+
+
 class SpecialReportDraft(BaseModel):
     """周报草稿：纯文本，前端可编辑后复制/导出 mailto。"""
     subject: str
