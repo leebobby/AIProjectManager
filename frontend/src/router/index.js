@@ -58,6 +58,25 @@ const routes = [
     meta: { title: '里程碑管理', icon: 'Guide', requireAdmin: true },
   },
   {
+    path: '/handbook',
+    name: 'ProjectHandbook',
+    component: () => import('../views/ProjectHandbook.vue'),
+    meta: { title: '项目一本通', icon: 'Notebook' },
+  },
+  {
+    path: '/specials',
+    name: 'SpecialList',
+    // 路由本身不需要 requireAdmin（页面内自查），让左侧菜单的"专项管理"分组对普通用户也可见
+    component: () => import('../views/SpecialList.vue'),
+    meta: { title: '专项管理', icon: 'Briefcase', specialsParent: true },
+  },
+  {
+    path: '/specials/:slug',
+    name: 'SpecialDetail',
+    component: () => import('../views/SpecialDetail.vue'),
+    meta: { title: '专项详情', hidden: true },
+  },
+  {
     path: '/users',
     name: 'UserManagement',
     component: () => import('../views/UserManagement.vue'),

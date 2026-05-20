@@ -43,6 +43,47 @@ export const opLogApi = {
   options: () => http.get('/op-logs/options'),
 }
 
+export const handbookApi = {
+  listCategories: () => http.get('/handbook/categories'),
+  createCategory: (data) => http.post('/handbook/categories', data),
+  updateCategory: (id, data) => http.put(`/handbook/categories/${id}`, data),
+  removeCategory: (id) => http.delete(`/handbook/categories/${id}`),
+  createItem: (formData) => http.post('/handbook/items', formData, {
+    headers: { 'Content-Type': 'multipart/form-data' },
+  }),
+  updateItem: (id, formData) => http.put(`/handbook/items/${id}`, formData, {
+    headers: { 'Content-Type': 'multipart/form-data' },
+  }),
+  removeItem: (id) => http.delete(`/handbook/items/${id}`),
+  download: (id) => http.get(`/handbook/items/${id}/download`, { responseType: 'blob' }),
+}
+
+export const specialApi = {
+  list: (include_inactive = false) => http.get('/specials', { params: { include_inactive } }),
+  create: (data) => http.post('/specials', data),
+  update: (id, data) => http.put(`/specials/${id}`, data),
+  remove: (id) => http.delete(`/specials/${id}`),
+  detailBySlug: (slug) => http.get(`/specials/by-slug/${slug}`),
+  detail: (id) => http.get(`/specials/${id}`),
+  updateContent: (id, data) => http.put(`/specials/${id}/content`, data),
+  uploadPanorama: (id, file) => {
+    const fd = new FormData()
+    fd.append('file', file)
+    return http.post(`/specials/${id}/panorama`, fd, {
+      headers: { 'Content-Type': 'multipart/form-data' },
+    })
+  },
+  panoramaUrl: (id) => `/api/specials/${id}/panorama`,
+  listTasks: (id) => http.get(`/specials/${id}/tasks`),
+  createTask: (id, data) => http.post(`/specials/${id}/tasks`, data),
+  updateTask: (item_id, data) => http.put(`/specials/tasks/${item_id}`, data),
+  removeTask: (item_id) => http.delete(`/specials/tasks/${item_id}`),
+  listRisks: (id) => http.get(`/specials/${id}/risks`),
+  createRisk: (id, data) => http.post(`/specials/${id}/risks`, data),
+  updateRisk: (item_id, data) => http.put(`/specials/risks/${item_id}`, data),
+  removeRisk: (item_id) => http.delete(`/specials/risks/${item_id}`),
+}
+
 export const userApi = {
   list: () => http.get('/users'),
   create: (data) => http.post('/users', data),

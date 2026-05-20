@@ -253,6 +253,129 @@ class User(Base):
     created_at = Column(DateTime, default=datetime.utcnow)
 
 
+class HandbookCategory(Base):
+    """项目一本通：自定义分类（流程/规范/PPT模板/...）"""
+    __tablename__ = "handbook_categories"
+
+    id = Column(Integer, primary_key=True, index=True)
+    name = Column(String(64), nullable=False, comment="分类名称")
+    sort_order = Column(Integer, default=0)
+    created_at = Column(DateTime, default=datetime.utcnow)
+
+    items = relationship(
+        "HandbookItem",
+        back_populates="category",
+        cascade="all, delete-orphan",
+        order_by="HandbookItem.sort_order",
+    )
+
+
+class HandbookItem(Base):
+    __tablename__ = "handbook_items"
+
+    id = Column(Integer, primary_key=True, index=True)
+    category_id = Column(Integer, ForeignKey("handbook_categories.id", ondelete="CASCADE"),
+                         nullable=False, index=True)
+    title = Column(String(256), nullable=False, comment="标题")
+    kind = Column(String(16), default="link", comment="link / file")
+    url = Column(String(1024), default="", comment="外链 URL (kind=link)")
+    file_path = Column(String(512), default="", comment="服务器相对路径 (kind=file)")
+    file_name = Column(String(256), default="", comment="原始文件名 (kind=file)")
+    file_size = Column(Integer, default=0, comment="文件大小 字节")
+    description = Column(Text, default="")
+    owner = Column(String(64), default="")
+    sort_order = Column(Integer, default=0)
+    created_at = Column(DateTime, default=datetime.utcnow)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+    category = relationship("HandbookCategory", back_populates="items")
+
+
+class Special(Base):
+    """专项管理：每条 = 一个专项（左侧二级菜单 + 一个详情页）"""
+    __tablename__ = "specials"
+
+    id = Column(Integer, primary_key=True, index=True)
+    slug = Column(String(64), unique=True, nullable=False, index=True,
+                  comment="URL 用，英文/数字/连字符")
+    name = Column(String(128), nullable=False, comment="专项名称")
+    owner = Column(String(64), default="", comment="责任人")
+    sort_order = Column(Integer, default=0)
+    is_active = Column(Boolean, default=True)
+    created_at = Column(DateTime, default=datetime.utcnow)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+    content = relationship(
+        "SpecialContent", uselist=False, back_populates="special",
+        cascade="all, delete-orphan",
+    )
+    tasks = relationship(
+        "SpecialTask", back_populates="special",
+        cascade="all, delete-orphan", order_by="SpecialTask.sort_order",
+    )
+    risks = relationship(
+        "SpecialRisk", back_populates="special",
+        cascade="all, delete-orphan", order_by="SpecialRisk.sort_order",
+    )
+
+
+class SpecialContent(Base):
+    """单个专项的"页面富字段"，1:1 与 specials。"""
+    __tablename__ = "special_contents"
+
+    id = Column(Integer, primary_key=True, index=True)
+    special_id = Column(Integer, ForeignKey("specials.id", ondelete="CASCADE"),
+                        unique=True, nullable=False, index=True)
+    goal = Column(Text, default="", comment="专项目标")
+    progress_summary = Column(Text, default="", comment="一句话进展&求助")
+    panorama_image_path = Column(String(512), default="", comment="专项全景图：服务器相对路径")
+    panorama_image_name = Column(String(256), default="")
+    # 里程碑：[{name,date,status}]
+    milestones_json = Column(Text, default="[]")
+    # 阵型：{"headers":[...], "rows":[[cell, cell, ...], ...]}
+    formation_json = Column(Text, default='{"headers":[],"rows":[]}')
+    version = Column(Integer, nullable=False, default=0, comment="乐观锁")
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+    special = relationship("Special", back_populates="content")
+
+
+class SpecialTask(Base):
+    """专项事务表的一行。"""
+    __tablename__ = "special_tasks"
+    id = Column(Integer, primary_key=True, index=True)
+    special_id = Column(Integer, ForeignKey("specials.id", ondelete="CASCADE"),
+                        nullable=False, index=True)
+    seq = Column(Integer, default=0)
+    content = Column(Text, default="", comment="事务内容")
+    progress = Column(Text, default="", comment="当前进展")
+    owner = Column(String(64), default="", comment="责任人")
+    planned_close_date = Column(String(32), default="", comment="计划闭环时间")
+    sort_order = Column(Integer, default=0)
+    created_at = Column(DateTime, default=datetime.utcnow)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+    special = relationship("Special", back_populates="tasks")
+
+
+class SpecialRisk(Base):
+    """风险/问题表的一行（结构与事务同）。"""
+    __tablename__ = "special_risks"
+    id = Column(Integer, primary_key=True, index=True)
+    special_id = Column(Integer, ForeignKey("specials.id", ondelete="CASCADE"),
+                        nullable=False, index=True)
+    seq = Column(Integer, default=0)
+    content = Column(Text, default="", comment="问题内容")
+    progress = Column(Text, default="", comment="当前进展")
+    owner = Column(String(64), default="", comment="责任人")
+    planned_close_date = Column(String(32), default="", comment="计划闭环时间")
+    sort_order = Column(Integer, default=0)
+    created_at = Column(DateTime, default=datetime.utcnow)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+    special = relationship("Special", back_populates="risks")
+
+
 class OperationLog(Base):
     """登录与关键业务写操作日志，供管理员审计。"""
     __tablename__ = "operation_logs"

@@ -11,7 +11,7 @@
         {{ sidebarCollapsed ? '岳' : '岳麓山管理系统' }}
       </div>
       <el-menu
-        :default-active="route.path"
+        :default-active="activeMenuPath"
         :collapse="sidebarCollapsed"
         :collapse-transition="false"
         router
@@ -19,10 +19,35 @@
         text-color="#bfcbd9"
         active-text-color="#409EFF"
       >
-        <el-menu-item v-for="r in menuRoutes" :key="r.path" :index="r.path">
-          <el-icon><component :is="r.meta.icon" /></el-icon>
-          <template #title>{{ r.meta.title }}</template>
-        </el-menu-item>
+        <template v-for="r in menuRoutes" :key="r.path">
+          <!-- 专项管理：动态二级菜单 -->
+          <el-sub-menu
+            v-if="r.meta.specialsParent && (auth.isAdmin.value || specials.list.length > 0)"
+            :index="r.path"
+          >
+            <template #title>
+              <el-icon><component :is="r.meta.icon" /></el-icon>
+              <span>{{ r.meta.title }}</span>
+            </template>
+            <el-menu-item v-if="auth.isAdmin.value" :index="r.path">
+              <el-icon><Setting /></el-icon>
+              <template #title>专项配置</template>
+            </el-menu-item>
+            <el-menu-item
+              v-for="s in specials.list"
+              :key="s.id"
+              :index="'/specials/' + s.slug"
+            >
+              <el-icon><Aim /></el-icon>
+              <template #title>{{ s.name }}</template>
+            </el-menu-item>
+          </el-sub-menu>
+
+          <el-menu-item v-else-if="!r.meta.specialsParent" :index="r.path">
+            <el-icon><component :is="r.meta.icon" /></el-icon>
+            <template #title>{{ r.meta.title }}</template>
+          </el-menu-item>
+        </template>
       </el-menu>
     </el-aside>
     <el-container>
@@ -88,13 +113,14 @@
 </template>
 
 <script setup>
-import { computed, onBeforeUnmount, onMounted, reactive, ref } from 'vue'
+import { computed, onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
-import { Expand, Fold } from '@element-plus/icons-vue'
+import { Aim, Expand, Fold, Setting } from '@element-plus/icons-vue'
 import { authApi } from './api'
 import { auth, installCrossTabAuth } from './store/auth'
 import { startIdleWatcher } from './store/idleWatcher'
+import { specials, reloadSpecials, clearSpecials } from './store/specials'
 
 const sidebarCollapsed = ref(localStorage.getItem('sidebarCollapsed') === '1')
 function toggleSidebar() {
@@ -113,7 +139,21 @@ const menuRoutes = computed(() =>
     return true
   })
 )
-const currentTitle = computed(() => route.meta?.title || '')
+const currentTitle = computed(() => {
+  if (route.name === 'SpecialDetail') {
+    const s = specials.list.find(x => x.slug === route.params.slug)
+    return s ? s.name : '专项详情'
+  }
+  return route.meta?.title || ''
+})
+
+// 高亮当前菜单：详情页时高亮对应专项 submenu 项
+const activeMenuPath = computed(() => {
+  if (route.name === 'SpecialDetail') {
+    return `/specials/${route.params.slug}`
+  }
+  return route.path
+})
 
 const pwdVisible = ref(false)
 const pwdLoading = ref(false)
@@ -185,6 +225,13 @@ onMounted(() => {
       gotoLogin('idle')
     },
   })
+  if (auth.isLoggedIn.value) reloadSpecials()
+})
+
+// 登录状态变化时刷新 / 清空菜单数据
+watch(() => auth.isLoggedIn.value, (v) => {
+  if (v) reloadSpecials()
+  else clearSpecials()
 })
 
 onBeforeUnmount(() => {

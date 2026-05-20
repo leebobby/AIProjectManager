@@ -455,3 +455,140 @@ class OperationLogOut(BaseModel):
 class OperationLogPage(BaseModel):
     total: int
     items: List[OperationLogOut]
+
+
+# ===== Handbook =====
+class HandbookCategoryBase(BaseModel):
+    name: str
+    sort_order: Optional[int] = 0
+
+
+class HandbookCategoryCreate(HandbookCategoryBase):
+    pass
+
+
+class HandbookCategoryUpdate(BaseModel):
+    name: Optional[str] = None
+    sort_order: Optional[int] = None
+
+
+class HandbookItemBase(BaseModel):
+    title: str
+    kind: str = "link"   # "link" or "file"
+    url: Optional[str] = ""
+    description: Optional[str] = ""
+    owner: Optional[str] = ""
+    sort_order: Optional[int] = 0
+
+
+class HandbookItemCreate(HandbookItemBase):
+    category_id: int
+
+
+class HandbookItemUpdate(BaseModel):
+    category_id: Optional[int] = None
+    title: Optional[str] = None
+    kind: Optional[str] = None
+    url: Optional[str] = None
+    description: Optional[str] = None
+    owner: Optional[str] = None
+    sort_order: Optional[int] = None
+
+
+class HandbookItemOut(HandbookItemBase):
+    id: int
+    category_id: int
+    file_path: str = ""
+    file_name: str = ""
+    file_size: int = 0
+    created_at: datetime
+    updated_at: datetime
+
+    model_config = ConfigDict(from_attributes=True)
+
+
+class HandbookCategoryOut(HandbookCategoryBase):
+    id: int
+    items: List[HandbookItemOut] = []
+
+    model_config = ConfigDict(from_attributes=True)
+
+
+# ===== Special =====
+class SpecialBase(BaseModel):
+    slug: str
+    name: str
+    owner: Optional[str] = ""
+    sort_order: Optional[int] = 0
+    is_active: Optional[bool] = True
+
+
+class SpecialCreate(SpecialBase):
+    pass
+
+
+class SpecialUpdate(BaseModel):
+    slug: Optional[str] = None
+    name: Optional[str] = None
+    owner: Optional[str] = None
+    sort_order: Optional[int] = None
+    is_active: Optional[bool] = None
+
+
+class SpecialOut(SpecialBase):
+    id: int
+
+    model_config = ConfigDict(from_attributes=True)
+
+
+class SpecialContentUpdate(BaseModel):
+    version: int
+    goal: Optional[str] = None
+    progress_summary: Optional[str] = None
+    milestones_json: Optional[str] = None
+    formation_json: Optional[str] = None
+
+
+class SpecialContentOut(BaseModel):
+    id: int
+    special_id: int
+    goal: str = ""
+    progress_summary: str = ""
+    panorama_image_path: str = ""
+    panorama_image_name: str = ""
+    milestones_json: str = "[]"
+    formation_json: str = '{"headers":[],"rows":[]}'
+    version: int = 0
+    updated_at: Optional[datetime] = None
+
+    model_config = ConfigDict(from_attributes=True)
+
+
+class SpecialItemBase(BaseModel):
+    seq: Optional[int] = 0
+    content: Optional[str] = ""
+    progress: Optional[str] = ""
+    owner: Optional[str] = ""
+    planned_close_date: Optional[str] = ""
+    sort_order: Optional[int] = 0
+
+
+class SpecialItemCreate(SpecialItemBase):
+    special_id: int
+
+
+class SpecialItemUpdate(SpecialItemBase):
+    pass
+
+
+class SpecialItemOut(SpecialItemBase):
+    id: int
+    special_id: int
+
+    model_config = ConfigDict(from_attributes=True)
+
+
+class SpecialDetailOut(SpecialOut):
+    content: Optional[SpecialContentOut] = None
+    tasks: List[SpecialItemOut] = []
+    risks: List[SpecialItemOut] = []
