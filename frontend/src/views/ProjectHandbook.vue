@@ -135,6 +135,7 @@ import { ElMessage, ElMessageBox } from 'element-plus'
 import { Plus, Refresh } from '@element-plus/icons-vue'
 import { handbookApi, downloadBlob } from '../api'
 import { auth } from '../store/auth'
+import { checkStorageOrWarn } from '../store/storage'
 
 const categories = ref([])
 const loading = ref(false)
@@ -252,6 +253,8 @@ function openItemDialog(cat, item) {
       }
     : { ...defaultItem(), sort_order: cat.items.length }
   itemDialog.visible = true
+  // 打开时检查一次磁盘空间，低于 10GB 自动弹 warning
+  checkStorageOrWarn()
 }
 
 // el-upload 在 auto-upload=false 时通过 on-change 派发；

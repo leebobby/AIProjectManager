@@ -43,6 +43,10 @@ export const opLogApi = {
   options: () => http.get('/op-logs/options'),
 }
 
+export const systemApi = {
+  storage: () => http.get('/system/storage'),
+}
+
 export const handbookApi = {
   listCategories: () => http.get('/handbook/categories'),
   createCategory: (data) => http.post('/handbook/categories', data),

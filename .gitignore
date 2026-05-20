@@ -17,6 +17,9 @@ backend/cluster_manager.db-journal
 backend/cluster_manager.log
 backend/*.log
 
+# ── Backend - 用户上传文件 (handbook / specials 全景图) ─────
+backend/uploads/
+
 # ── Backend - PyInstaller 构建产物 ──────────────────────────
 backend/build/
 backend/dist/

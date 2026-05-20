@@ -235,6 +235,7 @@ import http, { specialApi } from '../api'
 import { auth } from '../store/auth'
 import EditableText from '../components/EditableText.vue'
 import MilestoneTimeline from '../components/MilestoneTimeline.vue'
+import { checkStorageOrWarn } from '../store/storage'
 
 const route = useRoute()
 const loading = ref(false)
@@ -387,6 +388,7 @@ async function onUploadPanorama(uploadFile) {
     ElMessage.warning('仅支持图片')
     return
   }
+  await checkStorageOrWarn()  // 上传前提示磁盘空间情况
   try {
     const { data } = await specialApi.uploadPanorama(special.value.id, file)
     content.value = data
