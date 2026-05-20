@@ -45,10 +45,10 @@
           <span>专项全景图</span>
           <el-upload
             v-if="auth.isAdmin.value"
-            :before-upload="onUploadPanorama"
+            :auto-upload="false"
+            :on-change="onUploadPanorama"
             :show-file-list="false"
             accept="image/*"
-            :auto-upload="false"
           >
             <el-button size="small">{{ content.panorama_image_name ? '替换图片' : '上传图片' }}</el-button>
           </el-upload>
@@ -379,11 +379,13 @@ async function onRemoveMilestone(idx) {
   }
 }
 
-// 全景图
-async function onUploadPanorama(file) {
-  if (!file.type.startsWith('image/')) {
+// 全景图：el-upload 在 auto-upload=false 时由 on-change 派发，
+// 真实 File 在 uploadFile.raw 上。
+async function onUploadPanorama(uploadFile) {
+  const file = uploadFile?.raw || uploadFile
+  if (!file || !file.type || !file.type.startsWith('image/')) {
     ElMessage.warning('仅支持图片')
-    return false
+    return
   }
   try {
     const { data } = await specialApi.uploadPanorama(special.value.id, file)
@@ -393,7 +395,6 @@ async function onUploadPanorama(file) {
   } catch (e) {
     ElMessage.error(e.response?.data?.detail || '上传失败')
   }
-  return false
 }
 
 // 事务 / 风险

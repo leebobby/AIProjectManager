@@ -96,7 +96,11 @@
           <el-input v-model="itemDialog.form.url" placeholder="https://..." />
         </el-form-item>
         <el-form-item v-else label="文件">
-          <el-upload :before-upload="handleSelectFile" :auto-upload="false" :show-file-list="false">
+          <el-upload
+            :auto-upload="false"
+            :on-change="handleSelectFile"
+            :show-file-list="false"
+          >
             <el-button>{{ itemDialog.form.file?.name || itemDialog.editing?.file_name || '选择文件...' }}</el-button>
             <template #tip>
               <div class="upload-tip">
@@ -250,9 +254,10 @@ function openItemDialog(cat, item) {
   itemDialog.visible = true
 }
 
-function handleSelectFile(file) {
-  itemDialog.form.file = file
-  return false  // 阻止自动上传
+// el-upload 在 auto-upload=false 时通过 on-change 派发；
+// uploadFile.raw 才是原始的 File 对象（FormData 需要这个）。
+function handleSelectFile(uploadFile) {
+  itemDialog.form.file = uploadFile?.raw || uploadFile
 }
 
 async function onSubmitItem() {
