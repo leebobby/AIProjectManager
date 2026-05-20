@@ -9,13 +9,19 @@
 ├── backend/                 FastAPI 后端
 │   ├── main.py              入口：CORS、路由挂载、全局认证、admin 初始化
 │   ├── database.py          SQLAlchemy 引擎 / Session
-│   ├── models.py            ORM 模型（含 User 表）
+│   ├── models.py            ORM 模型（含 User / OperationLog / Handbook / Special 等）
 │   ├── schemas.py           Pydantic 请求/响应模型
 │   ├── auth.py              密码哈希 + JWT + get_current_user / require_admin
+│   ├── op_log.py            操作日志写入工具（异常吞掉不影响主流程）
 │   ├── config.json          可配置项（当前阶段下拉选项等）
+│   ├── pptx_utils.py        PPT 导出工具
+│   ├── uploads/             用户上传文件（gitignore，运行时创建）
+│   │   ├── handbook/<yyyymm>/      一本通文件
+│   │   └── specials/<id>/          专项全景图
 │   ├── routers/
-│   │   ├── auth.py              /api/auth/login /register /me /change-password
+│   │   ├── auth.py              /api/auth/login /register /logout /me /change-password
 │   │   ├── users.py             /api/users  (仅 admin)
+│   │   ├── op_logs.py           /api/op-logs 操作日志查询 (仅 admin)
 │   │   ├── config.py            /api/config 读写配置
 │   │   ├── customer_status.py
 │   │   ├── versions.py          旧版版本 CRUD（兼容保留）
@@ -24,6 +30,9 @@
 │   │   ├── annual_iterations.py
 │   │   ├── iteration_requirements.py
 │   │   ├── roadmap.py
+│   │   ├── stakeholders.py      /api/stakeholders/* 干系人沟通地图 / 战场矩阵
+│   │   ├── handbook.py          /api/handbook/* 项目一本通分类 + 条目 + 文件
+│   │   ├── specials.py          /api/specials/* 专项列表 + 内容 + 事务 + 风险 + 全景图
 │   │   └── issues.py            /api/issues/* 问题单数据 / 趋势 / 脚本 / PPT
 │   └── requirements.txt
 └── frontend/                Vue 3 前端
@@ -31,10 +40,16 @@
     ├── vite.config.js       /api 反向代理到 8000
     └── src/
         ├── main.js
-        ├── App.vue          整体布局（侧边导航 + 顶部用户条）
+        ├── App.vue          整体布局（可折叠侧栏 + 动态二级菜单 + 顶部用户条）
         ├── router/          路由 + 登录守卫
-        ├── store/auth.js    简易全局 auth 状态
-        ├── api/index.js     axios 封装（自动带 token + 401/409 拦截）
+        ├── store/
+        │   ├── auth.js          全局 auth 状态 + 跨 tab 退出广播
+        │   ├── idleWatcher.js   15 分钟闲置自动登出（多 tab 共享活动时间）
+        │   └── specials.js      启用中的专项列表（供侧栏二级菜单）
+        ├── components/
+        │   ├── EditableText.vue       点击进入编辑的多行文本块
+        │   └── MilestoneTimeline.vue  水平里程碑时间线
+        ├── api/index.js     axios 封装（自动带 token + 401/409 拦截 + 跨 tab 同步登出）
         └── views/
             ├── Login.vue                    登录 / 注册
             ├── ProjectIntro.vue             项目简介
@@ -43,7 +58,12 @@
             ├── IterationManagement.vue      迭代管理
             ├── IterationDetail.vue          迭代详情（需求清单）
             ├── IssueManagement.vue          问题单管理
+            ├── StakeholderManagement.vue    干系人管理
+            ├── ProjectHandbook.vue          项目一本通（流程/规范/PPT模板等）
+            ├── SpecialList.vue              专项配置（仅 admin）
+            ├── SpecialDetail.vue            专项详情页（一专项一页面）
             ├── RoadmapManage.vue            里程碑管理（仅 admin）
+            ├── OperationLogs.vue            操作日志查询（仅 admin）
             └── UserManagement.vue           用户管理（仅 admin）
 ```
 
@@ -86,13 +106,18 @@ npm run dev
 
 | 页面 | 路径 | 权限 | 说明 |
 | --- | --- | --- | --- |
-| 登录 | `/login` | 公开 | 支持登录与自助注册（注册默认 normal 角色） |
+| 登录 | `/login` | 公开 | 支持登录与自助注册（注册默认 normal 角色）；标题取自 `config.about_content` 首行 |
 | 项目简介 | `/intro` | 登录用户 | 品牌横幅 + 实时统计 + 模块导航卡片 |
-| 客户面状态 | `/customer-status` | 登录用户 | 列：机台编号 / 战场 / 当前阶段 / 现场版本 / 近期关注度 / 客户面进展 / 近期重点事务 / 关键问题 / 问题单链接 |
+| 客户面状态 | `/customer-status` | 登录用户 | 机台编号 / 客户 / 型号 / 当前阶段 / 现场版本 / 关注度 / 进展 / **现场关键事务（清单）** / **软件类风险（清单）** / 问题单分布；支持排序、清单勾选、精简/详细模式 |
 | 版本管理 | `/versions` | 登录用户 | 按里程碑项目分 Tab；大版本含版本范围 / 实际发布时间；大版本下可展开迭代版本列表 |
 | 迭代管理 | `/iterations` | 登录用户 | 年度视图；点击月份进入需求清单详情页 |
-| 问题单管理 | `/issues` | 登录用户 | 读取 Excel 报表；当天数据 / 趋势图 / 实时刷新三种模式；支持导出 PPT |
+| 问题单管理 | `/issues` | 登录用户 | 按日期目录读取 Excel；当天数据（表格/图表切换） / 趋势 / 实时刷新；导出 PPT；统计明细可钻取到 19 列原始数据 |
+| 干系人管理 | `/stakeholders` | 登录用户 | 项目组沟通地图 + 战场沟通矩阵 |
+| 项目一本通 | `/handbook` | 登录用户（admin 写） | 自定义分类，条目支持外链或上传文件，普通用户只读+下载 |
+| 专项管理 | `/specials/:slug` | 登录用户 | 左侧二级菜单按启用专项动态展开；每个专项一页含目标 / 里程碑 / 进展求助 / 全景图 / 事务表 / 风险问题表 / 阵型 |
+| 专项配置 | `/specials` | 仅 admin | 增删改专项（slug/name/owner/sort_order/is_active） |
 | 里程碑管理 | `/roadmaps` | 仅 admin | 甘特式路线图，可管理项目 / 阶段 / 里程碑 |
+| 操作日志 | `/op-logs` | 仅 admin | 登录与关键写操作审计；可按用户/动作/对象/时间范围/关键字分页查询 |
 | 用户管理 | `/users` | 仅 admin | 增删用户、改角色、禁用、重置密码 |
 
 ### 客户面状态特性
@@ -127,14 +152,103 @@ npm run dev
 ## 后续可优化方向
 
 - 接入公司 SSO（OIDC / LDAP）的实际实现
-- 用户操作审计日志
 - 表格筛选、分页、导出 Excel
 - 版本管理增加 changelog Markdown 渲染、附件上传
 - 迭代管理增加甘特图视图
 - 使用 Alembic 管理数据库迁移（替代 `create_all`）
+- 操作日志定期清理（cron + `DELETE WHERE created_at < ...`）
 - Docker Compose 一键部署 + Nginx 反向代理
 
 ## 更新日志
+
+### v0.13.0 — 2026-05-20
+
+**新增页面：项目一本通**
+- 路由 `/handbook`，所有登录用户可访问，admin 维护内容。
+- 分类自定义（`handbook_categories` 表），admin 增删改；条目（`handbook_items` 表）支持两种载体：**外链 URL** 或 **上传文件**。
+- 文件存储到 `backend/uploads/handbook/<yyyymm>/<uuid>.<ext>`，下载走鉴权后的 blob 接口（`GET /api/handbook/items/{id}/download`）。
+- 顶部关键字搜索：标题 / 说明 / 责任人 / URL / 文件名命中即过滤。
+
+**新增页面：专项管理**
+- 侧栏二级菜单：动态加载启用中的专项，admin 多一项 "专项配置"。
+- 专项元数据（`specials` 表：slug / name / owner / sort_order / is_active）由 admin 维护；专项内容、事务、风险所有登录用户均可编辑（与客户面状态字段权限一致）。
+- 单专项页面（`/specials/:slug`）按设计稿组装：
+  - **专项目标**（文本，行内点击编辑）
+  - **专项计划**（里程碑结构化数据：名称/日期/状态，水平时间线渲染，含未开始/进行中/已完成/已延期 4 种状态色）
+  - **一句话进展&求助**（文本，行内点击编辑）
+  - **专项全景图**（admin 上传图片，blob 鉴权流式下载）
+  - **专项事务表**（序号/事务内容/当前进展/责任人/计划闭环时间，CRUD）
+  - **风险和问题表**（同上结构）
+  - **专项阵型**（动态可增删行/列的文本格子，统一保存）
+- 内容字段加乐观锁（`version`），并发编辑返回 409。
+- 新增组件 [EditableText.vue](frontend/src/components/EditableText.vue) / [MilestoneTimeline.vue](frontend/src/components/MilestoneTimeline.vue)。
+- 关键写操作全部接入操作日志（一本通分类/条目，专项/专项内容/全景图/事务/风险）。
+
+**数据库**
+- 新建 6 张表：`handbook_categories` / `handbook_items` / `specials` / `special_contents` / `special_tasks` / `special_risks`，由 `create_all` 在启动时自动创建，无需手动迁移。
+- 文件目录 `backend/uploads/` 已加入 `.gitignore`，部署时确保后端进程有写权限；备份脚本需追加该目录。
+
+---
+
+### v0.12.0 — 2026-05-20
+
+**操作日志**
+- 新增 `operation_logs` 表 + `op_log.log_op()` 工具（异常吞掉不影响主流程）。
+- 记录范围：登录成功 / 失败 / 登出 / 注册 / 修改密码；以及所有关键写操作（新增 / 修改 / 删除 / 导入 / 导出 PPT / 运行脚本 / 修改配置）。
+- 新增页面 [OperationLogs.vue](frontend/src/views/OperationLogs.vue) 路由 `/op-logs`（仅 admin）：可按用户 / 动作 / 对象 / 关键字 / 时间范围分页查询。
+- 后端接口：`GET /api/op-logs`（分页+过滤）、`GET /api/op-logs/options`（下拉候选值）。
+
+**闲置自动登出 + 多 tab 同步**
+- 前端默认 15 分钟无操作（鼠标 / 键盘 / 滚动 / 触摸）自动登出并跳登录页，阈值在 [App.vue](frontend/src/App.vue) `IDLE_MS` 常量调整。
+- 活动时间通过 `localStorage` 跨 tab 共享：任一 tab 在用其它 tab 都不会被判定为闲置。
+- 一处登出（手动 / 401 / 修改密码 / 闲置触发）通过 `apm_logout_signal` 广播给所有 tab 同步退出。
+- 「退出登录」会先调 `POST /api/auth/logout` 写一条登出日志（JWT 本身无服务端会话）。
+
+**升级提示**
+- 老库无需删 `app.db`，`operation_logs` 表自动创建。
+
+---
+
+### v0.11.0 — 2026-05-19
+
+**客户面状态清单化**
+- 「现场关键事务」（原"近期现场关键诉求"）与「软件类风险和问题」两列改为可勾选的清单：每行一个复选框 + 文本，勾选表示完成。
+- 视图模式切换：**精简模式** 只显示第一个条目 + `+N` 计数；**详细模式** 全部展开 + 进度条。
+- 数据存储用 JSON 数组：`[{"text":"...","done":true/false}, ...]`；旧的纯文本数据按换行符自动拆分兼容，无需迁移。
+- PPT 导出同步：JSON 清单转换为 `✓ 已完成 / · 未完成` 可读文本。
+
+**客户面状态多项修复**
+- 表头改为居中对齐；机台编号 / 客户 / 型号 / 当前阶段 四列支持排序。
+- 「问题单情况」改为"查看分布"链接，弹出 drawer 按客户分布展示，支持下钻到具体问题单（按 `group` + `category` 过滤匹配 19 列原始数据）。
+- 「现场版本」下拉切到 `majorVersionApi`（合并大版本 + 迭代版本），与版本管理数据源对齐。
+- 精简模式补「+」新增按钮；多列模板下用函数 ref 修复 focus 失效。
+
+**问题单管理增强**
+- 当天数据「统计明细」加 **表格 / 图表 / 同时显示** 切换按钮，避免数据多时压缩严重。
+- 原始数据按 A-S 全部 19 列对齐（版本信息 / 缺陷业务编号 / 标题 / 当前责任人 / 当前责任人所属小组 / 进展 / 严重程度 / 严重程度DI值 / 根因 / 解决措施 / 进展记录 / 预计闭环时间 / 优先级 / 是否SDTS / 年份 / 月份 / 日期 / 年月 / 标题分类），修复钻取后明细为空的问题。
+- "特性数据"暂时隐藏（`SHOW_FEATURE = false`，代码保留）。
+
+**全局**
+- 左侧导航栏改为可折叠（按钮在顶栏左侧），折叠状态写入 `localStorage`，刷新保留。
+- 部署指南新增 5.4 节"特定版本升级说明"，记录 v0.10.x 清单字段格式变更的兼容方案。
+
+---
+
+### v0.10.0 — 2026-05-18
+
+**登录页 & 首页**
+- 登录页标题改为读 `config.about_content` 首行（之前是写死的"AI 项目管理系统"）；移除默认 admin 账号明文密码提示。
+- 首页系统模块卡片调整间距，第一行和第二行之间不再挤压。
+
+**问题单管理**
+- 当天数据目录支持日期子目录结构：`<root>/YYYY-MM-DD/缺陷统计报表_*.xlsx`，新增日期选择器；如果根目录没有日期子目录则回退扁平扫描。
+- 关闭"实时刷新"模式下的自动刷新。
+- 原始数据表格列对齐到实际报表 A-G 7 列（注：后续 v0.11 又扩到全部 19 列以支持钻取）。
+
+**接口**
+- `GET /api/issues/dates` 列出可选日期；`GET /api/issues/data?date=` 与 `GET /api/issues/export.pptx?date=` 支持指定日期。
+
+---
 
 ### v0.9.0 — 2026-05-17
 
