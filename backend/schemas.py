@@ -516,11 +516,14 @@ class HandbookCategoryOut(HandbookCategoryBase):
 
 # ===== Special =====
 class SpecialBase(BaseModel):
-    slug: str
     name: str
+    kind: Optional[str] = "special"  # special / assault
     owner: Optional[str] = ""
     sort_order: Optional[int] = 0
     is_active: Optional[bool] = True
+    email_to: Optional[str] = ""
+    email_cc: Optional[str] = ""
+    email_subject_tpl: Optional[str] = ""
 
 
 class SpecialCreate(SpecialBase):
@@ -528,11 +531,14 @@ class SpecialCreate(SpecialBase):
 
 
 class SpecialUpdate(BaseModel):
-    slug: Optional[str] = None
     name: Optional[str] = None
+    kind: Optional[str] = None
     owner: Optional[str] = None
     sort_order: Optional[int] = None
     is_active: Optional[bool] = None
+    email_to: Optional[str] = None
+    email_cc: Optional[str] = None
+    email_subject_tpl: Optional[str] = None
 
 
 class SpecialOut(SpecialBase):
@@ -547,6 +553,7 @@ class SpecialContentUpdate(BaseModel):
     progress_summary: Optional[str] = None
     milestones_json: Optional[str] = None
     formation_json: Optional[str] = None
+    extra_grids_json: Optional[str] = None
 
 
 class SpecialContentOut(BaseModel):
@@ -558,6 +565,7 @@ class SpecialContentOut(BaseModel):
     panorama_image_name: str = ""
     milestones_json: str = "[]"
     formation_json: str = '{"headers":[],"rows":[]}'
+    extra_grids_json: str = "[]"
     version: int = 0
     updated_at: Optional[datetime] = None
 
@@ -570,6 +578,7 @@ class SpecialItemBase(BaseModel):
     progress: Optional[str] = ""
     owner: Optional[str] = ""
     planned_close_date: Optional[str] = ""
+    status: Optional[str] = "open"
     sort_order: Optional[int] = 0
 
 
@@ -592,3 +601,11 @@ class SpecialDetailOut(SpecialOut):
     content: Optional[SpecialContentOut] = None
     tasks: List[SpecialItemOut] = []
     risks: List[SpecialItemOut] = []
+
+
+class SpecialReportDraft(BaseModel):
+    """周报草稿：纯文本，前端可编辑后复制/导出 mailto。"""
+    subject: str
+    to: str
+    cc: str
+    body: str

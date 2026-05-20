@@ -71,7 +71,7 @@ const routes = [
     meta: { title: '专项管理', icon: 'Briefcase', specialsParent: true },
   },
   {
-    path: '/specials/:slug',
+    path: '/specials/:id(\\d+)',
     name: 'SpecialDetail',
     component: () => import('../views/SpecialDetail.vue'),
     meta: { title: '专项详情', hidden: true },

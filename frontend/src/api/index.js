@@ -67,7 +67,6 @@ export const specialApi = {
   create: (data) => http.post('/specials', data),
   update: (id, data) => http.put(`/specials/${id}`, data),
   remove: (id) => http.delete(`/specials/${id}`),
-  detailBySlug: (slug) => http.get(`/specials/by-slug/${slug}`),
   detail: (id) => http.get(`/specials/${id}`),
   updateContent: (id, data) => http.put(`/specials/${id}/content`, data),
   uploadPanorama: (id, file) => {
@@ -86,6 +85,7 @@ export const specialApi = {
   createRisk: (id, data) => http.post(`/specials/${id}/risks`, data),
   updateRisk: (item_id, data) => http.put(`/specials/risks/${item_id}`, data),
   removeRisk: (item_id) => http.delete(`/specials/risks/${item_id}`),
+  reportDraft: (id) => http.get(`/specials/${id}/report-draft`),
 }
 
 export const userApi = {

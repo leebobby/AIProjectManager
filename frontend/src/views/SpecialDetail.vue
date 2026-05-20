@@ -3,22 +3,26 @@
     <div v-if="special" class="page-card">
       <!-- 标题 -->
       <div class="sec-title-main">
+        <el-tag :type="isAssault ? 'danger' : 'info'" effect="dark" style="margin-right: 8px">{{ label }}</el-tag>
         <span>{{ special.name }}</span>
-        <span class="owner">责任人：{{ special.owner || '-' }}</span>
-      </div>
-
-      <!-- 1. 专项目标 -->
-      <div class="sec">
-        <div class="sec-head">专项目标</div>
-        <div class="sec-body">
-          <EditableText :value="content.goal" :editable="canEdit" placeholder="点击填写专项目标..." @save="onSaveField('goal', $event)" />
+        <div class="owner-and-actions">
+          <span class="owner">责任人：{{ special.owner || '-' }}</span>
+          <el-button size="small" type="primary" :icon="Message" @click="openReportDialog">发周报</el-button>
         </div>
       </div>
 
-      <!-- 2. 专项计划：里程碑 -->
+      <!-- 1. 目标 -->
+      <div class="sec">
+        <div class="sec-head">{{ label }}目标</div>
+        <div class="sec-body">
+          <EditableText :value="content.goal" :editable="canEdit" :placeholder="`点击填写${label}目标...`" @save="onSaveField('goal', $event)" />
+        </div>
+      </div>
+
+      <!-- 2. 计划 -->
       <div class="sec">
         <div class="sec-head">
-          <span>专项计划</span>
+          <span>{{ label }}计划</span>
           <el-button v-if="canEdit" size="small" :icon="Plus" @click="openMilestoneDialog(null)">新增里程碑</el-button>
         </div>
         <div class="sec-body">
@@ -39,35 +43,37 @@
         </div>
       </div>
 
-      <!-- 4. 专项全景图 -->
+      <!-- 4. 全景图 -->
       <div class="sec">
         <div class="sec-head">
-          <span>专项全景图</span>
+          <span>{{ label }}全景图</span>
+          <span class="muted-hint">{{ isAssault ? '建议使用思维导图（支持 SVG）' : '建议使用逻辑框图（支持 SVG）' }}</span>
           <el-upload
             v-if="auth.isAdmin.value"
             :auto-upload="false"
             :on-change="onUploadPanorama"
             :show-file-list="false"
-            accept="image/*"
+            accept="image/*,.svg"
           >
             <el-button size="small">{{ content.panorama_image_name ? '替换图片' : '上传图片' }}</el-button>
           </el-upload>
         </div>
         <div class="sec-body panorama-body">
-          <img v-if="panoramaSrc" :src="panoramaSrc" alt="专项全景图" class="panorama-img" />
-          <div v-else class="panorama-empty">还没有上传全景图（一般是用逻辑框图）</div>
+          <img v-if="panoramaSrc" :src="panoramaSrc" :alt="`${label}全景图`" class="panorama-img" />
+          <div v-else class="panorama-empty">还没有上传{{ label }}全景图</div>
         </div>
       </div>
 
-      <!-- 5. 专项事务 -->
+      <!-- 5. 事务 -->
       <div class="sec">
         <div class="sec-head">
-          <span>专项事务</span>
+          <span>{{ label }}事务</span>
           <el-button v-if="canEdit" size="small" :icon="Plus" @click="openItemDialog('task', null)">新增事务</el-button>
+          <el-button v-if="canEdit" size="small" @click="addExtraGrid">+ 添加表格</el-button>
         </div>
         <el-table :data="tasks" border stripe size="small" style="width: 100%">
           <el-table-column type="index" label="序号" width="70" align="center" />
-          <el-table-column prop="content" label="事务内容" min-width="260">
+          <el-table-column prop="content" label="事务内容" min-width="240">
             <template #default="{ row }">
               <span class="cell-multiline">{{ row.content || '-' }}</span>
             </template>
@@ -77,15 +83,45 @@
               <span class="cell-multiline">{{ row.progress || '-' }}</span>
             </template>
           </el-table-column>
-          <el-table-column prop="owner" label="责任人" width="120" />
-          <el-table-column prop="planned_close_date" label="计划闭环时间" width="140" />
-          <el-table-column v-if="canEdit" label="操作" width="140" fixed="right">
+          <el-table-column prop="owner" label="责任人" width="110" />
+          <el-table-column prop="planned_close_date" label="计划闭环时间" width="130" />
+          <el-table-column label="当前状态" width="110" align="center">
+            <template #default="{ row }">
+              <el-tag :type="row.status === 'closed' ? 'success' : 'warning'" size="small" effect="plain">
+                {{ row.status === 'closed' ? 'Closed' : 'Open' }}
+              </el-tag>
+            </template>
+          </el-table-column>
+          <el-table-column v-if="canEdit" label="操作" width="160" fixed="right">
             <template #default="{ row }">
               <el-button size="small" @click="openItemDialog('task', row)">编辑</el-button>
               <el-button size="small" type="danger" @click="onRemoveItem('task', row)">删除</el-button>
             </template>
           </el-table-column>
         </el-table>
+
+        <!-- 附加自由表格 -->
+        <div v-for="(grid, gi) in extraGrids" :key="'eg' + gi" class="extra-grid">
+          <div class="extra-grid-head">
+            <input
+              v-if="canEdit"
+              v-model="extraGrids[gi].title"
+              class="extra-grid-title-input"
+              placeholder="表格标题（点击编辑）"
+            />
+            <span v-else>{{ grid.title || '附加表格' }}</span>
+            <div class="spacer" />
+            <template v-if="canEdit">
+              <el-button size="small" @click="addExtraGridCol(gi)">+列</el-button>
+              <el-button size="small" @click="addExtraGridRow(gi)">+行</el-button>
+              <el-button size="small" type="danger" @click="removeExtraGrid(gi)">删除整表</el-button>
+            </template>
+          </div>
+          <FormationGrid v-model="extraGrids[gi]" :editable="canEdit" />
+        </div>
+        <div v-if="canEdit && extraGrids.length > 0" class="save-extra">
+          <el-button size="small" type="primary" :loading="extraSaving" @click="saveExtraGrids">保存附加表格</el-button>
+        </div>
       </div>
 
       <!-- 6. 风险和问题 -->
@@ -96,7 +132,7 @@
         </div>
         <el-table :data="risks" border stripe size="small" style="width: 100%">
           <el-table-column type="index" label="序号" width="70" align="center" />
-          <el-table-column prop="content" label="问题内容" min-width="260">
+          <el-table-column prop="content" label="问题内容" min-width="240">
             <template #default="{ row }">
               <span class="cell-multiline">{{ row.content || '-' }}</span>
             </template>
@@ -106,9 +142,16 @@
               <span class="cell-multiline">{{ row.progress || '-' }}</span>
             </template>
           </el-table-column>
-          <el-table-column prop="owner" label="责任人" width="120" />
-          <el-table-column prop="planned_close_date" label="计划闭环时间" width="140" />
-          <el-table-column v-if="canEdit" label="操作" width="140" fixed="right">
+          <el-table-column prop="owner" label="责任人" width="110" />
+          <el-table-column prop="planned_close_date" label="计划闭环时间" width="130" />
+          <el-table-column label="当前状态" width="110" align="center">
+            <template #default="{ row }">
+              <el-tag :type="row.status === 'closed' ? 'success' : 'warning'" size="small" effect="plain">
+                {{ row.status === 'closed' ? 'Closed' : 'Open' }}
+              </el-tag>
+            </template>
+          </el-table-column>
+          <el-table-column v-if="canEdit" label="操作" width="160" fixed="right">
             <template #default="{ row }">
               <el-button size="small" @click="openItemDialog('risk', row)">编辑</el-button>
               <el-button size="small" type="danger" @click="onRemoveItem('risk', row)">删除</el-button>
@@ -117,10 +160,10 @@
         </el-table>
       </div>
 
-      <!-- 7. 专项阵型 -->
+      <!-- 7. 阵型 -->
       <div class="sec">
         <div class="sec-head">
-          <span>专项阵型</span>
+          <span>{{ label }}阵型</span>
           <template v-if="canEdit">
             <el-button size="small" @click="addFormationRow">+行</el-button>
             <el-button size="small" @click="addFormationCol">+列</el-button>
@@ -128,47 +171,7 @@
           </template>
         </div>
         <div class="formation-wrap">
-          <table v-if="formation.rows.length || formation.headers.length" class="formation-table">
-            <thead>
-              <tr>
-                <th v-for="(h, ci) in formation.headers" :key="'h' + ci">
-                  <input
-                    v-if="canEdit"
-                    v-model="formation.headers[ci]"
-                    class="formation-input bold"
-                    placeholder="列标题"
-                  />
-                  <span v-else>{{ h }}</span>
-                  <el-button
-                    v-if="canEdit && formation.headers.length > 1"
-                    class="del-col-btn"
-                    size="small"
-                    link
-                    @click="removeFormationCol(ci)"
-                  >×</el-button>
-                </th>
-              </tr>
-            </thead>
-            <tbody>
-              <tr v-for="(row, ri) in formation.rows" :key="'r' + ri">
-                <td v-for="(_, ci) in formation.headers" :key="'c' + ri + '-' + ci">
-                  <input
-                    v-if="canEdit"
-                    v-model="formation.rows[ri][ci]"
-                    class="formation-input"
-                  />
-                  <span v-else>{{ formation.rows[ri][ci] }}</span>
-                  <el-button
-                    v-if="canEdit && ci === formation.headers.length - 1"
-                    class="del-row-btn"
-                    size="small"
-                    link
-                    @click="removeFormationRow(ri)"
-                  >×</el-button>
-                </td>
-              </tr>
-            </tbody>
-          </table>
+          <FormationGrid v-if="formation.headers.length || formation.rows.length" v-model="formation" :editable="canEdit" />
           <div v-else class="muted">点击 +列 / +行 开始填写阵型</div>
         </div>
       </div>
@@ -217,10 +220,39 @@
         <el-form-item label="计划闭环时间">
           <el-input v-model="itemDialog.form.planned_close_date" placeholder="YYYY-MM-DD 或自由文本" />
         </el-form-item>
+        <el-form-item label="当前状态">
+          <el-radio-group v-model="itemDialog.form.status">
+            <el-radio value="open">Open</el-radio>
+            <el-radio value="closed">Closed</el-radio>
+          </el-radio-group>
+        </el-form-item>
       </el-form>
       <template #footer>
         <el-button @click="itemDialog.visible = false">取消</el-button>
         <el-button type="primary" @click="onSaveItem">保存</el-button>
+      </template>
+    </el-dialog>
+
+    <!-- 周报草稿对话框 -->
+    <el-dialog v-model="reportDialog.visible" :title="`${label}周报草稿`" width="720px" top="6vh">
+      <el-form :model="reportDialog.form" label-width="80px" v-loading="reportDialog.loading">
+        <el-form-item label="主送">
+          <el-input v-model="reportDialog.form.to" placeholder="多个邮箱用 , 分隔" />
+        </el-form-item>
+        <el-form-item label="抄送">
+          <el-input v-model="reportDialog.form.cc" placeholder="多个邮箱用 , 分隔（可空）" />
+        </el-form-item>
+        <el-form-item label="主题">
+          <el-input v-model="reportDialog.form.subject" />
+        </el-form-item>
+        <el-form-item label="正文">
+          <el-input v-model="reportDialog.form.body" type="textarea" :rows="14" />
+        </el-form-item>
+      </el-form>
+      <template #footer>
+        <el-button @click="reportDialog.visible = false">关闭</el-button>
+        <el-button @click="onCopyReport">复制到剪贴板</el-button>
+        <el-button type="primary" @click="onOpenMailto">在邮件客户端打开</el-button>
       </template>
     </el-dialog>
   </div>
@@ -230,44 +262,58 @@
 import { computed, onMounted, reactive, ref, watch } from 'vue'
 import { useRoute } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
-import { Plus } from '@element-plus/icons-vue'
+import { Message, Plus } from '@element-plus/icons-vue'
 import http, { specialApi } from '../api'
 import { auth } from '../store/auth'
+import { checkStorageOrWarn } from '../store/storage'
 import EditableText from '../components/EditableText.vue'
 import MilestoneTimeline from '../components/MilestoneTimeline.vue'
-import { checkStorageOrWarn } from '../store/storage'
+import FormationGrid from '../components/FormationGrid.vue'
 
 const route = useRoute()
 const loading = ref(false)
 const special = ref(null)
-const content = ref({ goal: '', progress_summary: '', panorama_image_path: '', panorama_image_name: '', milestones_json: '[]', formation_json: '{"headers":[],"rows":[]}', version: 0 })
+const content = ref({
+  goal: '', progress_summary: '',
+  panorama_image_path: '', panorama_image_name: '',
+  milestones_json: '[]',
+  formation_json: '{"headers":[],"rows":[]}',
+  extra_grids_json: '[]',
+  version: 0,
+})
 const tasks = ref([])
 const risks = ref([])
 const milestones = ref([])
 const formation = ref({ headers: [], rows: [] })
+const extraGrids = ref([])
+const extraSaving = ref(false)
 const formationSaving = ref(false)
 const panoramaSrc = ref('')
 
+const isAssault = computed(() => special.value?.kind === 'assault')
+const label = computed(() => (isAssault.value ? '攻关' : '专项'))
 const canEdit = computed(() => auth.isLoggedIn.value)
 
 const msDialog = reactive({ visible: false, editing: null, form: { name: '', date: '', status: 'planning' } })
 const itemDialog = reactive({ visible: false, editing: null, kind: 'task', form: defaultItem() })
+const reportDialog = reactive({ visible: false, loading: false, form: { to: '', cc: '', subject: '', body: '' } })
 
 function defaultItem() {
-  return { content: '', progress: '', owner: '', planned_close_date: '' }
+  return { content: '', progress: '', owner: '', planned_close_date: '', status: 'open' }
 }
 
 async function load() {
   loading.value = true
   try {
-    const slug = route.params.slug
-    const { data } = await specialApi.detailBySlug(slug)
+    const id = route.params.id
+    const { data } = await specialApi.detail(id)
     special.value = data
     content.value = data.content || content.value
     tasks.value = data.tasks || []
     risks.value = data.risks || []
     parseMilestones()
     parseFormation()
+    parseExtraGrids()
     await loadPanorama()
   } catch (e) {
     ElMessage.error(e.response?.data?.detail || '加载失败')
@@ -280,9 +326,7 @@ function parseMilestones() {
   try {
     const arr = JSON.parse(content.value.milestones_json || '[]')
     milestones.value = Array.isArray(arr) ? arr : []
-  } catch {
-    milestones.value = []
-  }
+  } catch { milestones.value = [] }
 }
 
 function parseFormation() {
@@ -292,13 +336,21 @@ function parseFormation() {
       headers: Array.isArray(obj.headers) ? [...obj.headers] : [],
       rows: Array.isArray(obj.rows) ? obj.rows.map(r => [...r]) : [],
     }
-  } catch {
-    formation.value = { headers: [], rows: [] }
-  }
+  } catch { formation.value = { headers: [], rows: [] } }
+}
+
+function parseExtraGrids() {
+  try {
+    const arr = JSON.parse(content.value.extra_grids_json || '[]')
+    extraGrids.value = Array.isArray(arr) ? arr.map(g => ({
+      title: String(g.title || ''),
+      headers: Array.isArray(g.headers) ? [...g.headers] : [],
+      rows: Array.isArray(g.rows) ? g.rows.map(r => [...r]) : [],
+    })) : []
+  } catch { extraGrids.value = [] }
 }
 
 async function loadPanorama() {
-  // 仅在路径存在时拉取
   if (!special.value || !content.value.panorama_image_path) {
     panoramaSrc.value = ''
     return
@@ -344,11 +396,8 @@ async function onSaveMilestone() {
     return
   }
   const next = milestones.value.slice()
-  if (msDialog.editing != null) {
-    next[msDialog.editing] = { ...msDialog.form }
-  } else {
-    next.push({ ...msDialog.form })
-  }
+  if (msDialog.editing != null) next[msDialog.editing] = { ...msDialog.form }
+  else next.push({ ...msDialog.form })
   next.sort((a, b) => (a.date || '').localeCompare(b.date || ''))
   try {
     const { data } = await specialApi.updateContent(special.value.id, {
@@ -380,15 +429,16 @@ async function onRemoveMilestone(idx) {
   }
 }
 
-// 全景图：el-upload 在 auto-upload=false 时由 on-change 派发，
-// 真实 File 在 uploadFile.raw 上。
+// 全景图
 async function onUploadPanorama(uploadFile) {
   const file = uploadFile?.raw || uploadFile
-  if (!file || !file.type || !file.type.startsWith('image/')) {
-    ElMessage.warning('仅支持图片')
+  const ct = (file?.type || '').toLowerCase()
+  const okType = ct.startsWith('image/') || ct === 'image/svg+xml' || (file?.name || '').toLowerCase().endsWith('.svg')
+  if (!file || !okType) {
+    ElMessage.warning('仅支持图片或 SVG 文件')
     return
   }
-  await checkStorageOrWarn()  // 上传前提示磁盘空间情况
+  await checkStorageOrWarn()
   try {
     const { data } = await specialApi.uploadPanorama(special.value.id, file)
     content.value = data
@@ -404,7 +454,10 @@ function openItemDialog(kind, row) {
   itemDialog.kind = kind
   itemDialog.editing = row || null
   itemDialog.form = row
-    ? { content: row.content, progress: row.progress, owner: row.owner, planned_close_date: row.planned_close_date }
+    ? {
+        content: row.content, progress: row.progress, owner: row.owner,
+        planned_close_date: row.planned_close_date, status: row.status || 'open',
+      }
     : defaultItem()
   itemDialog.visible = true
 }
@@ -456,21 +509,10 @@ function addFormationRow() {
   }
   formation.value.rows.push(Array(formation.value.headers.length).fill(''))
 }
-
 function addFormationCol() {
   formation.value.headers.push(`列${formation.value.headers.length + 1}`)
   formation.value.rows.forEach(r => r.push(''))
 }
-
-function removeFormationRow(ri) {
-  formation.value.rows.splice(ri, 1)
-}
-
-function removeFormationCol(ci) {
-  formation.value.headers.splice(ci, 1)
-  formation.value.rows.forEach(r => r.splice(ci, 1))
-}
-
 async function saveFormation() {
   formationSaving.value = true
   try {
@@ -488,7 +530,93 @@ async function saveFormation() {
   }
 }
 
-watch(() => route.params.slug, load)
+// 附加自由表格
+function addExtraGrid() {
+  extraGrids.value.push({
+    title: `附加表格 ${extraGrids.value.length + 1}`,
+    headers: ['列1', '列2'],
+    rows: [['', ''], ['', '']],
+  })
+}
+function addExtraGridCol(gi) {
+  const g = extraGrids.value[gi]
+  g.headers.push(`列${g.headers.length + 1}`)
+  g.rows.forEach(r => r.push(''))
+}
+function addExtraGridRow(gi) {
+  const g = extraGrids.value[gi]
+  if (g.headers.length === 0) {
+    ElMessage.warning('请先添加列')
+    return
+  }
+  g.rows.push(Array(g.headers.length).fill(''))
+}
+function removeExtraGrid(gi) {
+  extraGrids.value.splice(gi, 1)
+}
+async function saveExtraGrids() {
+  extraSaving.value = true
+  try {
+    const { data } = await specialApi.updateContent(special.value.id, {
+      version: content.value.version,
+      extra_grids_json: JSON.stringify(extraGrids.value),
+    })
+    content.value = data
+    parseExtraGrids()
+    ElMessage.success('附加表格已保存')
+  } catch (e) {
+    ElMessage.error(e.response?.data?.detail || '保存失败')
+  } finally {
+    extraSaving.value = false
+  }
+}
+
+// 周报
+async function openReportDialog() {
+  reportDialog.visible = true
+  reportDialog.loading = true
+  try {
+    const { data } = await specialApi.reportDraft(special.value.id)
+    reportDialog.form = {
+      to: data.to || '',
+      cc: data.cc || '',
+      subject: data.subject || '',
+      body: data.body || '',
+    }
+  } catch (e) {
+    ElMessage.error(e.response?.data?.detail || '生成草稿失败')
+  } finally {
+    reportDialog.loading = false
+  }
+}
+
+async function onCopyReport() {
+  const f = reportDialog.form
+  const text =
+    `收件人：${f.to}\n抄送：${f.cc}\n主题：${f.subject}\n\n${f.body}`
+  try {
+    await navigator.clipboard.writeText(text)
+    ElMessage.success('已复制（含收件人/抄送/主题/正文），粘贴到邮件客户端即可')
+  } catch {
+    ElMessage.warning('剪贴板不可用，请手动选中复制')
+  }
+}
+
+function onOpenMailto() {
+  const f = reportDialog.form
+  const params = []
+  if (f.cc) params.push(`cc=${encodeURIComponent(f.cc)}`)
+  params.push(`subject=${encodeURIComponent(f.subject)}`)
+  params.push(`body=${encodeURIComponent(f.body)}`)
+  const url = `mailto:${encodeURIComponent(f.to)}?${params.join('&')}`
+  // 浏览器对 mailto 的 URL 长度有限制（一般 2KB 左右），过长会被截断
+  if (url.length > 2000) {
+    ElMessage.warning('正文较长，邮件客户端可能截断，建议改用「复制到剪贴板」')
+  }
+  window.location.href = url
+}
+
+watch(() => route.params.id, load)
 onMounted(load)
 </script>
 
@@ -511,11 +639,16 @@ onMounted(load)
   border-bottom: 1px solid #ebeef5;
   position: relative;
 }
-.sec-title-main .owner {
+.owner-and-actions {
   position: absolute;
   right: 20px;
   top: 50%;
   transform: translateY(-50%);
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+.owner-and-actions .owner {
   font-size: 13px;
   font-weight: normal;
   color: #909399;
@@ -534,6 +667,7 @@ onMounted(load)
   gap: 8px;
 }
 .sec-head > :first-child { flex: 1; }
+.sec-head .muted-hint { color: #909399; font-weight: normal; font-size: 12px; }
 .sec-body {
   padding: 12px 16px;
   min-height: 60px;
@@ -556,49 +690,35 @@ onMounted(load)
 }
 .muted { color: #909399; padding: 12px 16px; }
 
-/* 阵型表格 */
+/* 附加表格 */
+.extra-grid {
+  margin-top: 12px;
+  border: 1px solid #ebeef5;
+  border-radius: 4px;
+}
+.extra-grid-head {
+  background: #fafbfc;
+  padding: 6px 10px;
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  border-bottom: 1px solid #ebeef5;
+}
+.extra-grid-head .spacer { flex: 1; }
+.extra-grid-title-input {
+  border: none;
+  outline: none;
+  background: transparent;
+  font-weight: 600;
+  font-size: 14px;
+  min-width: 200px;
+}
+.save-extra {
+  padding: 8px 12px 4px;
+  text-align: right;
+}
 .formation-wrap {
   padding: 12px 16px;
   overflow-x: auto;
-}
-.formation-table {
-  border-collapse: collapse;
-  width: 100%;
-}
-.formation-table th, .formation-table td {
-  border: 1px solid #dcdfe6;
-  padding: 4px 6px;
-  min-width: 100px;
-  height: 32px;
-  position: relative;
-  vertical-align: middle;
-}
-.formation-table th {
-  background: #f5f7fa;
-  font-weight: 600;
-}
-.formation-input {
-  border: none;
-  outline: none;
-  width: 100%;
-  background: transparent;
-  font-size: 13px;
-}
-.formation-input.bold { font-weight: 600; text-align: center; }
-.del-col-btn {
-  position: absolute;
-  right: 2px;
-  top: 50%;
-  transform: translateY(-50%);
-  padding: 0 6px;
-  color: #f56c6c;
-}
-.del-row-btn {
-  position: absolute;
-  right: -22px;
-  top: 50%;
-  transform: translateY(-50%);
-  padding: 0 4px;
-  color: #f56c6c;
 }
 </style>

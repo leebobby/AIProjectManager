@@ -36,10 +36,15 @@
             <el-menu-item
               v-for="s in specials.list"
               :key="s.id"
-              :index="'/specials/' + s.slug"
+              :index="'/specials/' + s.id"
             >
               <el-icon><Aim /></el-icon>
-              <template #title>{{ s.name }}</template>
+              <template #title>
+                <el-tag size="small" :type="s.kind === 'assault' ? 'danger' : 'info'" effect="plain" style="margin-right: 6px">
+                  {{ s.kind === 'assault' ? '攻关' : '专项' }}
+                </el-tag>
+                {{ s.name }}
+              </template>
             </el-menu-item>
           </el-sub-menu>
 
@@ -141,16 +146,18 @@ const menuRoutes = computed(() =>
 )
 const currentTitle = computed(() => {
   if (route.name === 'SpecialDetail') {
-    const s = specials.list.find(x => x.slug === route.params.slug)
-    return s ? s.name : '专项详情'
+    const s = specials.list.find(x => String(x.id) === String(route.params.id))
+    if (!s) return '详情'
+    const label = s.kind === 'assault' ? '攻关' : '专项'
+    return `${label}：${s.name}`
   }
   return route.meta?.title || ''
 })
 
-// 高亮当前菜单：详情页时高亮对应专项 submenu 项
+// 高亮当前菜单：详情页时高亮对应 submenu 项
 const activeMenuPath = computed(() => {
   if (route.name === 'SpecialDetail') {
-    return `/specials/${route.params.slug}`
+    return `/specials/${route.params.id}`
   }
   return route.path
 })

@@ -1,19 +1,28 @@
 <template>
   <div v-if="!auth.isAdmin.value">
-    <el-empty description="此页面仅管理员可见。请从左侧选择具体专项查看详情。" />
+    <el-empty description="此页面仅管理员可见。请从左侧选择具体专项 / 攻关查看详情。" />
   </div>
   <div v-else>
     <el-card shadow="never">
       <div class="toolbar">
-        <el-button type="primary" :icon="Plus" @click="openDialog()">新增专项</el-button>
+        <el-button type="primary" :icon="Plus" @click="openDialog()">新增</el-button>
         <el-button :icon="Refresh" @click="load">刷新</el-button>
         <el-checkbox v-model="includeInactive" @change="load">显示停用</el-checkbox>
       </div>
       <el-table :data="list" v-loading="loading" border stripe style="width: 100%">
         <el-table-column prop="id" label="ID" width="60" />
-        <el-table-column prop="slug" label="slug" width="160" />
+        <el-table-column label="类型" width="90" align="center">
+          <template #default="{ row }">
+            <el-tag :type="row.kind === 'assault' ? 'danger' : 'info'" size="small">
+              {{ row.kind === 'assault' ? '攻关' : '专项' }}
+            </el-tag>
+          </template>
+        </el-table-column>
         <el-table-column prop="name" label="名称" min-width="160" />
         <el-table-column prop="owner" label="责任人" width="140" />
+        <el-table-column label="周报收件人" min-width="200" show-overflow-tooltip>
+          <template #default="{ row }">{{ row.email_to || '-' }}</template>
+        </el-table-column>
         <el-table-column label="排序" width="80" align="center">
           <template #default="{ row }">{{ row.sort_order }}</template>
         </el-table-column>
@@ -34,13 +43,16 @@
       </el-table>
     </el-card>
 
-    <el-dialog v-model="dialog.visible" :title="dialog.editing ? '编辑专项' : '新增专项'" width="500px">
-      <el-form :model="dialog.form" label-width="100px">
-        <el-form-item label="slug">
-          <el-input v-model="dialog.form.slug" placeholder="英文/数字/_/-，URL 使用" :disabled="!!dialog.editing" />
+    <el-dialog v-model="dialog.visible" :title="dialog.editing ? '编辑' : '新增'" width="560px">
+      <el-form :model="dialog.form" label-width="120px">
+        <el-form-item label="类型">
+          <el-radio-group v-model="dialog.form.kind">
+            <el-radio value="special">专项</el-radio>
+            <el-radio value="assault">攻关</el-radio>
+          </el-radio-group>
         </el-form-item>
         <el-form-item label="名称">
-          <el-input v-model="dialog.form.name" />
+          <el-input v-model="dialog.form.name" :placeholder="dialog.form.kind === 'assault' ? '攻关名称' : '专项名称'" />
         </el-form-item>
         <el-form-item label="责任人">
           <el-input v-model="dialog.form.owner" />
@@ -50,6 +62,20 @@
         </el-form-item>
         <el-form-item label="状态">
           <el-switch v-model="dialog.form.is_active" active-text="启用" inactive-text="停用" />
+        </el-form-item>
+        <el-divider content-position="left">周报默认值（可留空）</el-divider>
+        <el-form-item label="主送收件人">
+          <el-input v-model="dialog.form.email_to" placeholder="多个邮箱用 , 分隔" />
+        </el-form-item>
+        <el-form-item label="抄送">
+          <el-input v-model="dialog.form.email_cc" placeholder="多个邮箱用 , 分隔" />
+        </el-form-item>
+        <el-form-item label="主题模板">
+          <el-input
+            v-model="dialog.form.email_subject_tpl"
+            :placeholder="`留空则用 【${dialog.form.kind === 'assault' ? '攻关' : '专项'}周报】{name} - {date}`"
+          />
+          <div class="tpl-hint">可用占位符：<code>{label}</code> <code>{name}</code> <code>{owner}</code> <code>{date}</code></div>
         </el-form-item>
       </el-form>
       <template #footer>
@@ -80,7 +106,16 @@ const dialog = reactive({
 })
 
 function defaultForm() {
-  return { slug: '', name: '', owner: '', sort_order: 0, is_active: true }
+  return {
+    name: '',
+    kind: 'special',
+    owner: '',
+    sort_order: 0,
+    is_active: true,
+    email_to: '',
+    email_cc: '',
+    email_subject_tpl: '',
+  }
 }
 
 async function load() {
@@ -97,26 +132,32 @@ async function load() {
 
 function openDialog(row) {
   dialog.editing = row || null
-  dialog.form = row
-    ? { slug: row.slug, name: row.name, owner: row.owner, sort_order: row.sort_order, is_active: row.is_active }
-    : { ...defaultForm(), sort_order: list.value.length }
+  if (row) {
+    dialog.form = {
+      name: row.name,
+      kind: row.kind || 'special',
+      owner: row.owner || '',
+      sort_order: row.sort_order || 0,
+      is_active: !!row.is_active,
+      email_to: row.email_to || '',
+      email_cc: row.email_cc || '',
+      email_subject_tpl: row.email_subject_tpl || '',
+    }
+  } else {
+    dialog.form = { ...defaultForm(), sort_order: list.value.length }
+  }
   dialog.visible = true
 }
 
 async function onSubmit() {
   const f = dialog.form
-  if (!dialog.editing && !/^[a-zA-Z0-9][a-zA-Z0-9_-]{0,63}$/.test(f.slug)) {
-    ElMessage.warning('slug 仅支持字母/数字/下划线/连字符')
-    return
-  }
   if (!f.name.trim()) {
     ElMessage.warning('请输入名称')
     return
   }
   try {
     if (dialog.editing) {
-      const { slug, ...rest } = f
-      await specialApi.update(dialog.editing.id, rest)
+      await specialApi.update(dialog.editing.id, f)
       ElMessage.success('已更新')
     } else {
       await specialApi.create(f)
@@ -124,15 +165,16 @@ async function onSubmit() {
     }
     dialog.visible = false
     await load()
-    await reloadSpecials()  // 同步左侧菜单
+    await reloadSpecials()
   } catch (e) {
     ElMessage.error(e.response?.data?.detail || '保存失败')
   }
 }
 
 async function onDelete(row) {
+  const label = row.kind === 'assault' ? '攻关' : '专项'
   await ElMessageBox.confirm(
-    `确认删除专项「${row.name}」？相关内容、事务、风险都会一并删除`,
+    `确认删除${label}「${row.name}」？相关内容、事务、风险都会一并删除`,
     '提示', { type: 'warning' }
   )
   try {
@@ -146,7 +188,7 @@ async function onDelete(row) {
 }
 
 function onOpen(row) {
-  router.push(`/specials/${row.slug}`)
+  router.push(`/specials/${row.id}`)
 }
 
 onMounted(load)
@@ -158,5 +200,18 @@ onMounted(load)
   gap: 12px;
   align-items: center;
   margin-bottom: 12px;
+}
+.tpl-hint {
+  font-size: 12px;
+  color: #909399;
+  line-height: 1.6;
+  margin-top: 4px;
+}
+.tpl-hint code {
+  background: #f5f7fa;
+  padding: 1px 5px;
+  margin: 0 2px;
+  border-radius: 3px;
+  font-size: 12px;
 }
 </style>

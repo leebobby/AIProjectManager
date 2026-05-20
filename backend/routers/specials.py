@@ -1,15 +1,16 @@
-"""专项管理：
-- 专项元数据（slug/name/owner/sort_order/is_active）：admin 增删改
-- 单专项的内容/事务/风险：任意登录用户可写（参照客户面状态进展字段惯例）
-- 全景图：admin 上传，登录用户可下载
+"""专项 / 攻关管理：
+- 元数据（name/kind/owner/...）：admin 增删改
+- 单条目的内容/事务/风险：任意登录用户可写
+- 全景图：admin 上传（支持图片 + SVG），登录用户可下载
+- 周报草稿：根据现有内容生成可编辑文本，前端复制/mailto 发送
 """
+import json
 import pathlib
-import re
 import uuid
 from datetime import datetime
 from typing import List
 
-from fastapi import APIRouter, Depends, File, Form, HTTPException, Request, UploadFile
+from fastapi import APIRouter, Depends, File, HTTPException, Request, UploadFile
 from fastapi.responses import FileResponse
 from sqlalchemy.orm import Session
 
@@ -22,7 +23,10 @@ from op_log import log_op
 router = APIRouter(prefix="/api/specials", tags=["specials"])
 
 UPLOAD_ROOT = pathlib.Path(__file__).resolve().parent.parent / "uploads" / "specials"
-_SLUG_PAT = re.compile(r"^[a-zA-Z0-9][a-zA-Z0-9_-]{0,63}$")
+
+
+def _kind_label(kind: str) -> str:
+    return "攻关" if kind == "assault" else "专项"
 
 
 def _ensure_dir(p: pathlib.Path) -> None:
@@ -66,19 +70,18 @@ def create_special(
     db: Session = Depends(get_db),
     current_admin: models.User = Depends(require_admin),
 ):
-    if not _SLUG_PAT.match(payload.slug):
-        raise HTTPException(400, "slug 仅支持字母/数字/下划线/连字符，长度 1-64")
-    if db.query(models.Special).filter(models.Special.slug == payload.slug).first():
-        raise HTTPException(400, "slug 已存在")
-    item = models.Special(**payload.model_dump())
+    data = payload.model_dump()
+    if data.get("kind") not in ("special", "assault"):
+        data["kind"] = "special"
+    item = models.Special(**data)
     db.add(item)
     db.commit()
     db.refresh(item)
     # 创建对应的空 content
     db.add(models.SpecialContent(special_id=item.id))
     db.commit()
-    log_op(db, action="新增", target="专项", target_id=item.id,
-           detail=f"slug={item.slug} name={item.name}",
+    log_op(db, action="新增", target=_kind_label(item.kind), target_id=item.id,
+           detail=f"name={item.name}",
            user=current_admin, request=request)
     return item
 
@@ -93,18 +96,14 @@ def update_special(
 ):
     item = _get_or_404(db, sid)
     data = payload.model_dump(exclude_unset=True)
-    if "slug" in data:
-        if not _SLUG_PAT.match(data["slug"]):
-            raise HTTPException(400, "slug 仅支持字母/数字/下划线/连字符")
-        if data["slug"] != item.slug:
-            if db.query(models.Special).filter(models.Special.slug == data["slug"]).first():
-                raise HTTPException(400, "slug 已存在")
+    if "kind" in data and data["kind"] not in ("special", "assault"):
+        raise HTTPException(400, "kind 仅支持 special / assault")
     for k, v in data.items():
         setattr(item, k, v)
     db.commit()
     db.refresh(item)
-    log_op(db, action="修改", target="专项", target_id=item.id,
-           detail=f"slug={item.slug} fields={','.join(data.keys()) or '无'}",
+    log_op(db, action="修改", target=_kind_label(item.kind), target_id=item.id,
+           detail=f"name={item.name} fields={','.join(data.keys()) or '无'}",
            user=current_admin, request=request)
     return item
 
@@ -117,7 +116,8 @@ def delete_special(
     current_admin: models.User = Depends(require_admin),
 ):
     item = _get_or_404(db, sid)
-    snapshot = f"slug={item.slug} name={item.name}"
+    snapshot = f"name={item.name}"
+    label = _kind_label(item.kind)
     # 清理全景图文件
     if item.content and item.content.panorama_image_path:
         try:
@@ -128,20 +128,12 @@ def delete_special(
             pass
     db.delete(item)
     db.commit()
-    log_op(db, action="删除", target="专项", target_id=sid,
+    log_op(db, action="删除", target=label, target_id=sid,
            detail=snapshot, user=current_admin, request=request)
     return {"ok": True}
 
 
 # ─── 详情 ──────────────────────────────────────────────────────────
-
-@router.get("/by-slug/{slug}", response_model=schemas.SpecialDetailOut)
-def get_by_slug(slug: str, db: Session = Depends(get_db)):
-    item = db.query(models.Special).filter(models.Special.slug == slug).first()
-    if not item:
-        raise HTTPException(404, "专项不存在")
-    _ensure_content(db, item)
-    return item
 
 
 @router.get("/{sid}", response_model=schemas.SpecialDetailOut)
@@ -170,13 +162,16 @@ def update_content(
     content.version += 1
     db.commit()
     db.refresh(content)
-    log_op(db, action="修改", target="专项内容", target_id=sid,
-           detail=f"slug={special.slug} fields={','.join(data.keys()) or '无'}",
+    log_op(db, action="修改", target=f"{_kind_label(special.kind)}内容", target_id=sid,
+           detail=f"name={special.name} fields={','.join(data.keys()) or '无'}",
            user=current_user, request=request)
     return content
 
 
 # ─── 全景图上传/下载 ────────────────────────────────────────────────
+
+_PANORAMA_OK_EXT = {".png", ".jpg", ".jpeg", ".gif", ".webp", ".bmp", ".svg"}
+
 
 @router.post("/{sid}/panorama", response_model=schemas.SpecialContentOut)
 def upload_panorama(
@@ -186,8 +181,11 @@ def upload_panorama(
     db: Session = Depends(get_db),
     current_admin: models.User = Depends(require_admin),
 ):
-    if not file.content_type or not file.content_type.startswith("image/"):
-        raise HTTPException(400, "仅支持图片文件")
+    ct = (file.content_type or "").lower()
+    ext = pathlib.Path(file.filename or "").suffix.lower()
+    is_image = ct.startswith("image/") or ct == "image/svg+xml"
+    if not (is_image or ext in _PANORAMA_OK_EXT):
+        raise HTTPException(400, "仅支持图片或 SVG 文件")
     special = _get_or_404(db, sid)
     content = _ensure_content(db, special)
 
@@ -220,7 +218,7 @@ def upload_panorama(
     db.commit()
     db.refresh(content)
     log_op(db, action="修改", target="专项全景图", target_id=sid,
-           detail=f"slug={special.slug} file={orig_name}",
+           detail=f"name={special.name} file={orig_name}",
            user=current_admin, request=request)
     return content
 
@@ -398,3 +396,108 @@ def delete_risk(
     current_user: models.User = Depends(get_current_user),
 ):
     return _delete_item("risk", item_id, db, current_user, request)
+
+
+# ─── 周报草稿 ──────────────────────────────────────────────────────
+
+_MS_STATUS_LABEL = {
+    "planning": "未开始", "in_progress": "进行中",
+    "done": "已完成", "delayed": "已延期",
+}
+
+
+def _render_report_body(special: models.Special) -> str:
+    label = _kind_label(special.kind)
+    content = special.content
+    parts: List[str] = []
+
+    parts.append(f"[{label}名称] {special.name}")
+    parts.append(f"[责任人] {special.owner or '-'}")
+    parts.append(f"[报告日期] {datetime.now().strftime('%Y-%m-%d')}")
+    parts.append("")
+
+    if content and content.goal:
+        parts.append(f"一、{label}目标")
+        parts.append(content.goal.strip())
+        parts.append("")
+
+    if content and content.progress_summary:
+        parts.append("二、一句话进展 & 求助")
+        parts.append(content.progress_summary.strip())
+        parts.append("")
+
+    # 里程碑
+    milestones = []
+    if content and content.milestones_json:
+        try:
+            milestones = json.loads(content.milestones_json) or []
+        except (ValueError, TypeError):
+            milestones = []
+    if milestones:
+        parts.append(f"三、{label}计划（里程碑）")
+        for m in milestones:
+            st = _MS_STATUS_LABEL.get(m.get("status", "planning"), m.get("status", ""))
+            parts.append(f"  · {m.get('name','')}  {m.get('date','')}  [{st}]")
+        parts.append("")
+
+    # 事务
+    open_tasks = [t for t in (special.tasks or []) if (t.status or "open") == "open"]
+    closed_tasks = [t for t in (special.tasks or []) if (t.status or "open") == "closed"]
+    if open_tasks or closed_tasks:
+        parts.append(f"四、{label}事务")
+        if open_tasks:
+            parts.append(f"  ◇ 进行中（{len(open_tasks)} 项）")
+            for i, t in enumerate(open_tasks, 1):
+                parts.append(f"    {i}. {(t.content or '').strip()}")
+                if t.progress: parts.append(f"       进展：{t.progress.strip()}")
+                meta = []
+                if t.owner: meta.append(f"责任人：{t.owner}")
+                if t.planned_close_date: meta.append(f"计划闭环：{t.planned_close_date}")
+                if meta: parts.append(f"       " + " / ".join(meta))
+        if closed_tasks:
+            parts.append(f"  ◇ 本期已闭环（{len(closed_tasks)} 项）")
+            for i, t in enumerate(closed_tasks, 1):
+                parts.append(f"    {i}. {(t.content or '').strip()}")
+        parts.append("")
+
+    # 风险
+    risks = special.risks or []
+    if risks:
+        parts.append("五、风险和问题")
+        for i, r in enumerate(risks, 1):
+            parts.append(f"  {i}. {(r.content or '').strip()}")
+            if r.progress: parts.append(f"     当前进展：{r.progress.strip()}")
+            meta = []
+            if r.owner: meta.append(f"责任人：{r.owner}")
+            if r.planned_close_date: meta.append(f"计划闭环：{r.planned_close_date}")
+            if meta: parts.append(f"     " + " / ".join(meta))
+        parts.append("")
+
+    return "\n".join(parts).rstrip() + "\n"
+
+
+def _render_subject(special: models.Special) -> str:
+    label = _kind_label(special.kind)
+    tpl = (special.email_subject_tpl or "").strip()
+    today = datetime.now().strftime("%Y-%m-%d")
+    if tpl:
+        return (tpl
+                .replace("{label}", label)
+                .replace("{kind_label}", label)
+                .replace("{name}", special.name)
+                .replace("{owner}", special.owner or "")
+                .replace("{date}", today))
+    return f"【{label}周报】{special.name} - {today}"
+
+
+@router.get("/{sid}/report-draft", response_model=schemas.SpecialReportDraft)
+def get_report_draft(sid: int, db: Session = Depends(get_db)):
+    special = _get_or_404(db, sid)
+    _ensure_content(db, special)
+    db.refresh(special)
+    return schemas.SpecialReportDraft(
+        subject=_render_subject(special),
+        to=special.email_to or "",
+        cc=special.email_cc or "",
+        body=_render_report_body(special),
+    )

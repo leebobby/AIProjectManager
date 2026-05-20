@@ -292,16 +292,20 @@ class HandbookItem(Base):
 
 
 class Special(Base):
-    """专项管理：每条 = 一个专项（左侧二级菜单 + 一个详情页）"""
+    """专项 / 攻关：每条 = 一项工作（左侧二级菜单 + 一个详情页）"""
     __tablename__ = "specials"
 
     id = Column(Integer, primary_key=True, index=True)
-    slug = Column(String(64), unique=True, nullable=False, index=True,
-                  comment="URL 用，英文/数字/连字符")
-    name = Column(String(128), nullable=False, comment="专项名称")
+    # slug 历史字段，保留兼容；新数据不再依赖。
+    slug = Column(String(64), default="", index=True, comment="历史字段，不再使用")
+    kind = Column(String(16), default="special", comment="special=专项 / assault=攻关")
+    name = Column(String(128), nullable=False, comment="名称")
     owner = Column(String(64), default="", comment="责任人")
     sort_order = Column(Integer, default=0)
     is_active = Column(Boolean, default=True)
+    email_to = Column(String(512), default="", comment="周报默认主送，逗号分隔")
+    email_cc = Column(String(512), default="", comment="周报默认抄送，逗号分隔")
+    email_subject_tpl = Column(String(256), default="", comment="周报默认主题模板")
     created_at = Column(DateTime, default=datetime.utcnow)
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
 
@@ -334,6 +338,8 @@ class SpecialContent(Base):
     milestones_json = Column(Text, default="[]")
     # 阵型：{"headers":[...], "rows":[[cell, cell, ...], ...]}
     formation_json = Column(Text, default='{"headers":[],"rows":[]}')
+    # 事务区域附加的若干"自由表格"：[{title, headers, rows}, ...]
+    extra_grids_json = Column(Text, default="[]")
     version = Column(Integer, nullable=False, default=0, comment="乐观锁")
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
 
@@ -341,7 +347,7 @@ class SpecialContent(Base):
 
 
 class SpecialTask(Base):
-    """专项事务表的一行。"""
+    """专项/攻关 事务表的一行。"""
     __tablename__ = "special_tasks"
     id = Column(Integer, primary_key=True, index=True)
     special_id = Column(Integer, ForeignKey("specials.id", ondelete="CASCADE"),
@@ -351,6 +357,7 @@ class SpecialTask(Base):
     progress = Column(Text, default="", comment="当前进展")
     owner = Column(String(64), default="", comment="责任人")
     planned_close_date = Column(String(32), default="", comment="计划闭环时间")
+    status = Column(String(16), default="open", comment="open / closed")
     sort_order = Column(Integer, default=0)
     created_at = Column(DateTime, default=datetime.utcnow)
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)

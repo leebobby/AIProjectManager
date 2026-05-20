@@ -58,6 +58,14 @@ _ADDITIONS = [
     ("customer_status", "version", "INTEGER NOT NULL DEFAULT 0"),
     ("iteration_requirements", "version", "INTEGER NOT NULL DEFAULT 0"),
     ("roadmap_phases", "version", "INTEGER NOT NULL DEFAULT 0"),
+
+    # v0.14: 专项/攻关 拓展字段
+    ("specials", "kind", "VARCHAR(16) NOT NULL DEFAULT 'special'"),
+    ("specials", "email_to", "VARCHAR(512) NOT NULL DEFAULT ''"),
+    ("specials", "email_cc", "VARCHAR(512) NOT NULL DEFAULT ''"),
+    ("specials", "email_subject_tpl", "VARCHAR(256) NOT NULL DEFAULT ''"),
+    ("special_tasks", "status", "VARCHAR(16) NOT NULL DEFAULT 'open'"),
+    ("special_contents", "extra_grids_json", "TEXT NOT NULL DEFAULT '[]'"),
 ]
 
 
