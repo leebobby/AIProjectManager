@@ -235,6 +235,17 @@
 
     <!-- 周报草稿对话框 -->
     <el-dialog v-model="reportDialog.visible" :title="`${label}周报草稿`" width="720px" top="6vh">
+      <el-alert
+        type="info"
+        :closable="false"
+        show-icon
+        style="margin-bottom: 12px"
+      >
+        <template #title>
+          下载 <code>.eml</code> 后双击即可在 Outlook / Foxmail 等邮件客户端中以草稿形式打开，
+          内容包含富文本表格的 HTML 版本，发件人地址留空由你本地客户端自动填上。
+        </template>
+      </el-alert>
       <el-form :model="reportDialog.form" label-width="80px" v-loading="reportDialog.loading">
         <el-form-item label="主送">
           <el-input v-model="reportDialog.form.to" placeholder="多个邮箱用 , 分隔" />
@@ -246,13 +257,14 @@
           <el-input v-model="reportDialog.form.subject" />
         </el-form-item>
         <el-form-item label="正文">
-          <el-input v-model="reportDialog.form.body" type="textarea" :rows="14" />
+          <el-input v-model="reportDialog.form.body" type="textarea" :rows="12" />
+          <div class="report-tip">.eml 中的纯文本部分使用此正文；HTML 富文本部分基于当前页面数据由后端实时美化渲染。</div>
         </el-form-item>
       </el-form>
       <template #footer>
         <el-button @click="reportDialog.visible = false">关闭</el-button>
-        <el-button @click="onCopyReport">复制到剪贴板</el-button>
-        <el-button type="primary" @click="onOpenMailto">在邮件客户端打开</el-button>
+        <el-button @click="onCopyReport">复制纯文本</el-button>
+        <el-button type="primary" :icon="Download" :loading="reportDialog.downloading" @click="onDownloadEml">下载 .eml</el-button>
       </template>
     </el-dialog>
   </div>
@@ -262,8 +274,8 @@
 import { computed, onMounted, reactive, ref, watch } from 'vue'
 import { useRoute } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
-import { Message, Plus } from '@element-plus/icons-vue'
-import http, { specialApi } from '../api'
+import { Download, Message, Plus } from '@element-plus/icons-vue'
+import http, { specialApi, downloadBlob } from '../api'
 import { auth } from '../store/auth'
 import { checkStorageOrWarn } from '../store/storage'
 import EditableText from '../components/EditableText.vue'
@@ -296,7 +308,12 @@ const canEdit = computed(() => auth.isLoggedIn.value)
 
 const msDialog = reactive({ visible: false, editing: null, form: { name: '', date: '', status: 'planning' } })
 const itemDialog = reactive({ visible: false, editing: null, kind: 'task', form: defaultItem() })
-const reportDialog = reactive({ visible: false, loading: false, form: { to: '', cc: '', subject: '', body: '' } })
+const reportDialog = reactive({
+  visible: false,
+  loading: false,
+  downloading: false,
+  form: { to: '', cc: '', subject: '', body: '' },
+})
 
 function defaultItem() {
   return { content: '', progress: '', owner: '', planned_close_date: '', status: 'open' }
@@ -592,28 +609,34 @@ async function openReportDialog() {
 
 async function onCopyReport() {
   const f = reportDialog.form
-  const text =
-    `收件人：${f.to}\n抄送：${f.cc}\n主题：${f.subject}\n\n${f.body}`
   try {
-    await navigator.clipboard.writeText(text)
-    ElMessage.success('已复制（含收件人/抄送/主题/正文），粘贴到邮件客户端即可')
+    await navigator.clipboard.writeText(f.body || '')
+    ElMessage.success('正文纯文本已复制到剪贴板')
   } catch {
     ElMessage.warning('剪贴板不可用，请手动选中复制')
   }
 }
 
-function onOpenMailto() {
+async function onDownloadEml() {
   const f = reportDialog.form
-  const params = []
-  if (f.cc) params.push(`cc=${encodeURIComponent(f.cc)}`)
-  params.push(`subject=${encodeURIComponent(f.subject)}`)
-  params.push(`body=${encodeURIComponent(f.body)}`)
-  const url = `mailto:${encodeURIComponent(f.to)}?${params.join('&')}`
-  // 浏览器对 mailto 的 URL 长度有限制（一般 2KB 左右），过长会被截断
-  if (url.length > 2000) {
-    ElMessage.warning('正文较长，邮件客户端可能截断，建议改用「复制到剪贴板」')
+  if (!f.to.trim()) {
+    ElMessage.warning('请填写主送收件人，否则邮件客户端无法识别')
+    return
   }
-  window.location.href = url
+  reportDialog.downloading = true
+  try {
+    const { data } = await specialApi.reportEml(special.value.id, {
+      to: f.to, cc: f.cc, subject: f.subject, body: f.body,
+    })
+    const safeName = (special.value.name || 'report').replace(/[\\/:*?"<>|]/g, '_')
+    const today = new Date().toISOString().slice(0, 10).replace(/-/g, '')
+    downloadBlob(data, `${safeName}_${today}.eml`)
+    ElMessage.success('已下载 .eml，双击在邮件客户端打开')
+  } catch (e) {
+    ElMessage.error(e.response?.data?.detail || '导出失败')
+  } finally {
+    reportDialog.downloading = false
+  }
 }
 
 watch(() => route.params.id, load)
@@ -720,5 +743,11 @@ onMounted(load)
 .formation-wrap {
   padding: 12px 16px;
   overflow-x: auto;
+}
+.report-tip {
+  font-size: 12px;
+  color: #909399;
+  line-height: 1.6;
+  margin-top: 4px;
 }
 </style>

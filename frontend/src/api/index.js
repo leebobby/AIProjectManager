@@ -86,6 +86,7 @@ export const specialApi = {
   updateRisk: (item_id, data) => http.put(`/specials/risks/${item_id}`, data),
   removeRisk: (item_id) => http.delete(`/specials/risks/${item_id}`),
   reportDraft: (id) => http.get(`/specials/${id}/report-draft`),
+  reportEml: (id, payload) => http.post(`/specials/${id}/report.eml`, payload, { responseType: 'blob' }),
 }
 
 export const userApi = {

@@ -1,17 +1,20 @@
 """专项 / 攻关管理：
 - 元数据（name/kind/owner/...）：admin 增删改
-- 单条目的内容/事务/风险：任意登录用户可写
-- 全景图：admin 上传（支持图片 + SVG），登录用户可下载
-- 周报草稿：根据现有内容生成可编辑文本，前端复制/mailto 发送
+- 单条目的内容/事务/风险/全景图：任意登录用户可写
+- 周报草稿：服务端生成草稿文本 + 美化 HTML，前端下载为 .eml（Outlook 可直接打开为草稿）
 """
+import email.utils
+import html
 import json
 import pathlib
 import uuid
 from datetime import datetime
+from email.message import EmailMessage
 from typing import List
+from urllib.parse import quote as url_quote
 
-from fastapi import APIRouter, Depends, File, HTTPException, Request, UploadFile
-from fastapi.responses import FileResponse
+from fastapi import APIRouter, Body, Depends, File, HTTPException, Request, UploadFile
+from fastapi.responses import FileResponse, Response
 from sqlalchemy.orm import Session
 
 import models
@@ -179,7 +182,7 @@ def upload_panorama(
     request: Request,
     file: UploadFile = File(...),
     db: Session = Depends(get_db),
-    current_admin: models.User = Depends(require_admin),
+    current_user: models.User = Depends(get_current_user),
 ):
     ct = (file.content_type or "").lower()
     ext = pathlib.Path(file.filename or "").suffix.lower()
@@ -217,9 +220,9 @@ def upload_panorama(
     content.version += 1
     db.commit()
     db.refresh(content)
-    log_op(db, action="修改", target="专项全景图", target_id=sid,
+    log_op(db, action="修改", target=f"{_kind_label(special.kind)}全景图", target_id=sid,
            detail=f"name={special.name} file={orig_name}",
-           user=current_admin, request=request)
+           user=current_user, request=request)
     return content
 
 
@@ -490,6 +493,166 @@ def _render_subject(special: models.Special) -> str:
     return f"【{label}周报】{special.name} - {today}"
 
 
+# ─── HTML 美化版本 ─────────────────────────────────────────────────
+
+_HTML_BASE_CSS = (
+    "font-family: 'Microsoft YaHei','PingFang SC',Arial,sans-serif; "
+    "font-size: 14px; line-height: 1.65; color: #303133;"
+)
+
+_HTML_TABLE_CSS = (
+    "border-collapse: collapse; width: 100%; margin: 6px 0 10px 0; "
+    "font-size: 13px;"
+)
+_HTML_TH_CSS = (
+    "background: #4073BA; color: #fff; text-align: left; "
+    "padding: 6px 10px; border: 1px solid #4073BA;"
+)
+_HTML_TD_CSS = "padding: 6px 10px; border: 1px solid #dcdfe6; vertical-align: top;"
+_HTML_TD_ZEBRA = "padding: 6px 10px; border: 1px solid #dcdfe6; vertical-align: top; background: #f9fbfd;"
+
+
+def _e(s) -> str:
+    """HTML 转义 + 把换行变 <br>。"""
+    return html.escape(str(s or ""), quote=False).replace("\n", "<br>")
+
+
+def _row_td(cells, zebra: bool) -> str:
+    css = _HTML_TD_ZEBRA if zebra else _HTML_TD_CSS
+    return "<tr>" + "".join(f'<td style="{css}">{_e(c)}</td>' for c in cells) + "</tr>"
+
+
+def _build_table(headers: list, rows: list) -> str:
+    head = "<tr>" + "".join(f'<th style="{_HTML_TH_CSS}">{_e(h)}</th>' for h in headers) + "</tr>"
+    body = "".join(_row_td(r, i % 2 == 1) for i, r in enumerate(rows))
+    return f'<table style="{_HTML_TABLE_CSS}">{head}{body}</table>'
+
+
+def _render_report_html(special: models.Special) -> str:
+    label = _kind_label(special.kind)
+    content = special.content
+    today = datetime.now().strftime("%Y-%m-%d")
+
+    sections: List[str] = []
+
+    if content and content.goal:
+        sections.append(
+            f'<h3 style="color:#4073BA;border-left:4px solid #4073BA;padding-left:8px;margin:18px 0 8px;">'
+            f'一、{label}目标</h3>'
+            f'<div>{_e(content.goal.strip())}</div>'
+        )
+
+    if content and content.progress_summary:
+        sections.append(
+            f'<h3 style="color:#4073BA;border-left:4px solid #4073BA;padding-left:8px;margin:18px 0 8px;">'
+            f'二、一句话进展 &amp; 求助</h3>'
+            f'<div>{_e(content.progress_summary.strip())}</div>'
+        )
+
+    # 里程碑
+    milestones = []
+    if content and content.milestones_json:
+        try:
+            milestones = json.loads(content.milestones_json) or []
+        except (ValueError, TypeError):
+            milestones = []
+    if milestones:
+        rows = [
+            [m.get("name", ""), m.get("date", ""),
+             _MS_STATUS_LABEL.get(m.get("status", "planning"), m.get("status", ""))]
+            for m in milestones
+        ]
+        sections.append(
+            f'<h3 style="color:#4073BA;border-left:4px solid #4073BA;padding-left:8px;margin:18px 0 8px;">'
+            f'三、{label}计划（里程碑）</h3>'
+            + _build_table(["里程碑", "日期", "状态"], rows)
+        )
+
+    # 事务
+    open_tasks = [t for t in (special.tasks or []) if (t.status or "open") == "open"]
+    closed_tasks = [t for t in (special.tasks or []) if (t.status or "open") == "closed"]
+    if open_tasks or closed_tasks:
+        block = [
+            f'<h3 style="color:#4073BA;border-left:4px solid #4073BA;padding-left:8px;margin:18px 0 8px;">'
+            f'四、{label}事务</h3>'
+        ]
+        if open_tasks:
+            rows = [
+                [t.content or "", t.progress or "", t.owner or "",
+                 t.planned_close_date or "", "Open"]
+                for t in open_tasks
+            ]
+            block.append(
+                f'<div style="font-weight:600;margin:6px 0;color:#E6A23C;">'
+                f'◇ 进行中（{len(open_tasks)} 项）</div>'
+                + _build_table(["事务内容", "当前进展", "责任人", "计划闭环时间", "状态"], rows)
+            )
+        if closed_tasks:
+            rows = [
+                [t.content or "", t.progress or "", t.owner or "",
+                 t.planned_close_date or "", "Closed"]
+                for t in closed_tasks
+            ]
+            block.append(
+                f'<div style="font-weight:600;margin:6px 0;color:#67C23A;">'
+                f'◇ 本期已闭环（{len(closed_tasks)} 项）</div>'
+                + _build_table(["事务内容", "当前进展", "责任人", "计划闭环时间", "状态"], rows)
+            )
+        sections.append("".join(block))
+
+    # 风险
+    risks = special.risks or []
+    if risks:
+        rows = [
+            [r.content or "", r.progress or "", r.owner or "",
+             r.planned_close_date or "",
+             "Open" if (r.status or "open") == "open" else "Closed"]
+            for r in risks
+        ]
+        sections.append(
+            f'<h3 style="color:#F56C6C;border-left:4px solid #F56C6C;padding-left:8px;margin:18px 0 8px;">'
+            f'五、风险和问题</h3>'
+            + _build_table(["问题内容", "当前进展", "责任人", "计划闭环时间", "状态"], rows)
+        )
+
+    body_inner = "".join(sections) or '<div style="color:#909399;">（该报告无内容）</div>'
+
+    return (
+        '<!DOCTYPE html><html><head><meta charset="utf-8"></head>'
+        f'<body style="{_HTML_BASE_CSS} margin:0;padding:0;background:#f5f7fa;">'
+        '<div style="max-width:880px;margin:0 auto;background:#fff;'
+        'box-shadow:0 1px 4px rgba(0,0,0,0.06);">'
+        # 标题条
+        f'<div style="background:linear-gradient(135deg,#4073BA 0%,#2D4A6B 100%);'
+        f'color:#fff;padding:18px 24px;">'
+        f'<div style="font-size:20px;font-weight:600;">【{_e(label)}周报】{_e(special.name)}</div>'
+        f'<div style="margin-top:6px;font-size:13px;opacity:.9;">'
+        f'责任人：{_e(special.owner or "-")} &nbsp;|&nbsp; '
+        f'报告日期：{today}'
+        f'</div></div>'
+        # 内容
+        f'<div style="padding:8px 24px 24px 24px;">{body_inner}</div>'
+        '</div></body></html>'
+    )
+
+
+def _build_eml(special: models.Special, subject: str, to: str, cc: str,
+               text_body: str, html_body: str) -> bytes:
+    msg = EmailMessage()
+    msg["Subject"] = subject or _render_subject(special)
+    if to:
+        msg["To"] = to
+    if cc:
+        msg["Cc"] = cc
+    msg["Date"] = email.utils.formatdate(localtime=True)
+    msg["MIME-Version"] = "1.0"
+    # Outlook 识别此 header，会以"草稿"形式打开并允许发送
+    msg["X-Unsent"] = "1"
+    msg.set_content(text_body or "", charset="utf-8")
+    msg.add_alternative(html_body or "", subtype="html", charset="utf-8")
+    return bytes(msg)
+
+
 @router.get("/{sid}/report-draft", response_model=schemas.SpecialReportDraft)
 def get_report_draft(sid: int, db: Session = Depends(get_db)):
     special = _get_or_404(db, sid)
@@ -500,4 +663,49 @@ def get_report_draft(sid: int, db: Session = Depends(get_db)):
         to=special.email_to or "",
         cc=special.email_cc or "",
         body=_render_report_body(special),
+    )
+
+
+@router.post("/{sid}/report.eml")
+def export_report_eml(
+    sid: int,
+    request: Request,
+    payload: dict = Body(...),
+    db: Session = Depends(get_db),
+    current_user: models.User = Depends(get_current_user),
+):
+    """根据当前数据 + 前端编辑过的字段生成 .eml 文件供下载。
+
+    payload 字段: subject / to / cc / body （body 是用户编辑过的纯文本）。
+    HTML 部分用当前数据库内容现场渲染，保证格式美观；
+    纯文本 fallback 用 body（用户编辑过的版本）。
+    """
+    special = _get_or_404(db, sid)
+    _ensure_content(db, special)
+    db.refresh(special)
+
+    subject = str(payload.get("subject") or _render_subject(special))
+    to = str(payload.get("to") or special.email_to or "")
+    cc = str(payload.get("cc") or special.email_cc or "")
+    text_body = str(payload.get("body") or _render_report_body(special))
+    html_body = _render_report_html(special)
+
+    eml = _build_eml(special, subject, to, cc, text_body, html_body)
+
+    fname_base = "".join(
+        c for c in (special.name or "report") if c not in '\\/:*?"<>|'
+    ).strip() or "report"
+    fname = f"{fname_base}_{datetime.now().strftime('%Y%m%d')}.eml"
+    log_op(db, action="导出周报", target=_kind_label(special.kind), target_id=sid,
+           detail=f"name={special.name}", user=current_user, request=request)
+    return Response(
+        content=eml,
+        media_type="message/rfc822",
+        headers={
+            "Content-Disposition": (
+                # ASCII fallback + RFC 5987 编码（处理中文文件名）
+                f'attachment; filename="report_{sid}.eml"; '
+                f"filename*=UTF-8''{url_quote(fname)}"
+            ),
+        },
     )
