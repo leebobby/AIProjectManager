@@ -7,9 +7,11 @@ import email.utils
 import html
 import json
 import pathlib
+import re
 import uuid
 from datetime import datetime
 from email.message import EmailMessage
+from html.parser import HTMLParser
 from typing import List
 from urllib.parse import quote as url_quote
 
@@ -401,6 +403,126 @@ def delete_risk(
     return _delete_item("risk", item_id, db, current_user, request)
 
 
+# ─── 富文本辅助 ────────────────────────────────────────────────────
+# 富文本字段（goal / progress_summary / task.content / task.progress / risk.*）
+# 可能包含来自前端富文本编辑器的 HTML（b/strong/span style 等）。
+# 为防 XSS，邮件 HTML 输出前用白名单过滤；纯文本输出前剥掉标签。
+
+_ALLOWED_TAGS = {"b", "strong", "i", "em", "u", "s", "span", "br", "div", "p", "font"}
+_VOID_TAGS = {"br"}
+_ALLOWED_STYLE_PROPS = {
+    "color", "background-color", "font-size", "font-weight",
+    "font-style", "text-decoration",
+}
+_ALLOWED_FONT_ATTRS = {"color", "size"}
+
+
+class _RichSanitizer(HTMLParser):
+    """白名单 HTML 清洗，移除 script / on* / 不在白名单内的标签和样式。"""
+
+    def __init__(self):
+        super().__init__(convert_charrefs=False)
+        self.out: List[str] = []
+
+    def handle_starttag(self, tag, attrs):
+        if tag not in _ALLOWED_TAGS:
+            return
+        kept = self._filter_attrs(tag, attrs)
+        attr_str = "".join(f' {k}="{html.escape(v, quote=True)}"' for k, v in kept)
+        self.out.append(f"<{tag}{attr_str}>")
+
+    def handle_endtag(self, tag):
+        if tag in _ALLOWED_TAGS and tag not in _VOID_TAGS:
+            self.out.append(f"</{tag}>")
+
+    def handle_startendtag(self, tag, attrs):
+        if tag == "br":
+            self.out.append("<br>")
+        elif tag in _ALLOWED_TAGS:
+            kept = self._filter_attrs(tag, attrs)
+            attr_str = "".join(f' {k}="{html.escape(v, quote=True)}"' for k, v in kept)
+            self.out.append(f"<{tag}{attr_str}/>")
+
+    def handle_data(self, data):
+        self.out.append(html.escape(data, quote=False))
+
+    def handle_entityref(self, name):
+        self.out.append(f"&{name};")
+
+    def handle_charref(self, name):
+        self.out.append(f"&#{name};")
+
+    def _filter_attrs(self, tag, attrs):
+        kept = []
+        for k, v in attrs:
+            v = v or ""
+            kl = k.lower()
+            if kl.startswith("on"):
+                continue
+            if kl == "style":
+                clean = self._sanitize_style(v)
+                if clean:
+                    kept.append(("style", clean))
+            elif tag == "font" and kl in _ALLOWED_FONT_ATTRS:
+                if any(ch in v for ch in "<>\"'"):
+                    continue
+                kept.append((kl, v))
+        return kept
+
+    @staticmethod
+    def _sanitize_style(style: str) -> str:
+        parts = []
+        for chunk in style.split(";"):
+            if ":" not in chunk:
+                continue
+            prop, val = chunk.split(":", 1)
+            prop = prop.strip().lower()
+            val = val.strip()
+            if prop not in _ALLOWED_STYLE_PROPS:
+                continue
+            low = val.lower()
+            if "expression(" in low or "javascript:" in low or "url(" in low:
+                continue
+            if any(ch in val for ch in "<>\""):
+                continue
+            parts.append(f"{prop}: {val}")
+        return "; ".join(parts)
+
+
+def _sanitize_rich(s: str) -> str:
+    if not s:
+        return ""
+    p = _RichSanitizer()
+    p.feed(s)
+    p.close()
+    return "".join(p.out)
+
+
+def _looks_like_html(s: str) -> bool:
+    return bool(s) and bool(re.search(r"<[a-zA-Z!/][^>]*>", s))
+
+
+def _rich_to_html(s: str) -> str:
+    """供邮件 HTML 部分使用：富文本直接清洗；纯文本则转义并 \\n→<br>。"""
+    if not s:
+        return ""
+    if _looks_like_html(s):
+        return _sanitize_rich(s)
+    return html.escape(s, quote=False).replace("\n", "<br>")
+
+
+def _strip_html(s: str) -> str:
+    """剥掉 HTML 转为纯文本，用于 .eml 的 text/plain 部分与服务端 draft body。"""
+    if not s:
+        return ""
+    text = re.sub(r"<br\s*/?>", "\n", s, flags=re.I)
+    text = re.sub(r"</\s*(p|div|h\d|li|tr)\s*>", "\n", text, flags=re.I)
+    text = re.sub(r"<[^>]+>", "", text)
+    text = html.unescape(text)
+    text = re.sub(r"\n{3,}", "\n\n", text)
+    return text.strip()
+
+
 # ─── 周报草稿 ──────────────────────────────────────────────────────
 
 _MS_STATUS_LABEL = {
@@ -421,12 +543,12 @@ def _render_report_body(special: models.Special) -> str:
 
     if content and content.goal:
         parts.append(f"一、{label}目标")
-        parts.append(content.goal.strip())
+        parts.append(_strip_html(content.goal))
         parts.append("")
 
     if content and content.progress_summary:
         parts.append("二、一句话进展 & 求助")
-        parts.append(content.progress_summary.strip())
+        parts.append(_strip_html(content.progress_summary))
         parts.append("")
 
     # 里程碑
@@ -451,8 +573,8 @@ def _render_report_body(special: models.Special) -> str:
         if open_tasks:
             parts.append(f"  ◇ 进行中（{len(open_tasks)} 项）")
             for i, t in enumerate(open_tasks, 1):
-                parts.append(f"    {i}. {(t.content or '').strip()}")
-                if t.progress: parts.append(f"       进展：{t.progress.strip()}")
+                parts.append(f"    {i}. {_strip_html(t.content)}")
+                if t.progress: parts.append(f"       进展：{_strip_html(t.progress)}")
                 meta = []
                 if t.owner: meta.append(f"责任人：{t.owner}")
                 if t.planned_close_date: meta.append(f"计划闭环：{t.planned_close_date}")
@@ -460,7 +582,7 @@ def _render_report_body(special: models.Special) -> str:
         if closed_tasks:
             parts.append(f"  ◇ 本期已闭环（{len(closed_tasks)} 项）")
             for i, t in enumerate(closed_tasks, 1):
-                parts.append(f"    {i}. {(t.content or '').strip()}")
+                parts.append(f"    {i}. {_strip_html(t.content)}")
         parts.append("")
 
     # 风险
@@ -468,8 +590,8 @@ def _render_report_body(special: models.Special) -> str:
     if risks:
         parts.append("五、风险和问题")
         for i, r in enumerate(risks, 1):
-            parts.append(f"  {i}. {(r.content or '').strip()}")
-            if r.progress: parts.append(f"     当前进展：{r.progress.strip()}")
+            parts.append(f"  {i}. {_strip_html(r.content)}")
+            if r.progress: parts.append(f"     当前进展：{_strip_html(r.progress)}")
             meta = []
             if r.owner: meta.append(f"责任人：{r.owner}")
             if r.planned_close_date: meta.append(f"计划闭环：{r.planned_close_date}")
@@ -522,9 +644,22 @@ def _row_td(cells, zebra: bool) -> str:
     return "<tr>" + "".join(f'<td style="{css}">{_e(c)}</td>' for c in cells) + "</tr>"
 
 
+def _row_td_raw(cells_html, zebra: bool) -> str:
+    """cells_html 中已是安全 HTML（调用方负责清洗）。"""
+    css = _HTML_TD_ZEBRA if zebra else _HTML_TD_CSS
+    return "<tr>" + "".join(f'<td style="{css}">{c}</td>' for c in cells_html) + "</tr>"
+
+
 def _build_table(headers: list, rows: list) -> str:
     head = "<tr>" + "".join(f'<th style="{_HTML_TH_CSS}">{_e(h)}</th>' for h in headers) + "</tr>"
     body = "".join(_row_td(r, i % 2 == 1) for i, r in enumerate(rows))
+    return f'<table style="{_HTML_TABLE_CSS}">{head}{body}</table>'
+
+
+def _build_table_rich(headers: list, rows_html: list) -> str:
+    """rows_html 中每个单元格已是安全 HTML，由调用方对富文本字段做清洗。"""
+    head = "<tr>" + "".join(f'<th style="{_HTML_TH_CSS}">{_e(h)}</th>' for h in headers) + "</tr>"
+    body = "".join(_row_td_raw(r, i % 2 == 1) for i, r in enumerate(rows_html))
     return f'<table style="{_HTML_TABLE_CSS}">{head}{body}</table>'
 
 
@@ -539,14 +674,14 @@ def _render_report_html(special: models.Special) -> str:
         sections.append(
             f'<h3 style="color:#4073BA;border-left:4px solid #4073BA;padding-left:8px;margin:18px 0 8px;">'
             f'一、{label}目标</h3>'
-            f'<div>{_e(content.goal.strip())}</div>'
+            f'<div>{_rich_to_html(content.goal)}</div>'
         )
 
     if content and content.progress_summary:
         sections.append(
             f'<h3 style="color:#4073BA;border-left:4px solid #4073BA;padding-left:8px;margin:18px 0 8px;">'
             f'二、一句话进展 &amp; 求助</h3>'
-            f'<div>{_e(content.progress_summary.strip())}</div>'
+            f'<div>{_rich_to_html(content.progress_summary)}</div>'
         )
 
     # 里程碑
@@ -578,25 +713,25 @@ def _render_report_html(special: models.Special) -> str:
         ]
         if open_tasks:
             rows = [
-                [t.content or "", t.progress or "", t.owner or "",
-                 t.planned_close_date or "", "Open"]
+                [_rich_to_html(t.content), _rich_to_html(t.progress),
+                 _e(t.owner or ""), _e(t.planned_close_date or ""), "Open"]
                 for t in open_tasks
             ]
             block.append(
                 f'<div style="font-weight:600;margin:6px 0;color:#E6A23C;">'
                 f'◇ 进行中（{len(open_tasks)} 项）</div>'
-                + _build_table(["事务内容", "当前进展", "责任人", "计划闭环时间", "状态"], rows)
+                + _build_table_rich(["事务内容", "当前进展", "责任人", "计划闭环时间", "状态"], rows)
             )
         if closed_tasks:
             rows = [
-                [t.content or "", t.progress or "", t.owner or "",
-                 t.planned_close_date or "", "Closed"]
+                [_rich_to_html(t.content), _rich_to_html(t.progress),
+                 _e(t.owner or ""), _e(t.planned_close_date or ""), "Closed"]
                 for t in closed_tasks
             ]
             block.append(
                 f'<div style="font-weight:600;margin:6px 0;color:#67C23A;">'
                 f'◇ 本期已闭环（{len(closed_tasks)} 项）</div>'
-                + _build_table(["事务内容", "当前进展", "责任人", "计划闭环时间", "状态"], rows)
+                + _build_table_rich(["事务内容", "当前进展", "责任人", "计划闭环时间", "状态"], rows)
             )
         sections.append("".join(block))
 
@@ -604,15 +739,15 @@ def _render_report_html(special: models.Special) -> str:
     risks = special.risks or []
     if risks:
         rows = [
-            [r.content or "", r.progress or "", r.owner or "",
-             r.planned_close_date or "",
+            [_rich_to_html(r.content), _rich_to_html(r.progress),
+             _e(r.owner or ""), _e(r.planned_close_date or ""),
              "Open" if (r.status or "open") == "open" else "Closed"]
             for r in risks
         ]
         sections.append(
             f'<h3 style="color:#F56C6C;border-left:4px solid #F56C6C;padding-left:8px;margin:18px 0 8px;">'
             f'五、风险和问题</h3>'
-            + _build_table(["问题内容", "当前进展", "责任人", "计划闭环时间", "状态"], rows)
+            + _build_table_rich(["问题内容", "当前进展", "责任人", "计划闭环时间", "状态"], rows)
         )
 
     body_inner = "".join(sections) or '<div style="color:#909399;">（该报告无内容）</div>'

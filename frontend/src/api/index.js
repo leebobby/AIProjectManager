@@ -193,6 +193,22 @@ export const iterationRequirementApi = {
   },
 }
 
+export const productRequirementApi = {
+  list: (iteration_id) => http.get('/iteration-product-requirements', { params: { iteration_id } }),
+  create: (data) => http.post('/iteration-product-requirements', data),
+  update: (id, data) => http.put(`/iteration-product-requirements/${id}`, data),
+  remove: (id) => http.delete(`/iteration-product-requirements/${id}`),
+  importTemplate: () => http.get('/iteration-product-requirements/import-template.xlsx', { responseType: 'blob' }),
+  importExcel: (iteration_id, file) => {
+    const fd = new FormData()
+    fd.append('file', file)
+    return http.post('/iteration-product-requirements/import', fd, {
+      params: { iteration_id },
+      headers: { 'Content-Type': 'multipart/form-data' },
+    })
+  },
+}
+
 export const stakeholderApi = {
   listProjectContacts: () => http.get('/stakeholders/project-contacts'),
   createProjectContact: (data) => http.post('/stakeholders/project-contacts', data),

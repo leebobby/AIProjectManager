@@ -69,6 +69,55 @@ class AnnualIteration(Base):
         cascade="all, delete-orphan",
         order_by="IterationRequirement.seq",
     )
+    product_requirements = relationship(
+        "IterationProductRequirement",
+        back_populates="iteration",
+        cascade="all, delete-orphan",
+        order_by="IterationProductRequirement.seq",
+    )
+
+
+class IterationProductRequirement(Base):
+    """迭代下的"产品需求"：与 IterationRequirement（领域需求）并列的另一类清单。
+
+    列结构与领域需求差异较大，单独建表，避免在同一行里塞大量空字段。
+    """
+    __tablename__ = "iteration_product_requirements"
+
+    id = Column(Integer, primary_key=True, index=True)
+    iteration_id = Column(Integer, ForeignKey("annual_iterations.id", ondelete="CASCADE"), nullable=False, index=True)
+    seq = Column(Integer, default=0, comment="序号（排序用）")
+    req_no = Column(String(64), default="", comment="需求编号")
+    req_url = Column(String(512), default="", comment="需求超链接")
+    title = Column(String(256), default="", comment="需求标题")
+    planned_version = Column(String(64), default="", comment="计划交付版本")
+    priority = Column(String(8), default="中", comment="优先级 高/中/低")
+    feature = Column(String(128), default="", comment="所属特性")
+    feature_fo = Column(String(64), default="", comment="特性FO")
+    feature_se = Column(String(64), default="", comment="特性SE")
+    feature_tfo = Column(String(64), default="", comment="特性TFO")
+    code_areas = Column(Text, default="", comment="涉及代码领域")
+
+    # 交付进展跟踪 ─── 进度子项，枚举：未开始/进行中/已完成/已延期/已变更/不涉及
+    progress_walkthrough = Column(String(16), default="未开始", comment="需求串讲")
+    progress_reverse = Column(String(16), default="未开始", comment="反串讲")
+    progress_domain = Column(String(16), default="未开始", comment="领域串讲")
+    progress_coding = Column(String(16), default="未开始", comment="编码")
+    progress_joint_debug = Column(String(16), default="未开始", comment="联调验证")
+    progress_clarify = Column(String(16), default="未开始", comment="转测澄清")
+    progress_test_result = Column(String(16), default="未开始", comment="测试结论")
+
+    # 数据/风险类自由字段
+    estimated_loc = Column(String(32), default="", comment="预估代码量")
+    actual_loc = Column(String(32), default="", comment="实际代码量")
+    actual_effort = Column(String(32), default="", comment="实际工作量")
+    key_risks = Column(Text, default="", comment="关键风险")
+
+    version = Column(Integer, nullable=False, default=0, comment="乐观锁版本号")
+    created_at = Column(DateTime, default=datetime.utcnow)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+    iteration = relationship("AnnualIteration", back_populates="product_requirements")
 
 
 class IterationRequirement(Base):

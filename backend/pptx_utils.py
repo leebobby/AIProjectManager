@@ -275,18 +275,20 @@ def build_customer_status_pptx(rows: Iterable) -> io.BytesIO:
     return buf
 
 
-def build_iteration_pptx(iteration, requirements: Iterable) -> io.BytesIO:
-    """传入 AnnualIteration + IterationRequirement 列表，返回 BytesIO。
+def _iteration_title(iteration) -> str:
+    title = f"{iteration.year}年{iteration.month}月迭代"
+    if iteration.name:
+        title += f"  ·  {iteration.name}"
+    return title
 
-    表头改成两行：基础列 + 「交付进展跟踪」分组下的 6 个子列 + 备注。
-    """
-    # leaf 列
+
+def _add_domain_slide(pres, iteration, requirements: Iterable):
+    """领域需求 slide：基础列 + 「交付进展跟踪」6 子列 + 备注。"""
     leaf_headers = [
         "序号", "需求编号", "需求标题", "责任人", "PL组", "优先级", "计划版本",
         "需求串讲", "反串讲", "STC设计", "编码", "BBIT", "转测澄清",
         "备注",
     ]
-    # 父表头：6 个基础前缀（含 PL组） + 6 个进展列归到「交付进展跟踪」组 + 备注
     parent_headers: List[Optional[tuple]] = [None] * 7 + [("progress", "交付进展跟踪")] * 6 + [None]
     col_widths = [0.45, 1.0, 2.0, 0.75, 0.7, 0.55, 0.85, 0.82, 0.82, 0.82, 0.82, 0.82, 0.82, 1.4]
 
@@ -309,16 +311,89 @@ def build_iteration_pptx(iteration, requirements: Iterable) -> io.BytesIO:
             getattr(r, "remark", "") or "",
         ])
 
-    pres = _new_pres()
     slide = pres.slides.add_slide(pres.slide_layouts[6])
-    title = f"{iteration.year}年{iteration.month}月迭代"
-    if iteration.name:
-        title += f"  ·  {iteration.name}"
-    subtitle = f"导出时间：{datetime.now().strftime('%Y-%m-%d %H:%M')}   ·   共 {len(data)} 条需求"
+    title = _iteration_title(iteration) + "  ·  领域需求"
+    subtitle = f"导出时间：{datetime.now().strftime('%Y-%m-%d %H:%M')}   ·   共 {len(data)} 条领域需求"
     if iteration.owner:
         subtitle += f"   ·   负责人：{iteration.owner}"
     _add_banner(slide, title, subtitle)
     _add_grouped_table(slide, parent_headers, leaf_headers, data, col_widths)
+
+
+def _add_product_slides(pres, iteration, product_reqs: Iterable):
+    """产品需求 slide：单页字段太多，拆 2 张：基础+特性 / 交付进展跟踪。"""
+    rows_basic: List[List[str]] = []
+    rows_progress: List[List[str]] = []
+    for r in product_reqs:
+        rows_basic.append([
+            str(r.seq or 0),
+            r.req_no or "",
+            r.title or "",
+            r.planned_version or "",
+            r.priority or "",
+            r.feature or "",
+            r.feature_fo or "",
+            r.feature_se or "",
+            r.feature_tfo or "",
+            r.code_areas or "",
+            r.key_risks or "",
+        ])
+        rows_progress.append([
+            str(r.seq or 0),
+            r.req_no or "",
+            r.title or "",
+            r.progress_walkthrough or "",
+            r.progress_reverse or "",
+            r.progress_domain or "",
+            r.progress_coding or "",
+            r.progress_joint_debug or "",
+            r.progress_clarify or "",
+            r.progress_test_result or "",
+            r.estimated_loc or "",
+            r.actual_loc or "",
+            r.actual_effort or "",
+        ])
+
+    base_title = _iteration_title(iteration)
+    subtitle_common = f"导出时间：{datetime.now().strftime('%Y-%m-%d %H:%M')}   ·   共 {len(rows_basic)} 条产品需求"
+
+    # —— Slide 1：基础信息 + 特性 + 关键风险 ——
+    slide1 = pres.slides.add_slide(pres.slide_layouts[6])
+    _add_banner(slide1, base_title + "  ·  产品需求（基础信息）", subtitle_common)
+    leaf1 = [
+        "序号", "需求编号", "需求标题", "计划版本", "优先级", "所属特性",
+        "特性FO", "特性SE", "特性TFO", "涉及代码领域", "关键风险",
+    ]
+    parents1: List[Optional[tuple]] = [None] * 11
+    widths1 = [0.4, 1.0, 1.9, 0.9, 0.55, 1.0, 0.7, 0.7, 0.7, 1.6, 2.5]
+    _add_grouped_table(slide1, parents1, leaf1, rows_basic, widths1)
+
+    # —— Slide 2：交付进展跟踪 ——
+    slide2 = pres.slides.add_slide(pres.slide_layouts[6])
+    _add_banner(slide2, base_title + "  ·  产品需求（交付进展跟踪）", subtitle_common)
+    leaf2 = [
+        "序号", "需求编号", "需求标题",
+        "需求串讲", "反串讲", "领域串讲", "编码", "联调验证", "转测澄清", "测试结论",
+        "预估代码量", "实际代码量", "实际工作量",
+    ]
+    parents2: List[Optional[tuple]] = [None, None, None] + [("progress", "交付进展跟踪")] * 10
+    widths2 = [0.4, 1.0, 1.5, 0.8, 0.7, 0.85, 0.6, 0.85, 0.85, 0.85, 0.95, 0.95, 0.95]
+    _add_grouped_table(slide2, parents2, leaf2, rows_progress, widths2)
+
+
+def build_iteration_pptx(iteration, requirements: Iterable, product_reqs: Optional[Iterable] = None) -> io.BytesIO:
+    """传入 AnnualIteration + 领域/产品 需求列表，返回 BytesIO。
+
+    - 始终输出领域需求 slide（保持原有行为）
+    - 若 product_reqs 非空，再追加 2 张产品需求 slide
+    """
+    pres = _new_pres()
+    _add_domain_slide(pres, iteration, requirements)
+
+    if product_reqs:
+        product_list = list(product_reqs)
+        if product_list:
+            _add_product_slides(pres, iteration, product_list)
 
     buf = io.BytesIO()
     pres.save(buf)

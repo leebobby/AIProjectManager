@@ -15,7 +15,13 @@
       <div class="sec">
         <div class="sec-head">{{ label }}目标</div>
         <div class="sec-body">
-          <EditableText :value="content.goal" :editable="canEdit" :placeholder="`点击填写${label}目标...`" @save="onSaveField('goal', $event)" />
+          <EditableText
+            :value="content.goal"
+            :editable="canEdit"
+            rich
+            :placeholder="`点击填写${label}目标...`"
+            @save="onSaveField('goal', $event)"
+          />
         </div>
       </div>
 
@@ -39,7 +45,13 @@
       <div class="sec">
         <div class="sec-head">一句话进展&求助</div>
         <div class="sec-body">
-          <EditableText :value="content.progress_summary" :editable="canEdit" placeholder="本周完成 xx 工作内容，主要风险为..." @save="onSaveField('progress_summary', $event)" />
+          <EditableText
+            :value="content.progress_summary"
+            :editable="canEdit"
+            rich
+            placeholder="本周完成 xx 工作内容，主要风险为..."
+            @save="onSaveField('progress_summary', $event)"
+          />
         </div>
       </div>
 
@@ -75,12 +87,12 @@
           <el-table-column type="index" label="序号" width="70" align="center" />
           <el-table-column prop="content" label="事务内容" min-width="240">
             <template #default="{ row }">
-              <span class="cell-multiline">{{ row.content || '-' }}</span>
+              <div class="cell-multiline rich-cell" v-html="row.content || '-'" />
             </template>
           </el-table-column>
           <el-table-column prop="progress" label="当前进展" min-width="200">
             <template #default="{ row }">
-              <span class="cell-multiline">{{ row.progress || '-' }}</span>
+              <div class="cell-multiline rich-cell" v-html="row.progress || '-'" />
             </template>
           </el-table-column>
           <el-table-column prop="owner" label="责任人" width="110" />
@@ -134,12 +146,12 @@
           <el-table-column type="index" label="序号" width="70" align="center" />
           <el-table-column prop="content" label="问题内容" min-width="240">
             <template #default="{ row }">
-              <span class="cell-multiline">{{ row.content || '-' }}</span>
+              <div class="cell-multiline rich-cell" v-html="row.content || '-'" />
             </template>
           </el-table-column>
           <el-table-column prop="progress" label="当前进展" min-width="200">
             <template #default="{ row }">
-              <span class="cell-multiline">{{ row.progress || '-' }}</span>
+              <div class="cell-multiline rich-cell" v-html="row.progress || '-'" />
             </template>
           </el-table-column>
           <el-table-column prop="owner" label="责任人" width="110" />
@@ -178,10 +190,15 @@
     </div>
 
     <!-- 里程碑对话框 -->
-    <el-dialog v-model="msDialog.visible" :title="msDialog.editing != null ? '编辑里程碑' : '新增里程碑'" width="440px">
+    <el-dialog v-model="msDialog.visible" :title="msDialog.editing != null ? '编辑里程碑' : '新增里程碑'" width="480px">
       <el-form :model="msDialog.form" label-width="80px">
         <el-form-item label="名称">
-          <el-input v-model="msDialog.form.name" />
+          <el-input
+            v-model="msDialog.form.name"
+            type="textarea"
+            :autosize="{ minRows: 2, maxRows: 6 }"
+            placeholder="可输入多行，例如&#10;1. 完成 xxx&#10;2. 输出 yyy"
+          />
         </el-form-item>
         <el-form-item label="日期">
           <el-date-picker v-model="msDialog.form.date" type="date" value-format="YYYY-MM-DD" style="width: 100%" />
@@ -209,10 +226,10 @@
     >
       <el-form :model="itemDialog.form" label-width="100px">
         <el-form-item :label="itemDialog.kind === 'task' ? '事务内容' : '问题内容'">
-          <el-input v-model="itemDialog.form.content" type="textarea" :rows="3" />
+          <RichTextEditor v-model="itemDialog.form.content" min-height="90px" placeholder="支持加粗 / 字号 / 颜色" />
         </el-form-item>
         <el-form-item label="当前进展">
-          <el-input v-model="itemDialog.form.progress" type="textarea" :rows="2" />
+          <RichTextEditor v-model="itemDialog.form.progress" min-height="70px" placeholder="支持加粗 / 字号 / 颜色" />
         </el-form-item>
         <el-form-item label="责任人">
           <el-input v-model="itemDialog.form.owner" />
@@ -281,6 +298,7 @@ import { checkStorageOrWarn } from '../store/storage'
 import EditableText from '../components/EditableText.vue'
 import MilestoneTimeline from '../components/MilestoneTimeline.vue'
 import FormationGrid from '../components/FormationGrid.vue'
+import RichTextEditor from '../components/RichTextEditor.vue'
 
 const route = useRoute()
 const loading = ref(false)
@@ -711,6 +729,8 @@ onMounted(load)
   white-space: pre-wrap;
   word-break: break-word;
 }
+.rich-cell :deep(p) { margin: 0; }
+.rich-cell :deep(div) { display: inline; }
 .muted { color: #909399; padding: 12px 16px; }
 
 /* 附加表格 */

@@ -7,7 +7,7 @@ import models
 from auth import get_current_user, hash_password
 from database import Base, SessionLocal, engine
 from migrate import ensure_schema
-from routers import annual_iterations, iteration_requirements
+from routers import annual_iterations, iteration_product_requirements, iteration_requirements
 from routers import auth as auth_router
 from routers import config as config_router
 from routers import customer_status, handbook, issues, iterations, major_versions, op_logs, project_formation, roadmap, specials, stakeholders, system as system_router, users, versions
@@ -37,6 +37,7 @@ app.include_router(versions.router, dependencies=authed)
 app.include_router(iterations.router, dependencies=authed)
 app.include_router(annual_iterations.router, dependencies=authed)
 app.include_router(iteration_requirements.router, dependencies=authed)
+app.include_router(iteration_product_requirements.router, dependencies=authed)
 app.include_router(roadmap.router, dependencies=authed)
 app.include_router(issues.router, dependencies=authed)
 app.include_router(major_versions.router, dependencies=authed)

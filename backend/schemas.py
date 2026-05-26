@@ -180,6 +180,70 @@ class IterationRequirementOut(IterationRequirementBase):
     model_config = ConfigDict(from_attributes=True)
 
 
+# ===== IterationProductRequirement =====
+class IterationProductRequirementBase(BaseModel):
+    seq: Optional[int] = 0
+    req_no: Optional[str] = ""
+    req_url: Optional[str] = ""
+    title: Optional[str] = ""
+    planned_version: Optional[str] = ""
+    priority: Optional[str] = "中"
+    feature: Optional[str] = ""
+    feature_fo: Optional[str] = ""
+    feature_se: Optional[str] = ""
+    feature_tfo: Optional[str] = ""
+    code_areas: Optional[str] = ""
+    progress_walkthrough: Optional[str] = "未开始"
+    progress_reverse: Optional[str] = "未开始"
+    progress_domain: Optional[str] = "未开始"
+    progress_coding: Optional[str] = "未开始"
+    progress_joint_debug: Optional[str] = "未开始"
+    progress_clarify: Optional[str] = "未开始"
+    progress_test_result: Optional[str] = "未开始"
+    estimated_loc: Optional[str] = ""
+    actual_loc: Optional[str] = ""
+    actual_effort: Optional[str] = ""
+    key_risks: Optional[str] = ""
+
+
+class IterationProductRequirementCreate(IterationProductRequirementBase):
+    iteration_id: int
+
+
+class IterationProductRequirementUpdate(BaseModel):
+    version: int
+    seq: Optional[int] = None
+    req_no: Optional[str] = None
+    req_url: Optional[str] = None
+    title: Optional[str] = None
+    planned_version: Optional[str] = None
+    priority: Optional[str] = None
+    feature: Optional[str] = None
+    feature_fo: Optional[str] = None
+    feature_se: Optional[str] = None
+    feature_tfo: Optional[str] = None
+    code_areas: Optional[str] = None
+    progress_walkthrough: Optional[str] = None
+    progress_reverse: Optional[str] = None
+    progress_domain: Optional[str] = None
+    progress_coding: Optional[str] = None
+    progress_joint_debug: Optional[str] = None
+    progress_clarify: Optional[str] = None
+    progress_test_result: Optional[str] = None
+    estimated_loc: Optional[str] = None
+    actual_loc: Optional[str] = None
+    actual_effort: Optional[str] = None
+    key_risks: Optional[str] = None
+
+
+class IterationProductRequirementOut(IterationProductRequirementBase):
+    id: int
+    iteration_id: int
+    version: int
+
+    model_config = ConfigDict(from_attributes=True)
+
+
 # ===== Roadmap =====
 class RoadmapPhaseBase(BaseModel):
     name: str

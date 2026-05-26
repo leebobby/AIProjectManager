@@ -111,10 +111,16 @@ def export_pptx(
         .order_by(models.IterationRequirement.seq.asc(), models.IterationRequirement.id.asc())
         .all()
     )
-    stream = build_iteration_pptx(item, reqs)
+    product_reqs = (
+        db.query(models.IterationProductRequirement)
+        .filter(models.IterationProductRequirement.iteration_id == item_id)
+        .order_by(models.IterationProductRequirement.seq.asc(), models.IterationProductRequirement.id.asc())
+        .all()
+    )
+    stream = build_iteration_pptx(item, reqs, product_reqs)
     filename = f"iteration-{item.year}-{item.month:02d}-{datetime.now().strftime('%H%M%S')}.pptx"
     log_op(db, action="导出PPT", target="年度迭代", target_id=item.id,
-           detail=f"{item.year}-{item.month:02d} reqs={len(reqs)}",
+           detail=f"{item.year}-{item.month:02d} domain_reqs={len(reqs)} product_reqs={len(product_reqs)}",
            user=current_admin, request=request)
     return StreamingResponse(
         stream,

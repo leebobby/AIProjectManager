@@ -55,8 +55,8 @@ function leftPercent(i) {
 }
 .track {
   position: relative;
-  height: 140px;
-  margin: 0 40px;
+  min-height: 180px;
+  margin: 0 40px 8px;
 }
 .line {
   position: absolute;
@@ -69,7 +69,7 @@ function leftPercent(i) {
   top: 0;
   transform: translateX(-50%);
   text-align: center;
-  width: 140px;
+  width: 160px;
 }
 .dot {
   width: 16px;
@@ -90,9 +90,9 @@ function leftPercent(i) {
   font-size: 13px;
   font-weight: 600;
   color: #303133;
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
+  white-space: pre-wrap;
+  word-break: break-word;
+  line-height: 1.4;
 }
 .date {
   font-size: 12px;
