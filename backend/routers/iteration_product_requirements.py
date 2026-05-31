@@ -15,6 +15,14 @@ import schemas
 from auth import get_current_user
 from database import get_db
 from op_log import log_op
+from routers._lookups import fill_user_fk, fill_version_fk
+
+
+def _fill_product_fks(db, data):
+    fill_user_fk(db, data, "feature_fo", "feature_fo_user_id")
+    fill_user_fk(db, data, "feature_se", "feature_se_user_id")
+    fill_user_fk(db, data, "feature_tfo", "feature_tfo_user_id")
+    fill_version_fk(db, data, "planned_version", "target_version_id")
 
 router = APIRouter(prefix="/api/iteration-product-requirements", tags=["iteration-product-requirements"])
 
@@ -98,6 +106,7 @@ def create_item(
             .count()
         )
         data["seq"] = n + 1
+    _fill_product_fks(db, data)
     item = models.IterationProductRequirement(**data)
     db.add(item)
     db.commit()
@@ -128,6 +137,7 @@ def update_item(
     changes = payload.model_dump(exclude_unset=True)
     changes.pop("version", None)
     _validate_enums(changes)
+    _fill_product_fks(db, changes)
     for k, v in changes.items():
         setattr(item, k, v)
     item.version += 1
@@ -302,6 +312,7 @@ async def import_from_excel(
         pending.append(data)
 
     for d in pending:
+        _fill_product_fks(db, d)
         item = models.IterationProductRequirement(**d)
         db.add(item)
         created += 1

@@ -2,6 +2,7 @@
   <div class="customer-page">
     <div class="header">
       <el-button :icon="ArrowLeft" size="small" @click="goBack">返回客户面状态</el-button>
+      <SubscribeButton source-type="customer" :source-id="Number(route.params.id)" />
     </div>
     <el-card shadow="never" class="page-card">
       <CustomerDetailPanel :customer-id="Number(route.params.id)" />
@@ -13,6 +14,7 @@
 import { useRoute, useRouter } from 'vue-router'
 import { ArrowLeft } from '@element-plus/icons-vue'
 import CustomerDetailPanel from '../components/CustomerDetailPanel.vue'
+import SubscribeButton from '../components/SubscribeButton.vue'
 
 const route = useRoute()
 const router = useRouter()
@@ -29,6 +31,7 @@ function goBack() {
 .header {
   display: flex;
   align-items: center;
+  gap: 12px;
   margin-bottom: 12px;
 }
 .page-card {

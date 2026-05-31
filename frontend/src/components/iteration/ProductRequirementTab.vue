@@ -5,10 +5,25 @@
       <el-button :icon="Upload" type="warning" @click="openImport">批量导入</el-button>
       <el-button :icon="Refresh" @click="load">刷新</el-button>
       <el-button v-if="isAdmin" :icon="Setting" @click="openFeatureDialog">管理所属特性</el-button>
-      <span class="tip">提示：基础列双击编辑，进展列直接下拉切换；优先级 高/中/低；所属特性下拉来自配置文件</span>
+      <el-select
+        v-model="filterUserId"
+        placeholder="按特性角色筛选"
+        clearable
+        filterable
+        size="small"
+        style="width: 200px"
+      >
+        <el-option
+          v-for="u in userOptions"
+          :key="u.id"
+          :value="u.id"
+          :label="`${u.full_name || u.username}${u.emp_no ? ' (' + u.emp_no + ')' : ''}`"
+        />
+      </el-select>
+      <span class="tip">共 {{ filteredList.length }}/{{ list.length }} 条；特性 FO/SE/TFO 任一命中即匹配</span>
     </div>
 
-    <el-table :data="list" v-loading="loading" border stripe style="width: 100%">
+    <el-table :data="filteredList" v-loading="loading" border stripe style="width: 100%">
       <el-table-column prop="seq" label="序号" width="70" align="center" fixed="left" />
       <el-table-column label="需求编号" width="160" fixed="left">
         <template #default="{ row }">
@@ -102,6 +117,36 @@
             @change="(v) => onFieldChange(row, 'feature', v)"
           >
             <el-option v-for="f in features" :key="f" :label="f" :value="f" />
+          </el-select>
+        </template>
+      </el-table-column>
+
+      <el-table-column
+        v-for="col in USER_COLS"
+        :key="col.field"
+        :label="col.label"
+        :width="col.width"
+      >
+        <template #default="{ row }">
+          <el-select
+            :model-value="row[col.fkField] || row[col.field] || null"
+            size="small"
+            clearable
+            filterable
+            allow-create
+            placeholder="选择或输入"
+            style="width: 100%"
+            @change="(v) => onUserColChange(row, col, v)"
+          >
+            <el-option
+              v-for="u in userOptions"
+              :key="u.id"
+              :value="u.id"
+              :label="u.full_name || u.username"
+            >
+              <span>{{ u.full_name || u.username }}</span>
+              <span v-if="u.emp_no" style="color:#909399; margin-left:6px; font-size:12px">{{ u.emp_no }}</span>
+            </el-option>
           </el-select>
         </template>
       </el-table-column>
@@ -240,6 +285,24 @@
             <el-option v-for="f in features" :key="f" :label="f" :value="f" />
           </el-select>
         </el-form-item>
+        <el-form-item v-for="col in USER_COLS" :key="col.field" :label="col.label">
+          <el-select
+            :model-value="formUserPicks[col.field]"
+            clearable
+            filterable
+            allow-create
+            placeholder="选择 User 或手填姓名"
+            style="width: 100%"
+            @change="(v) => onFormUserColChange(col, v)"
+          >
+            <el-option
+              v-for="u in userOptions"
+              :key="u.id"
+              :value="u.id"
+              :label="u.full_name || u.username"
+            />
+          </el-select>
+        </el-form-item>
         <el-form-item v-for="col in BASIC_TEXT_COLS" :key="col.field" :label="col.label">
           <el-input v-model="form[col.field]" :type="col.field === 'code_areas' ? 'textarea' : 'text'" :rows="col.field === 'code_areas' ? 2 : undefined" />
         </el-form-item>
@@ -320,10 +383,10 @@
 </template>
 
 <script setup>
-import { onMounted, reactive, ref } from 'vue'
+import { computed, onMounted, reactive, ref } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { Delete, Download, Plus, Refresh, Setting, Upload, UploadFilled } from '@element-plus/icons-vue'
-import { configApi, downloadBlob, productRequirementApi } from '../../api'
+import { configApi, downloadBlob, productRequirementApi, userApi } from '../../api'
 import { auth } from '../../store/auth'
 
 const props = defineProps({
@@ -336,11 +399,15 @@ const isAdmin = auth.isAdmin
 const PRIORITIES = ['高', '中', '低']
 const PROGRESS_STATUSES = ['未开始', '进行中', '已完成', '已延期', '已变更', '不涉及']
 
-// 基础文本列：表头标签 / 字段名 / 列宽
+// 特性角色列（FK 化）：fkField 是后端 FK 字段名
+const USER_COLS = [
+  { field: 'feature_fo',  fkField: 'feature_fo_user_id',  label: '特性FO',  width: 140 },
+  { field: 'feature_se',  fkField: 'feature_se_user_id',  label: '特性SE',  width: 140 },
+  { field: 'feature_tfo', fkField: 'feature_tfo_user_id', label: '特性TFO', width: 140 },
+]
+
+// 其它自由文本列
 const BASIC_TEXT_COLS = [
-  { field: 'feature_fo', label: '特性FO', width: 110 },
-  { field: 'feature_se', label: '特性SE', width: 110 },
-  { field: 'feature_tfo', label: '特性TFO', width: 110 },
   { field: 'code_areas', label: '涉及代码领域', minWidth: 180 },
 ]
 
@@ -365,13 +432,26 @@ const METRIC_COLS = [
 
 const list = ref([])
 const features = ref([])
+const userOptions = ref([])
+const filterUserId = ref(null)
 const loading = ref(false)
 const dialogVisible = ref(false)
 const editing = ref(null)
 const form = reactive(defaultForm())
+const formUserPicks = reactive({ feature_fo: null, feature_se: null, feature_tfo: null })
 const editingCell = ref(null)
 
 const featureDialog = reactive({ visible: false, saving: false, list: [] })
+
+const filteredList = computed(() => {
+  if (!filterUserId.value) return list.value
+  const uid = filterUserId.value
+  return list.value.filter((r) =>
+    r.feature_fo_user_id === uid ||
+    r.feature_se_user_id === uid ||
+    r.feature_tfo_user_id === uid
+  )
+})
 
 const importVisible = ref(false)
 const importing = ref(false)
@@ -386,11 +466,15 @@ function defaultForm() {
     req_url: '',
     title: '',
     planned_version: '',
+    target_version_id: null,
     priority: '中',
     feature: '',
     feature_fo: '',
+    feature_fo_user_id: null,
     feature_se: '',
+    feature_se_user_id: null,
     feature_tfo: '',
+    feature_tfo_user_id: null,
     code_areas: '',
     progress_walkthrough: '未开始',
     progress_reverse: '未开始',
@@ -425,17 +509,43 @@ async function loadFeatures() {
   } catch { features.value = [] }
 }
 
+async function loadUserOptions() {
+  try {
+    const { data } = await userApi.options({ include_inactive: false })
+    userOptions.value = data
+  } catch { userOptions.value = [] }
+}
+
 function openCreate() {
   editing.value = null
   Object.assign(form, defaultForm())
   form.seq = (list.value.length || 0) + 1
+  formUserPicks.feature_fo = null
+  formUserPicks.feature_se = null
+  formUserPicks.feature_tfo = null
   dialogVisible.value = true
 }
 
 function openEdit(row) {
   editing.value = row
   Object.assign(form, row)
+  for (const col of USER_COLS) {
+    formUserPicks[col.field] = row[col.fkField] || row[col.field] || null
+  }
   dialogVisible.value = true
+}
+
+function onFormUserColChange(col, v) {
+  if (typeof v === 'number') {
+    const u = userOptions.value.find((x) => x.id === v)
+    formUserPicks[col.field] = v
+    form[col.fkField] = v
+    form[col.field] = u ? (u.full_name || u.username) : ''
+  } else {
+    formUserPicks[col.field] = v || null
+    form[col.fkField] = null
+    form[col.field] = v || ''
+  }
 }
 
 async function onSubmit() {
@@ -503,6 +613,31 @@ async function onFieldChange(row, field, value) {
     row.version = data.version
   } catch (e) {
     row[field] = original
+    if (e.response?.status !== 409) ElMessage.error(e.response?.data?.detail || '保存失败')
+    else load()
+  }
+}
+
+async function onUserColChange(row, col, value) {
+  const payload = { version: row.version }
+  if (typeof value === 'number') {
+    const u = userOptions.value.find((x) => x.id === value)
+    payload[col.fkField] = value
+    payload[col.field] = u ? (u.full_name || u.username) : ''
+  } else if (value) {
+    payload[col.fkField] = null
+    payload[col.field] = value
+  } else {
+    payload[col.fkField] = null
+    payload[col.field] = ''
+  }
+  const snapshot = { [col.field]: row[col.field], [col.fkField]: row[col.fkField] }
+  Object.assign(row, payload)
+  try {
+    const { data } = await productRequirementApi.update(row.id, payload)
+    row.version = data.version
+  } catch (e) {
+    Object.assign(row, snapshot)
     if (e.response?.status !== 409) ElMessage.error(e.response?.data?.detail || '保存失败')
     else load()
   }
@@ -586,6 +721,7 @@ defineExpose({ load })
 onMounted(() => {
   load()
   loadFeatures()
+  loadUserOptions()
 })
 </script>
 

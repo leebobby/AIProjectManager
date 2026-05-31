@@ -23,6 +23,23 @@ from op_log import log_op
 
 router = APIRouter(prefix="/api/project-formation", tags=["project-formation"])
 
+
+def _resolve_user_id(db: Session, emp_no: Optional[str], name: Optional[str]):
+    """按 emp_no 优先、其次姓名匹配 User。"""
+    if emp_no:
+        s = emp_no.strip()
+        if s:
+            u = db.query(models.User).filter(models.User.emp_no == s).first()
+            if u:
+                return u.id
+    if name:
+        s = name.strip()
+        if s:
+            u = db.query(models.User).filter(models.User.full_name == s).first()
+            if u:
+                return u.id
+    return None
+
 UPLOAD_ROOT = pathlib.Path(__file__).resolve().parent.parent / "uploads" / "project_formation"
 
 _IMAGE_OK_EXT = {".png", ".jpg", ".jpeg", ".gif", ".webp", ".bmp", ".svg"}
@@ -123,6 +140,9 @@ def create_member(
         raise HTTPException(400, "姓名必填")
     if not data.get("sort_order"):
         data["sort_order"] = db.query(models.ProjectFormationMember).count()
+    data.setdefault("user_id", None)
+    if data["user_id"] is None:
+        data["user_id"] = _resolve_user_id(db, data.get("emp_no"), data.get("name"))
     item = models.ProjectFormationMember(**data)
     db.add(item)
     db.commit()
@@ -146,6 +166,9 @@ def update_member(
     data = payload.model_dump(exclude_unset=True)
     for k, v in data.items():
         setattr(item, k, v)
+    # 姓名/工号变了，且当前还没绑定 user 时，重新尝试关联
+    if ("name" in data or "emp_no" in data) and not item.user_id:
+        item.user_id = _resolve_user_id(db, item.emp_no, item.name)
     db.commit()
     db.refresh(item)
     log_op(db, action="修改", target="项目阵型人员", target_id=item.id,
@@ -300,6 +323,7 @@ async def import_xlsx(
         created += 1
 
     for d in pending:
+        d["user_id"] = _resolve_user_id(db, d.get("emp_no"), d.get("name"))
         db.add(models.ProjectFormationMember(**d))
     db.commit()
 

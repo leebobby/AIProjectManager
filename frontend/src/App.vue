@@ -91,6 +91,7 @@
           <span class="page-title">{{ currentTitle }}</span>
         </div>
         <div class="header-right">
+          <NotificationBell v-if="auth.isLoggedIn.value" />
           <el-dropdown @command="onCommand">
             <span class="user-trigger">
               <el-icon><Avatar /></el-icon>
@@ -145,6 +146,7 @@ import { authApi } from './api'
 import { auth, installCrossTabAuth } from './store/auth'
 import { startIdleWatcher } from './store/idleWatcher'
 import { specials, reloadSpecials, clearSpecials } from './store/specials'
+import NotificationBell from './components/NotificationBell.vue'
 
 const sidebarCollapsed = ref(localStorage.getItem('sidebarCollapsed') === '1')
 function toggleSidebar() {

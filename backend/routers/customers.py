@@ -104,16 +104,21 @@ def _customer_name_set(cu: models.Customer) -> list[str]:
 def list_customer_machines(customer_id: int, db: Session = Depends(get_db)):
     """客户详情页：取出该客户名下的所有机台（来自 customer_status）。
 
-    匹配逻辑：customer_status.battlefield ∈ {code, ...aliases}。
-    后续给 customer_status 加 customer_id 外键后，这里改成走 FK 即可。
+    优先走 customer_status.customer_id FK；
+    向后兼容：未对账的旧行按 battlefield ∈ {code, ...aliases} 字符串匹配兜底。
     """
     cu = db.query(models.Customer).filter(models.Customer.id == customer_id).first()
     if not cu:
         raise HTTPException(404, "Not found")
     names = _customer_name_set(cu)
+    # FK 命中的（权威）+ FK 为空但名字命中的（向后兼容）
+    from sqlalchemy import or_
     rows = (
         db.query(models.CustomerStatus)
-        .filter(models.CustomerStatus.battlefield.in_(names))
+        .filter(or_(
+            models.CustomerStatus.customer_id == cu.id,
+            (models.CustomerStatus.customer_id.is_(None)) & (models.CustomerStatus.battlefield.in_(names)),
+        ))
         .order_by(models.CustomerStatus.machine_id)
         .all()
     )

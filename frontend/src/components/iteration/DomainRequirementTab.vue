@@ -4,10 +4,40 @@
       <el-button type="primary" :icon="Plus" @click="openCreate">新增需求</el-button>
       <el-button :icon="Upload" type="warning" @click="openImport">批量导入</el-button>
       <el-button :icon="Refresh" @click="load">刷新</el-button>
-      <span class="tip">提示：基础列双击编辑，6 个进展直接下拉切换；备注列记录变更说明</span>
+      <el-select
+        v-model="filterGroupId"
+        placeholder="按 PL 组筛选"
+        clearable
+        filterable
+        size="small"
+        style="width: 200px"
+      >
+        <el-option
+          v-for="g in plGroups"
+          :key="g.id"
+          :value="g.id"
+          :label="`${g.parent_name || '—'} / ${g.name}`"
+        />
+      </el-select>
+      <el-select
+        v-model="filterOwnerId"
+        placeholder="按责任人筛选"
+        clearable
+        filterable
+        size="small"
+        style="width: 180px"
+      >
+        <el-option
+          v-for="u in userOptions"
+          :key="u.id"
+          :value="u.id"
+          :label="`${u.full_name || u.username}${u.emp_no ? ' (' + u.emp_no + ')' : ''}`"
+        />
+      </el-select>
+      <span class="tip">共 {{ filteredList.length }}/{{ list.length }} 条；基础列双击编辑，进展/责任人/PL组直接下拉</span>
     </div>
 
-    <el-table :data="list" v-loading="loading" border stripe style="width: 100%">
+    <el-table :data="filteredList" v-loading="loading" border stripe style="width: 100%">
       <el-table-column prop="seq" label="序号" width="70" align="center" />
       <el-table-column label="需求编号" width="160">
         <template #default="{ row }">
@@ -44,36 +74,52 @@
           </div>
         </template>
       </el-table-column>
-      <el-table-column label="责任人" width="120">
+      <el-table-column label="责任人" width="150">
         <template #default="{ row }">
-          <el-input
-            v-if="isEditing(row, 'owner')"
-            v-model="row.owner"
+          <el-select
+            :model-value="row.owner_user_id || row.owner || null"
             size="small"
-            autofocus
-            @blur="commit(row, 'owner')"
-            @keyup.enter="commit(row, 'owner')"
-            @keyup.esc="cancel(row, 'owner')"
-          />
-          <div v-else class="editable-cell" @dblclick="startEdit(row, 'owner')">
-            {{ row.owner || '—' }}
-          </div>
+            clearable
+            filterable
+            allow-create
+            placeholder="选择或输入"
+            style="width: 100%"
+            @change="(v) => onOwnerChange(row, v)"
+          >
+            <el-option
+              v-for="u in userOptions"
+              :key="u.id"
+              :value="u.id"
+              :label="u.full_name || u.username"
+            >
+              <span>{{ u.full_name || u.username }}</span>
+              <span v-if="u.emp_no" style="color:#909399; margin-left:6px; font-size:12px">{{ u.emp_no }}</span>
+            </el-option>
+          </el-select>
         </template>
       </el-table-column>
-      <el-table-column label="PL组" width="120">
+      <el-table-column label="PL组" width="170">
         <template #default="{ row }">
-          <el-input
-            v-if="isEditing(row, 'owner_group')"
-            v-model="row.owner_group"
+          <el-select
+            :model-value="row.group_id || row.owner_group || null"
             size="small"
-            autofocus
-            @blur="commit(row, 'owner_group')"
-            @keyup.enter="commit(row, 'owner_group')"
-            @keyup.esc="cancel(row, 'owner_group')"
-          />
-          <div v-else class="editable-cell" @dblclick="startEdit(row, 'owner_group')">
-            {{ row.owner_group || '—' }}
-          </div>
+            clearable
+            filterable
+            allow-create
+            placeholder="选择或输入"
+            style="width: 100%"
+            @change="(v) => onGroupChange(row, v)"
+          >
+            <el-option
+              v-for="g in plGroups"
+              :key="g.id"
+              :value="g.id"
+              :label="g.name"
+            >
+              <span>{{ g.name }}</span>
+              <span v-if="g.parent_name" style="color:#909399; margin-left:6px; font-size:12px">{{ g.parent_name }}</span>
+            </el-option>
+          </el-select>
         </template>
       </el-table-column>
       <el-table-column label="优先级" width="100" align="center">
@@ -186,10 +232,40 @@
           <el-input v-model="form.title" />
         </el-form-item>
         <el-form-item label="责任人">
-          <el-input v-model="form.owner" />
+          <el-select
+            v-model="formOwnerPick"
+            clearable
+            filterable
+            allow-create
+            placeholder="选择 User 或手填姓名"
+            style="width: 100%"
+            @change="onFormOwnerChange"
+          >
+            <el-option
+              v-for="u in userOptions"
+              :key="u.id"
+              :value="u.id"
+              :label="u.full_name || u.username"
+            />
+          </el-select>
         </el-form-item>
         <el-form-item label="PL组">
-          <el-input v-model="form.owner_group" />
+          <el-select
+            v-model="formGroupPick"
+            clearable
+            filterable
+            allow-create
+            placeholder="选择 PL 组或手填"
+            style="width: 100%"
+            @change="onFormGroupChange"
+          >
+            <el-option
+              v-for="g in plGroups"
+              :key="g.id"
+              :value="g.id"
+              :label="g.name"
+            />
+          </el-select>
         </el-form-item>
         <el-form-item label="优先级">
           <el-select v-model="form.priority" style="width: 100%">
@@ -284,10 +360,10 @@
 </template>
 
 <script setup>
-import { onMounted, reactive, ref } from 'vue'
+import { computed, onMounted, reactive, ref } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { Download, Plus, Refresh, Upload, UploadFilled } from '@element-plus/icons-vue'
-import { downloadBlob, iterationRequirementApi } from '../../api'
+import { downloadBlob, iterationRequirementApi, resourceGroupApi, userApi } from '../../api'
 
 const props = defineProps({
   iterationId: { type: Number, required: true },
@@ -306,11 +382,36 @@ const PROGRESS_STATUSES = ['未开始', '进行中', '已完成', '已延期', '
 const PRIORITIES = ['P0', 'P1', 'P2', 'P3']
 
 const list = ref([])
+const userOptions = ref([])
+const plGroups = ref([])
+const filterOwnerId = ref(null)
+const filterGroupId = ref(null)
 const loading = ref(false)
 const dialogVisible = ref(false)
 const editing = ref(null)
 const form = reactive(defaultForm())
+const formOwnerPick = ref(null)   // 完整编辑里的责任人 select 值
+const formGroupPick = ref(null)
 const editingCell = ref(null)
+
+const filteredList = computed(() => {
+  return list.value.filter((r) => {
+    if (filterOwnerId.value && r.owner_user_id !== filterOwnerId.value) return false
+    if (filterGroupId.value && r.group_id !== filterGroupId.value) return false
+    return true
+  })
+})
+
+function findUserByName(name) {
+  if (!name) return null
+  return userOptions.value.find(
+    (u) => u.full_name === name || u.username === name || u.emp_no === name
+  ) || null
+}
+function findGroupByName(name) {
+  if (!name) return null
+  return plGroups.value.find((g) => g.name === name || g.code === name) || null
+}
 
 const importVisible = ref(false)
 const importing = ref(false)
@@ -325,9 +426,12 @@ function defaultForm() {
     req_url: '',
     title: '',
     owner: '',
+    owner_user_id: null,
     owner_group: '',
+    group_id: null,
     priority: 'P2',
     planned_version: '',
+    target_version_id: null,
     progress_walkthrough: '未开始',
     progress_reverse: '未开始',
     progress_stc: '未开始',
@@ -350,17 +454,54 @@ async function load() {
   }
 }
 
+async function loadOptions() {
+  try {
+    const [{ data: us }, { data: gs }] = await Promise.all([
+      userApi.options({ include_inactive: false }),
+      resourceGroupApi.list({ kind: 'pl' }),
+    ])
+    userOptions.value = us
+    plGroups.value = gs
+  } catch { /* 下拉为空不阻塞 */ }
+}
+
 function openCreate() {
   editing.value = null
   Object.assign(form, defaultForm())
   form.seq = (list.value.length || 0) + 1
+  formOwnerPick.value = null
+  formGroupPick.value = null
   dialogVisible.value = true
 }
 
 function openEdit(row) {
   editing.value = row
   Object.assign(form, row)
+  formOwnerPick.value = row.owner_user_id || row.owner || null
+  formGroupPick.value = row.group_id || row.owner_group || null
   dialogVisible.value = true
+}
+
+function onFormOwnerChange(v) {
+  if (typeof v === 'number') {
+    const u = userOptions.value.find((x) => x.id === v)
+    form.owner_user_id = v
+    form.owner = u ? (u.full_name || u.username) : ''
+  } else {
+    // 手填字符串：清掉 FK，保留字符串
+    form.owner_user_id = null
+    form.owner = v || ''
+  }
+}
+function onFormGroupChange(v) {
+  if (typeof v === 'number') {
+    const g = plGroups.value.find((x) => x.id === v)
+    form.group_id = v
+    form.owner_group = g ? g.name : ''
+  } else {
+    form.group_id = null
+    form.owner_group = v || ''
+  }
 }
 
 async function onSubmit() {
@@ -433,6 +574,57 @@ async function onFieldChange(row, field, value) {
   }
 }
 
+async function onOwnerChange(row, value) {
+  // value 可能是 user.id (number) 或 手输的姓名 (string)
+  const payload = { version: row.version }
+  if (typeof value === 'number') {
+    const u = userOptions.value.find((x) => x.id === value)
+    payload.owner_user_id = value
+    payload.owner = u ? (u.full_name || u.username) : ''
+  } else if (value) {
+    payload.owner_user_id = null
+    payload.owner = value
+  } else {
+    payload.owner_user_id = null
+    payload.owner = ''
+  }
+  const snapshot = { owner: row.owner, owner_user_id: row.owner_user_id }
+  Object.assign(row, payload)
+  try {
+    const { data } = await iterationRequirementApi.update(row.id, payload)
+    row.version = data.version
+  } catch (e) {
+    Object.assign(row, snapshot)
+    if (e.response?.status !== 409) ElMessage.error(e.response?.data?.detail || '保存失败')
+    else load()
+  }
+}
+
+async function onGroupChange(row, value) {
+  const payload = { version: row.version }
+  if (typeof value === 'number') {
+    const g = plGroups.value.find((x) => x.id === value)
+    payload.group_id = value
+    payload.owner_group = g ? g.name : ''
+  } else if (value) {
+    payload.group_id = null
+    payload.owner_group = value
+  } else {
+    payload.group_id = null
+    payload.owner_group = ''
+  }
+  const snapshot = { owner_group: row.owner_group, group_id: row.group_id }
+  Object.assign(row, payload)
+  try {
+    const { data } = await iterationRequirementApi.update(row.id, payload)
+    row.version = data.version
+  } catch (e) {
+    Object.assign(row, snapshot)
+    if (e.response?.status !== 409) ElMessage.error(e.response?.data?.detail || '保存失败')
+    else load()
+  }
+}
+
 function openImport() {
   importFile.value = null
   importResult.value = null
@@ -482,7 +674,10 @@ async function onSubmitImport() {
 
 defineExpose({ load })
 
-onMounted(load)
+onMounted(() => {
+  load()
+  loadOptions()
+})
 </script>
 
 <style scoped>

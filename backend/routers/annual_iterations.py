@@ -17,6 +17,7 @@ import schemas
 from auth import get_current_user, require_admin
 from database import get_db
 from op_log import log_op
+from routers._lookups import fill_user_fk
 
 router = APIRouter(prefix="/api/annual-iterations", tags=["annual-iterations"])
 
@@ -83,6 +84,7 @@ def update_item(
     if not item:
         raise HTTPException(status_code=404, detail="Not found")
     changes = payload.model_dump(exclude_unset=True)
+    fill_user_fk(db, changes, "owner", "owner_user_id")
     for k, v in changes.items():
         setattr(item, k, v)
     db.commit()

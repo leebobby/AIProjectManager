@@ -6,6 +6,7 @@ import schemas
 from auth import create_access_token, get_current_user, hash_password, verify_password
 from database import get_db
 from op_log import log_op
+from routers.users import _serialize_user
 
 router = APIRouter(prefix="/api/auth", tags=["auth"])
 
@@ -21,6 +22,10 @@ def login(payload: schemas.LoginRequest, request: Request, db: Session = Depends
         log_op(db, action="登录失败", target="账号", user=user,
                detail="非本地账户", request=request)
         raise HTTPException(status_code=400, detail="该账号需通过企业 SSO 登录")
+    if user.can_login is False:
+        log_op(db, action="登录失败", target="账号", user=user,
+               detail="纯人员档案，不允许登录", request=request)
+        raise HTTPException(status_code=401, detail="该账号为人员档案，不允许登录")
     if not verify_password(payload.password, user.password_hash):
         log_op(db, action="登录失败", target="账号", user=user,
                detail="密码错误", request=request)
@@ -28,7 +33,7 @@ def login(payload: schemas.LoginRequest, request: Request, db: Session = Depends
 
     token = create_access_token({"sub": user.username, "role": user.role})
     log_op(db, action="登录", target="账号", user=user, request=request)
-    return schemas.TokenResponse(access_token=token, user=user)
+    return schemas.TokenResponse(access_token=token, user=_serialize_user(db, user))
 
 
 @router.post("/logout")
@@ -64,8 +69,11 @@ def register(payload: schemas.RegisterRequest, request: Request, db: Session = D
 
 
 @router.get("/me", response_model=schemas.UserOut)
-def me(current_user: models.User = Depends(get_current_user)):
-    return current_user
+def me(
+    db: Session = Depends(get_db),
+    current_user: models.User = Depends(get_current_user),
+):
+    return _serialize_user(db, current_user)
 
 
 @router.post("/change-password")

@@ -15,6 +15,13 @@ import schemas
 from auth import get_current_user
 from database import get_db
 from op_log import log_op
+from notify import dispatch
+from routers._lookups import fill_group_fk, fill_user_fk, fill_version_fk
+
+_PROGRESS_KEYS = {
+    "progress_walkthrough", "progress_reverse", "progress_stc",
+    "progress_coding", "progress_bbit", "progress_clarify",
+}
 
 router = APIRouter(prefix="/api/iteration-requirements", tags=["iteration-requirements"])
 
@@ -79,6 +86,9 @@ def create_item(
             .count()
         )
         data["seq"] = max_seq + 1
+    fill_user_fk(db, data, "owner", "owner_user_id")
+    fill_group_fk(db, data, "owner_group", "group_id")
+    fill_version_fk(db, data, "planned_version", "target_version_id")
     item = models.IterationRequirement(**data)
     db.add(item)
     db.commit()
@@ -108,6 +118,14 @@ def update_item(
         raise HTTPException(status_code=409, detail="数据已被他人修改，请刷新后重试")
     changes = payload.model_dump(exclude_unset=True)
     changes.pop("version", None)
+    # 字符串改写时同步刷新 FK；若调用方显式传了 FK 字段，尊重它
+    fill_user_fk(db, changes, "owner", "owner_user_id")
+    fill_group_fk(db, changes, "owner_group", "group_id")
+    fill_version_fk(db, changes, "planned_version", "target_version_id")
+
+    old_owner_id = item.owner_user_id
+    progress_changed = bool(set(changes.keys()) & _PROGRESS_KEYS)
+
     for k, v in changes.items():
         setattr(item, k, v)
     item.version += 1
@@ -116,6 +134,31 @@ def update_item(
     log_op(db, action="修改", target="迭代需求", target_id=item.id,
            detail=f"title={item.title} fields={','.join(changes.keys()) or '无'}",
            user=current_user, request=request)
+
+    # 通知：owner 变更 + 状态改变
+    link = f"/iterations/{item.iteration_id}"
+    recipients: list[int] = []
+    if item.owner_user_id and item.owner_user_id != old_owner_id:
+        recipients.append(item.owner_user_id)
+        dispatch(
+            db, kind="assignment",
+            title=f"你被指派为需求负责人：{item.title or ''}",
+            body="", link=link,
+            source_type="iteration_requirement", source_id=item.id,
+            actor=current_user, recipient_ids=[item.owner_user_id], extra_subs=False,
+        )
+    if progress_changed:
+        notify_to: list[int] = []
+        if item.owner_user_id:
+            notify_to.append(item.owner_user_id)
+        dispatch(
+            db, kind="status_change",
+            title=f"需求进展更新：{item.title or ''}",
+            body=f"字段：{','.join(sorted(set(changes.keys()) & _PROGRESS_KEYS))}",
+            link=link,
+            source_type="iteration_requirement", source_id=item.id,
+            actor=current_user, recipient_ids=notify_to, extra_subs=True,
+        )
     return item
 
 
@@ -303,6 +346,9 @@ async def import_from_excel(
         pending.append(data)
 
     for d in pending:
+        fill_user_fk(db, d, "owner", "owner_user_id")
+        fill_group_fk(db, d, "owner_group", "group_id")
+        fill_version_fk(db, d, "planned_version", "target_version_id")
         item = models.IterationRequirement(**d)
         db.add(item)
         created += 1

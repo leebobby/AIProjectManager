@@ -24,6 +24,7 @@ import schemas
 from auth import get_current_user, require_admin
 from database import get_db
 from op_log import log_op
+from routers._lookups import fill_user_fk
 
 router = APIRouter(prefix="/api/specials", tags=["specials"])
 
@@ -78,6 +79,7 @@ def create_special(
     data = payload.model_dump()
     if data.get("kind") not in ("special", "assault"):
         data["kind"] = "special"
+    fill_user_fk(db, data, "owner", "owner_user_id")
     item = models.Special(**data)
     db.add(item)
     db.commit()
@@ -103,6 +105,7 @@ def update_special(
     data = payload.model_dump(exclude_unset=True)
     if "kind" in data and data["kind"] not in ("special", "assault"):
         raise HTTPException(400, "kind 仅支持 special / assault")
+    fill_user_fk(db, data, "owner", "owner_user_id")
     for k, v in data.items():
         setattr(item, k, v)
     db.commit()
@@ -287,6 +290,7 @@ def _create_item(
         data["seq"] = cnt + 1
     if not data.get("sort_order"):
         data["sort_order"] = data["seq"]
+    fill_user_fk(db, data, "owner", "owner_user_id")
     item = Model(special_id=sid, **data)
     db.add(item)
     db.commit()
@@ -310,6 +314,7 @@ def _update_item(
     if not item:
         raise HTTPException(404, "条目不存在")
     data = payload.model_dump(exclude_unset=True)
+    fill_user_fk(db, data, "owner", "owner_user_id")
     for k, v in data.items():
         setattr(item, k, v)
     db.commit()

@@ -158,6 +158,7 @@ def create_item(
         if not url.strip():
             raise HTTPException(400, "外链类型必须提供 URL")
 
+    from routers._lookups import resolve_user_id
     item = models.HandbookItem(
         category_id=category_id,
         title=title,
@@ -168,6 +169,7 @@ def create_item(
         file_size=file_size,
         description=description,
         owner=owner,
+        owner_user_id=resolve_user_id(db, owner),
         sort_order=sort_order,
     )
     db.add(item)
@@ -201,7 +203,10 @@ def update_item(
     if title is not None: item.title = title
     if category_id is not None: item.category_id = category_id
     if description is not None: item.description = description
-    if owner is not None: item.owner = owner
+    if owner is not None:
+        from routers._lookups import resolve_user_id
+        item.owner = owner
+        item.owner_user_id = resolve_user_id(db, owner)
     if sort_order is not None: item.sort_order = sort_order
 
     new_kind = kind or item.kind

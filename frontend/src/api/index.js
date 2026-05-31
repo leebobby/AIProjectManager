@@ -117,9 +117,45 @@ export const specialApi = {
 
 export const userApi = {
   list: () => http.get('/users'),
+  options: (params = {}) => http.get('/users/options', { params }),
   create: (data) => http.post('/users', data),
   update: (id, data) => http.put(`/users/${id}`, data),
   remove: (id) => http.delete(`/users/${id}`),
+}
+
+export const resourceGroupApi = {
+  list: (params = {}) => http.get('/resource-groups', { params }),
+  get: (id) => http.get(`/resource-groups/${id}`),
+  create: (data) => http.post('/resource-groups', data),
+  update: (id, data) => http.put(`/resource-groups/${id}`, data),
+  remove: (id) => http.delete(`/resource-groups/${id}`),
+}
+
+export const mappingApi = {
+  customerUnmapped: () => http.get('/mapping/customers/unmapped'),
+  customerAutoFill: () => http.post('/mapping/customers/auto-fill'),
+  customerAssign: (data) => http.put('/mapping/customers/assign', data),
+  personUnmapped: () => http.get('/mapping/persons/formation-unmapped'),
+  personAutoFill: () => http.post('/mapping/persons/auto-fill'),
+  personAssign: (data) => http.put('/mapping/persons/assign', data),
+  personCreateFromMember: (data) => http.post('/mapping/persons/create-from-member', data),
+}
+
+export const metricsApi = {
+  version: (major_version_id) => http.get(`/metrics/version/${major_version_id}`),
+  iteration: (iteration_id) => http.get(`/metrics/iteration/${iteration_id}`),
+  group: (group_id, params = {}) => http.get(`/metrics/group/${group_id}`, { params }),
+}
+
+export const notificationApi = {
+  list: (params = {}) => http.get('/notifications', { params }),
+  unreadCount: () => http.get('/notifications/unread-count'),
+  markRead: (id) => http.post(`/notifications/${id}/read`),
+  markAllRead: () => http.post('/notifications/read-all'),
+  listSubs: () => http.get('/notifications/subscriptions'),
+  addSub: (data) => http.post('/notifications/subscriptions', data),
+  removeSub: (params) => http.delete('/notifications/subscriptions', { params }),
+  broadcast: (data) => http.post('/notifications/broadcast', data),
 }
 
 export const configApi = {

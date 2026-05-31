@@ -57,7 +57,10 @@ class CustomerStatus(Base):
 
     id = Column(Integer, primary_key=True, index=True)
     machine_id = Column(String(64), nullable=False, comment="机台编号")
-    battlefield = Column(String(128), nullable=False, comment="客户（原战场）")
+    battlefield = Column(String(128), nullable=False, comment="客户名（展示快照）")
+    customer_id = Column(Integer, ForeignKey("customers.id", ondelete="SET NULL"),
+                         nullable=True, index=True,
+                         comment="客户主数据 FK；为空表示未匹配/未对账")
     model = Column(String(128), default="", comment="型号")
     current_stage = Column(String(128), nullable=False, comment="当前阶段")
     field_version = Column(String(128), default="", comment="现场版本")
@@ -168,7 +171,9 @@ class AnnualIteration(Base):
     year = Column(Integer, nullable=False, index=True, comment="年份")
     month = Column(Integer, nullable=False, comment="月份 1-12")
     name = Column(String(128), default="", comment="迭代名称")
-    owner = Column(String(64), default="", comment="负责人")
+    owner = Column(String(64), default="", comment="负责人（展示快照）")
+    owner_user_id = Column(Integer, ForeignKey("users.id", ondelete="SET NULL"),
+                           nullable=True, index=True, comment="负责人 FK")
     status = Column(String(32), default="planning", comment="状态: planning/in_progress/done")
     goal = Column(Text, default="", comment="迭代目标/备注")
     created_at = Column(DateTime, default=datetime.utcnow)
@@ -201,12 +206,20 @@ class IterationProductRequirement(Base):
     req_no = Column(String(64), default="", comment="需求编号")
     req_url = Column(String(512), default="", comment="需求超链接")
     title = Column(String(256), default="", comment="需求标题")
-    planned_version = Column(String(64), default="", comment="计划交付版本")
+    planned_version = Column(String(64), default="", comment="计划交付版本（展示快照）")
+    target_version_id = Column(Integer, ForeignKey("iteration_versions.id", ondelete="SET NULL"),
+                               nullable=True, index=True, comment="计划交付迭代版本 FK")
     priority = Column(String(8), default="中", comment="优先级 高/中/低")
     feature = Column(String(128), default="", comment="所属特性")
-    feature_fo = Column(String(64), default="", comment="特性FO")
-    feature_se = Column(String(64), default="", comment="特性SE")
-    feature_tfo = Column(String(64), default="", comment="特性TFO")
+    feature_fo = Column(String(64), default="", comment="特性FO（展示快照）")
+    feature_fo_user_id = Column(Integer, ForeignKey("users.id", ondelete="SET NULL"),
+                                nullable=True, index=True, comment="特性FO FK")
+    feature_se = Column(String(64), default="", comment="特性SE（展示快照）")
+    feature_se_user_id = Column(Integer, ForeignKey("users.id", ondelete="SET NULL"),
+                                nullable=True, index=True, comment="特性SE FK")
+    feature_tfo = Column(String(64), default="", comment="特性TFO（展示快照）")
+    feature_tfo_user_id = Column(Integer, ForeignKey("users.id", ondelete="SET NULL"),
+                                 nullable=True, index=True, comment="特性TFO FK")
     code_areas = Column(Text, default="", comment="涉及代码领域")
 
     # 交付进展跟踪 ─── 进度子项，枚举：未开始/进行中/已完成/已延期/已变更/不涉及
@@ -241,10 +254,16 @@ class IterationRequirement(Base):
     req_no = Column(String(64), default="", comment="需求编号")
     req_url = Column(String(512), default="", comment="需求超链接")
     title = Column(String(256), default="", comment="需求标题")
-    owner = Column(String(64), default="", comment="交付责任人")
-    owner_group = Column(String(64), default="", comment="PL组")
+    owner = Column(String(64), default="", comment="交付责任人（展示快照）")
+    owner_user_id = Column(Integer, ForeignKey("users.id", ondelete="SET NULL"),
+                           nullable=True, index=True, comment="交付责任人 FK")
+    owner_group = Column(String(64), default="", comment="PL组（展示快照）")
+    group_id = Column(Integer, ForeignKey("resource_groups.id", ondelete="SET NULL"),
+                      nullable=True, index=True, comment="PL组 FK")
     priority = Column(String(16), default="P2", comment="优先级 P0/P1/P2/P3")
-    planned_version = Column(String(64), default="", comment="计划交付版本")
+    planned_version = Column(String(64), default="", comment="计划交付版本（展示快照）")
+    target_version_id = Column(Integer, ForeignKey("iteration_versions.id", ondelete="SET NULL"),
+                               nullable=True, index=True, comment="计划交付迭代版本 FK")
 
     # 6 个交付进展子项：状态枚举 "未开始/进行中/已完成/已延期/不涉及"
     progress_walkthrough = Column(String(16), default="未开始", comment="需求串讲")
@@ -391,7 +410,9 @@ class StakeholderBattlefield(Base):
 
     id = Column(Integer, primary_key=True, index=True)
     sort_order = Column(Integer, default=0, comment="排序")
-    battlefield = Column(String(128), default="", comment="战场")
+    battlefield = Column(String(128), default="", comment="战场（客户名展示快照）")
+    customer_id = Column(Integer, ForeignKey("customers.id", ondelete="SET NULL"),
+                         nullable=True, index=True, comment="客户主数据 FK")
     region = Column(String(128), default="", comment="地域")
     service = Column(String(256), default="", comment="服务")
     contact1 = Column(Text, default="", comment="联系方式（服务）")
@@ -417,9 +438,11 @@ class ProjectFormationMember(Base):
 
     id = Column(Integer, primary_key=True, index=True)
     sort_order = Column(Integer, default=0)
-    name = Column(String(64), nullable=False, comment="姓名")
-    emp_no = Column(String(64), default="", comment="工号")
-    pl_group = Column(String(64), default="", comment="PL组")
+    user_id = Column(Integer, ForeignKey("users.id", ondelete="SET NULL"),
+                     nullable=True, index=True, comment="人员主数据 FK")
+    name = Column(String(64), nullable=False, comment="姓名（展示快照）")
+    emp_no = Column(String(64), default="", comment="工号（展示快照）")
+    pl_group = Column(String(64), default="", comment="PL组（展示快照）")
     role = Column(String(64), default="", comment="角色 / 岗位")
     special_attach = Column(String(128), default="", comment="挂靠专项 / 攻关")
     allocation = Column(String(32), default="", comment="投入比例 (如 0.5 / 30% / 全职)")
@@ -428,17 +451,51 @@ class ProjectFormationMember(Base):
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
 
 
+class ResourceGroup(Base):
+    """资源组主数据：两级结构（部门 dept → PL组 pl）。
+
+    - code 全局唯一、作为业务主键，不允许改名（改名只改 name 即可）
+    - kind="dept" 时 parent_id 必为空；kind="pl" 时 parent_id 必指向某个 dept
+    - leader_id 指向 users.id；leader 离职不级联清空，靠 UI 提示
+    - 业务表的 owner_group 字符串将逐步迁移成 group_id FK
+    """
+    __tablename__ = "resource_groups"
+
+    id = Column(Integer, primary_key=True, index=True)
+    code = Column(String(64), nullable=False, unique=True, index=True, comment="内部稳定 ID，不可改")
+    name = Column(String(128), nullable=False, comment="展示名（可改）")
+    kind = Column(String(16), nullable=False, default="pl", comment="dept=部门 / pl=PL组")
+    parent_id = Column(Integer, ForeignKey("resource_groups.id", ondelete="SET NULL"),
+                       nullable=True, index=True, comment="kind=pl 时指向所属 dept")
+    leader_id = Column(Integer, ForeignKey("users.id", ondelete="SET NULL"),
+                       nullable=True, comment="组长 / 部门长")
+    sort_order = Column(Integer, default=0)
+    is_active = Column(Boolean, default=True)
+    remark = Column(Text, default="")
+    created_at = Column(DateTime, default=datetime.utcnow)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+    parent = relationship("ResourceGroup", remote_side=[id], foreign_keys=[parent_id])
+
+
 class User(Base):
     __tablename__ = "users"
 
     id = Column(Integer, primary_key=True, index=True)
     username = Column(String(64), unique=True, nullable=False, index=True, comment="登录名")
     full_name = Column(String(128), default="", comment="姓名")
+    emp_no = Column(String(64), default="", index=True, comment="工号")
     password_hash = Column(String(256), default="", comment="密码哈希(本地账户)")
     role = Column(String(16), default="normal", comment="admin / normal")
     auth_provider = Column(String(32), default="local", comment="local / company_sso (预留)")
     is_active = Column(Boolean, default=True, comment="是否启用")
+    can_login = Column(Boolean, default=True, comment="是否允许登录（false=纯人员档案）")
+    group_id = Column(Integer, ForeignKey("resource_groups.id", ondelete="SET NULL"),
+                      nullable=True, index=True, comment="所属 PL 组")
+    job_title = Column(String(64), default="", comment="岗位 / 角色")
     created_at = Column(DateTime, default=datetime.utcnow)
+
+    group = relationship("ResourceGroup", foreign_keys=[group_id])
 
 
 class HandbookCategory(Base):
@@ -471,7 +528,9 @@ class HandbookItem(Base):
     file_name = Column(String(256), default="", comment="原始文件名 (kind=file)")
     file_size = Column(Integer, default=0, comment="文件大小 字节")
     description = Column(Text, default="")
-    owner = Column(String(64), default="")
+    owner = Column(String(64), default="", comment="责任人（展示快照）")
+    owner_user_id = Column(Integer, ForeignKey("users.id", ondelete="SET NULL"),
+                           nullable=True, index=True, comment="责任人 FK")
     sort_order = Column(Integer, default=0)
     created_at = Column(DateTime, default=datetime.utcnow)
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
@@ -488,7 +547,9 @@ class Special(Base):
     slug = Column(String(64), default="", index=True, comment="历史字段，不再使用")
     kind = Column(String(16), default="special", comment="special=专项 / assault=攻关")
     name = Column(String(128), nullable=False, comment="名称")
-    owner = Column(String(64), default="", comment="责任人")
+    owner = Column(String(64), default="", comment="责任人（展示快照）")
+    owner_user_id = Column(Integer, ForeignKey("users.id", ondelete="SET NULL"),
+                           nullable=True, index=True, comment="责任人 FK")
     sort_order = Column(Integer, default=0)
     is_active = Column(Boolean, default=True)
     email_to = Column(String(512), default="", comment="周报默认主送，逗号分隔")
@@ -543,7 +604,9 @@ class SpecialTask(Base):
     seq = Column(Integer, default=0)
     content = Column(Text, default="", comment="事务内容")
     progress = Column(Text, default="", comment="当前进展")
-    owner = Column(String(64), default="", comment="责任人")
+    owner = Column(String(64), default="", comment="责任人（展示快照）")
+    owner_user_id = Column(Integer, ForeignKey("users.id", ondelete="SET NULL"),
+                           nullable=True, index=True, comment="责任人 FK")
     planned_close_date = Column(String(32), default="", comment="计划闭环时间")
     status = Column(String(16), default="open", comment="open / closed")
     sort_order = Column(Integer, default=0)
@@ -562,7 +625,9 @@ class SpecialRisk(Base):
     seq = Column(Integer, default=0)
     content = Column(Text, default="", comment="问题内容")
     progress = Column(Text, default="", comment="当前进展")
-    owner = Column(String(64), default="", comment="责任人")
+    owner = Column(String(64), default="", comment="责任人（展示快照）")
+    owner_user_id = Column(Integer, ForeignKey("users.id", ondelete="SET NULL"),
+                           nullable=True, index=True, comment="责任人 FK")
     planned_close_date = Column(String(32), default="", comment="计划闭环时间")
     status = Column(String(16), default="open", comment="open / closed")
     sort_order = Column(Integer, default=0)
@@ -570,6 +635,66 @@ class SpecialRisk(Base):
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
 
     special = relationship("Special", back_populates="risks")
+
+
+class Notification(Base):
+    """站内通知。
+
+    - recipient_id=NULL 表示广播；已读状态走 NotificationRead 表
+    - recipient_id 非空表示定向：is_read 直接用本表的字段
+    - kind 含义：mention / assignment / status_change / due_soon / overdue /
+      version_plan / broadcast / system
+    """
+    __tablename__ = "notifications"
+
+    id = Column(Integer, primary_key=True, index=True)
+    recipient_id = Column(Integer, ForeignKey("users.id", ondelete="CASCADE"),
+                          nullable=True, index=True,
+                          comment="收件人；NULL 表示广播")
+    actor_id = Column(Integer, ForeignKey("users.id", ondelete="SET NULL"),
+                      nullable=True, comment="触发者；NULL 表示系统")
+    kind = Column(String(32), nullable=False, index=True, comment="见类注释")
+    title = Column(String(256), nullable=False)
+    body = Column(Text, default="")
+    link = Column(String(512), default="", comment="前端点击跳转目标，如 /iterations/12")
+    source_type = Column(String(32), default="", index=True,
+                         comment="iteration_requirement / customer / special / version / ...")
+    source_id = Column(Integer, default=0, index=True)
+    is_read = Column(Boolean, default=False, index=True,
+                     comment="仅定向通知（recipient_id 非空）用；广播通知忽略此字段")
+    created_at = Column(DateTime, default=datetime.utcnow, index=True)
+    read_at = Column(DateTime, nullable=True)
+
+
+class NotificationRead(Base):
+    """广播通知的已读登记表。"""
+    __tablename__ = "notification_reads"
+    __table_args__ = (UniqueConstraint("notification_id", "user_id", name="uq_notif_read_user"),)
+
+    id = Column(Integer, primary_key=True, index=True)
+    notification_id = Column(Integer, ForeignKey("notifications.id", ondelete="CASCADE"),
+                             nullable=False, index=True)
+    user_id = Column(Integer, ForeignKey("users.id", ondelete="CASCADE"),
+                     nullable=False, index=True)
+    read_at = Column(DateTime, default=datetime.utcnow)
+
+
+class Subscription(Base):
+    """用户对某类目标的订阅。
+
+    source_id=NULL 表示该 source_type 的全部（很少用，比如订阅"所有专项"）。
+    events 为 CSV，默认 '*' 即所有事件。
+    """
+    __tablename__ = "subscriptions"
+    __table_args__ = (UniqueConstraint("user_id", "source_type", "source_id", name="uq_sub_user_source"),)
+
+    id = Column(Integer, primary_key=True, index=True)
+    user_id = Column(Integer, ForeignKey("users.id", ondelete="CASCADE"),
+                     nullable=False, index=True)
+    source_type = Column(String(32), nullable=False, index=True)
+    source_id = Column(Integer, nullable=True, index=True)
+    events = Column(String(256), default="*", comment="CSV: status_change,comment,...")
+    created_at = Column(DateTime, default=datetime.utcnow)
 
 
 class OperationLog(Base):

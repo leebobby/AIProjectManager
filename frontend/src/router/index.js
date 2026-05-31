@@ -89,6 +89,24 @@ const routes = [
     meta: { title: '专项详情', hidden: true },
   },
   {
+    path: '/resource-groups',
+    name: 'ResourceGroupManagement',
+    component: () => import('../views/ResourceGroupManagement.vue'),
+    meta: { title: '组织架构', icon: 'Connection', requireAdmin: true },
+  },
+  {
+    path: '/data-mapping',
+    name: 'DataMapping',
+    component: () => import('../views/DataMapping.vue'),
+    meta: { title: '数据对账', icon: 'Link', requireAdmin: true },
+  },
+  {
+    path: '/metrics',
+    name: 'MetricsDashboard',
+    component: () => import('../views/MetricsDashboard.vue'),
+    meta: { title: '度量看板', icon: 'TrendCharts' },
+  },
+  {
     path: '/users',
     name: 'UserManagement',
     component: () => import('../views/UserManagement.vue'),

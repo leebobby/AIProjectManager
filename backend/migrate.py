@@ -78,6 +78,32 @@ _ADDITIONS = [
     ("customers", "industry", "VARCHAR(128) NOT NULL DEFAULT ''"),
     ("customers", "intro", "TEXT NOT NULL DEFAULT ''"),
     ("customers", "key_focus", "TEXT NOT NULL DEFAULT ''"),
+
+    # v0.18: User 表扩字段（资源组归属、工号、岗位、纯档案标记）
+    ("users", "emp_no", "VARCHAR(64) NOT NULL DEFAULT ''"),
+    ("users", "can_login", "BOOLEAN NOT NULL DEFAULT 1"),
+    ("users", "group_id", "INTEGER"),
+    ("users", "job_title", "VARCHAR(64) NOT NULL DEFAULT ''"),
+
+    # v0.19: 客户主数据 FK 化（业务表挂 customer_id）
+    ("customer_status", "customer_id", "INTEGER"),
+    ("stakeholder_battlefields", "customer_id", "INTEGER"),
+    # v0.19: 阵型成员挂到 User 主数据
+    ("project_formation_members", "user_id", "INTEGER"),
+
+    # v0.20: 业务表 owner / version 字符串 → FK
+    ("annual_iterations", "owner_user_id", "INTEGER"),
+    ("iteration_requirements", "owner_user_id", "INTEGER"),
+    ("iteration_requirements", "group_id", "INTEGER"),
+    ("iteration_requirements", "target_version_id", "INTEGER"),
+    ("iteration_product_requirements", "target_version_id", "INTEGER"),
+    ("iteration_product_requirements", "feature_fo_user_id", "INTEGER"),
+    ("iteration_product_requirements", "feature_se_user_id", "INTEGER"),
+    ("iteration_product_requirements", "feature_tfo_user_id", "INTEGER"),
+    ("specials", "owner_user_id", "INTEGER"),
+    ("special_tasks", "owner_user_id", "INTEGER"),
+    ("special_risks", "owner_user_id", "INTEGER"),
+    ("handbook_items", "owner_user_id", "INTEGER"),
 ]
 
 

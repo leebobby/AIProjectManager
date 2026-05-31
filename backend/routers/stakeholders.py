@@ -16,6 +16,17 @@ from op_log import log_op
 router = APIRouter(prefix="/api/stakeholders", tags=["stakeholders"])
 
 
+def _resolve_customer_id_by_name(db: Session, name: str):
+    s = (name or "").strip()
+    if not s:
+        return None
+    cu = db.query(models.Customer).filter(models.Customer.code == s).first()
+    if cu:
+        return cu.id
+    al = db.query(models.CustomerAlias).filter(models.CustomerAlias.alias == s).first()
+    return al.customer_id if al else None
+
+
 # ── 项目组沟通地图 ──────────────────────────────────────────
 
 @router.get("/project-contacts", response_model=List[schemas.ProjectContactOut])
@@ -109,7 +120,11 @@ def create_battlefield(
     current_admin: models.User = Depends(require_admin),
 ):
     max_order = db.query(models.StakeholderBattlefield).count()
-    item = models.StakeholderBattlefield(**payload.model_dump(), sort_order=max_order)
+    data = payload.model_dump()
+    item = models.StakeholderBattlefield(
+        **data, sort_order=max_order,
+        customer_id=_resolve_customer_id_by_name(db, data.get("battlefield", "")),
+    )
     db.add(item)
     db.commit()
     db.refresh(item)
@@ -132,8 +147,12 @@ def update_battlefield(
     ).first()
     if not item:
         raise HTTPException(404, "Not found")
-    for k, v in payload.model_dump(exclude_unset=True).items():
+    changes = payload.model_dump(exclude_unset=True)
+    for k, v in changes.items():
         setattr(item, k, v)
+    # battlefield 字段被改写时，刷新 customer_id 绑定
+    if "battlefield" in changes:
+        item.customer_id = _resolve_customer_id_by_name(db, item.battlefield or "")
     db.commit()
     db.refresh(item)
     log_op(db, action="修改", target="战场矩阵", target_id=item.id,

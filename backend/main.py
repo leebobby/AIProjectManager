@@ -10,7 +10,7 @@ from migrate import ensure_schema
 from routers import annual_iterations, iteration_product_requirements, iteration_requirements
 from routers import auth as auth_router
 from routers import config as config_router
-from routers import customer_status, customers, handbook, issues, iterations, licenses, major_versions, op_logs, project_formation, roadmap, sow, specials, stakeholders, system as system_router, users, versions
+from routers import customer_status, customers, handbook, issues, iterations, licenses, major_versions, mapping, metrics, notifications, op_logs, project_formation, resource_groups, roadmap, sow, specials, stakeholders, system as system_router, users, versions
 
 # 先做轻量迁移（给老库加列），再 create_all 补齐缺失的表。
 ensure_schema()
@@ -32,7 +32,9 @@ app.include_router(config_router.router)   # GET 公开读，PUT 内部已限 re
 
 # 业务路由：全部需要登录
 authed = [Depends(get_current_user)]
+app.include_router(resource_groups.router, dependencies=authed)
 app.include_router(customers.router, dependencies=authed)
+app.include_router(mapping.router, dependencies=authed)
 app.include_router(customer_status.router, dependencies=authed)
 app.include_router(sow.router, dependencies=authed)
 app.include_router(licenses.router, dependencies=authed)
@@ -45,6 +47,8 @@ app.include_router(roadmap.router, dependencies=authed)
 app.include_router(issues.router, dependencies=authed)
 app.include_router(major_versions.router, dependencies=authed)
 app.include_router(stakeholders.router, dependencies=authed)
+app.include_router(metrics.router, dependencies=authed)
+app.include_router(notifications.router, dependencies=authed)
 app.include_router(handbook.router, dependencies=authed)
 app.include_router(specials.router, dependencies=authed)
 app.include_router(project_formation.router, dependencies=authed)
@@ -226,3 +230,11 @@ def seed_initial_data():
 
 
 seed_initial_data()
+
+# 启动后台调度（DDL 临期扫描等）
+try:
+    import scheduler
+    scheduler.start()
+except Exception as exc:  # APScheduler 装载失败不应阻塞 API
+    import logging
+    logging.getLogger("main").warning("scheduler 启动失败：%s", exc)

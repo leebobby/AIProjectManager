@@ -265,9 +265,12 @@ class IterationRequirementBase(BaseModel):
     req_url: Optional[str] = ""
     title: Optional[str] = ""
     owner: Optional[str] = ""
+    owner_user_id: Optional[int] = None
     owner_group: Optional[str] = ""
+    group_id: Optional[int] = None
     priority: Optional[str] = "P2"
     planned_version: Optional[str] = ""
+    target_version_id: Optional[int] = None
     progress_walkthrough: Optional[str] = "未开始"
     progress_reverse: Optional[str] = "未开始"
     progress_stc: Optional[str] = "未开始"
@@ -288,9 +291,12 @@ class IterationRequirementUpdate(BaseModel):
     req_url: Optional[str] = None
     title: Optional[str] = None
     owner: Optional[str] = None
+    owner_user_id: Optional[int] = None
     owner_group: Optional[str] = None
+    group_id: Optional[int] = None
     priority: Optional[str] = None
     planned_version: Optional[str] = None
+    target_version_id: Optional[int] = None
     progress_walkthrough: Optional[str] = None
     progress_reverse: Optional[str] = None
     progress_stc: Optional[str] = None
@@ -315,11 +321,15 @@ class IterationProductRequirementBase(BaseModel):
     req_url: Optional[str] = ""
     title: Optional[str] = ""
     planned_version: Optional[str] = ""
+    target_version_id: Optional[int] = None
     priority: Optional[str] = "中"
     feature: Optional[str] = ""
     feature_fo: Optional[str] = ""
+    feature_fo_user_id: Optional[int] = None
     feature_se: Optional[str] = ""
+    feature_se_user_id: Optional[int] = None
     feature_tfo: Optional[str] = ""
+    feature_tfo_user_id: Optional[int] = None
     code_areas: Optional[str] = ""
     progress_walkthrough: Optional[str] = "未开始"
     progress_reverse: Optional[str] = "未开始"
@@ -345,11 +355,15 @@ class IterationProductRequirementUpdate(BaseModel):
     req_url: Optional[str] = None
     title: Optional[str] = None
     planned_version: Optional[str] = None
+    target_version_id: Optional[int] = None
     priority: Optional[str] = None
     feature: Optional[str] = None
     feature_fo: Optional[str] = None
+    feature_fo_user_id: Optional[int] = None
     feature_se: Optional[str] = None
+    feature_se_user_id: Optional[int] = None
     feature_tfo: Optional[str] = None
+    feature_tfo_user_id: Optional[int] = None
     code_areas: Optional[str] = None
     progress_walkthrough: Optional[str] = None
     progress_reverse: Optional[str] = None
@@ -582,17 +596,25 @@ class BattlefieldOut(BattlefieldBase):
 class UserBase(BaseModel):
     username: str
     full_name: Optional[str] = ""
+    emp_no: Optional[str] = ""
+    job_title: Optional[str] = ""
+    group_id: Optional[int] = None
 
 
 class UserCreate(UserBase):
-    password: str
+    password: Optional[str] = None  # 纯档案（can_login=false）可不填
     role: Optional[str] = "normal"
+    can_login: Optional[bool] = True
 
 
 class UserUpdate(BaseModel):
     full_name: Optional[str] = None
+    emp_no: Optional[str] = None
+    job_title: Optional[str] = None
+    group_id: Optional[int] = None
     role: Optional[str] = None
     is_active: Optional[bool] = None
+    can_login: Optional[bool] = None
     password: Optional[str] = None
 
 
@@ -600,10 +622,101 @@ class UserOut(BaseModel):
     id: int
     username: str
     full_name: str
+    emp_no: str = ""
+    job_title: str = ""
+    group_id: Optional[int] = None
+    group_name: Optional[str] = None       # 由 router 显式填充
+    dept_id: Optional[int] = None          # 由 router 显式填充
+    dept_name: Optional[str] = None        # 由 router 显式填充
     role: str
     is_active: bool
+    can_login: bool = True
     auth_provider: str
     created_at: datetime
+
+    model_config = ConfigDict(from_attributes=True)
+
+
+# ===== Notification / Subscription =====
+class NotificationOut(BaseModel):
+    id: int
+    kind: str
+    title: str
+    body: str = ""
+    link: str = ""
+    source_type: str = ""
+    source_id: int = 0
+    is_read: bool = False
+    is_broadcast: bool = False
+    actor_id: Optional[int] = None
+    actor_name: Optional[str] = None
+    created_at: datetime
+
+    model_config = ConfigDict(from_attributes=True)
+
+
+class NotificationListResponse(BaseModel):
+    items: List[NotificationOut]
+    unread_count: int
+    total: int
+
+
+class BroadcastPayload(BaseModel):
+    title: str
+    body: Optional[str] = ""
+    link: Optional[str] = ""
+    kind: Optional[str] = "broadcast"
+
+
+class SubscriptionOut(BaseModel):
+    id: int
+    source_type: str
+    source_id: Optional[int]
+    events: str = "*"
+    created_at: datetime
+
+    model_config = ConfigDict(from_attributes=True)
+
+
+class SubscriptionPayload(BaseModel):
+    source_type: str
+    source_id: Optional[int] = None
+    events: Optional[str] = "*"
+
+
+# ===== ResourceGroup（部门 / PL 组）=====
+class ResourceGroupBase(BaseModel):
+    code: str
+    name: str
+    kind: str = "pl"              # "dept" / "pl"
+    parent_id: Optional[int] = None
+    leader_id: Optional[int] = None
+    sort_order: Optional[int] = 0
+    is_active: Optional[bool] = True
+    remark: Optional[str] = ""
+
+
+class ResourceGroupCreate(ResourceGroupBase):
+    pass
+
+
+class ResourceGroupUpdate(BaseModel):
+    # code 不可改；name/parent/leader 等可改
+    name: Optional[str] = None
+    parent_id: Optional[int] = None
+    leader_id: Optional[int] = None
+    sort_order: Optional[int] = None
+    is_active: Optional[bool] = None
+    remark: Optional[str] = None
+
+
+class ResourceGroupOut(ResourceGroupBase):
+    id: int
+    parent_name: Optional[str] = None
+    leader_name: Optional[str] = None
+    member_count: Optional[int] = 0
+    created_at: datetime
+    updated_at: datetime
 
     model_config = ConfigDict(from_attributes=True)
 

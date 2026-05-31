@@ -29,6 +29,20 @@ _ADMIN_ONLY_FIELDS = {"current_stage", "field_version", "attention_level", "issu
 _USER_FIELDS = {"customer_status", "recent_focus", "key_issues"}
 
 
+def _resolve_customer_id_by_name(db: Session, name: str):
+    """按 battlefield 字符串反查 customer_id；找不到返回 None。"""
+    s = (name or "").strip()
+    if not s:
+        return None
+    cu = db.query(models.Customer).filter(models.Customer.code == s).first()
+    if cu:
+        return cu.id
+    al = db.query(models.CustomerAlias).filter(models.CustomerAlias.alias == s).first()
+    if al:
+        return al.customer_id
+    return None
+
+
 @router.get("", response_model=List[schemas.CustomerStatusOut])
 def list_items(db: Session = Depends(get_db)):
     return db.query(models.CustomerStatus).order_by(models.CustomerStatus.id.desc()).all()
@@ -48,7 +62,9 @@ def create_item(
     )
     if exists:
         raise HTTPException(status_code=400, detail="机台编号已存在")
-    item = models.CustomerStatus(**payload.model_dump())
+    data = payload.model_dump()
+    data["customer_id"] = _resolve_customer_id_by_name(db, data.get("battlefield", ""))
+    item = models.CustomerStatus(**data)
     db.add(item)
     db.commit()
     db.refresh(item)
