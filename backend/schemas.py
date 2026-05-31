@@ -9,6 +9,55 @@ from pydantic import BaseModel, ConfigDict
 _BASE_CONFIG = ConfigDict(from_attributes=True, protected_namespaces=())
 
 
+# ===== Customer (主数据) =====
+class CustomerAliasOut(BaseModel):
+    id: int
+    alias: str
+
+    model_config = ConfigDict(from_attributes=True)
+
+
+class CustomerBase(BaseModel):
+    code: str
+    display_name: Optional[str] = ""
+    region: Optional[str] = ""
+    industry: Optional[str] = ""
+    intro: Optional[str] = ""
+    key_focus: Optional[str] = ""
+    remark: Optional[str] = ""
+    is_active: Optional[bool] = True
+    sort_order: Optional[int] = 0
+
+
+class CustomerCreate(CustomerBase):
+    aliases: List[str] = []
+
+
+class CustomerUpdate(BaseModel):
+    """单字段或多字段更新；提供 aliases 则做全量替换，未提供则别名不变。"""
+    version: int
+    code: Optional[str] = None
+    display_name: Optional[str] = None
+    region: Optional[str] = None
+    industry: Optional[str] = None
+    intro: Optional[str] = None
+    key_focus: Optional[str] = None
+    remark: Optional[str] = None
+    is_active: Optional[bool] = None
+    sort_order: Optional[int] = None
+    aliases: Optional[List[str]] = None
+
+
+class CustomerOut(CustomerBase):
+    id: int
+    version: int
+    aliases: List[CustomerAliasOut] = []
+    created_at: datetime
+    updated_at: datetime
+
+    model_config = ConfigDict(from_attributes=True)
+
+
 # ===== CustomerStatus =====
 class CustomerStatusBase(BaseModel):
     model_config = ConfigDict(protected_namespaces=())
@@ -53,6 +102,85 @@ class CustomerStatusOut(CustomerStatusBase):
     updated_at: datetime
 
     model_config = ConfigDict(from_attributes=True, protected_namespaces=())
+
+
+# ===== 客户详情：机台 + SOW + License =====
+class CustomerMachineOut(BaseModel):
+    """客户详情页机台 tab 用：从 customer_status 派生，含编辑当前进展所需字段。"""
+    id: int
+    machine_id: str
+    model: Optional[str] = ""
+    current_stage: Optional[str] = ""
+    customer_status: Optional[str] = ""
+    field_version: Optional[str] = ""
+    attention_level: Optional[int] = 0
+    version: int
+
+    model_config = ConfigDict(from_attributes=True, protected_namespaces=())
+
+
+class SowFieldDefBase(BaseModel):
+    key: str
+    label: str
+    field_type: str = "text"  # text / date / select
+    options: Optional[List[str]] = []
+    required: Optional[bool] = False
+    sort_order: Optional[int] = 0
+    is_active: Optional[bool] = True
+
+
+class SowFieldDefCreate(SowFieldDefBase):
+    pass
+
+
+class SowFieldDefUpdate(BaseModel):
+    label: Optional[str] = None
+    field_type: Optional[str] = None
+    options: Optional[List[str]] = None
+    required: Optional[bool] = None
+    sort_order: Optional[int] = None
+    is_active: Optional[bool] = None
+
+
+class SowFieldDefOut(SowFieldDefBase):
+    """options 是 JSON Text 列；返回前由 router 显式解码成 list。"""
+    id: int
+
+
+class SowRowBase(BaseModel):
+    data: dict = {}
+    sort_order: Optional[int] = 0
+
+
+class SowRowCreate(SowRowBase):
+    pass
+
+
+class SowRowUpdate(BaseModel):
+    version: int
+    data: Optional[dict] = None
+    sort_order: Optional[int] = None
+
+
+class SowRowOut(SowRowBase):
+    """data 是 JSON Text 列；返回前由 router 显式解码成 dict。"""
+    id: int
+    machine_status_id: int
+    version: int
+    created_at: datetime
+    updated_at: datetime
+
+
+class MachineLicenseOut(BaseModel):
+    id: int
+    machine_status_id: int
+    file_name: str
+    file_size: int = 0
+    remark: Optional[str] = ""
+    uploaded_by: Optional[str] = ""
+    uploaded_at: datetime
+
+    model_config = ConfigDict(from_attributes=True)
 
 
 # ===== Version =====

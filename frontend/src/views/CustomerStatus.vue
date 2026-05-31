@@ -17,7 +17,13 @@
       <el-table :data="list" v-loading="loading" border stripe style="width:100%">
         <el-table-column type="index" label="序号" width="60" align="center" :index="(i) => i + 1" />
         <el-table-column prop="machine_id" label="机台编号" width="110" align="center" sortable />
-        <el-table-column prop="battlefield" label="客户" width="140" align="center" sortable />
+        <el-table-column prop="battlefield" label="客户" width="140" align="center" sortable>
+          <template #default="{ row }">
+            <a class="bf-link" :title="'点击查看客户详情'" @click.stop="openCustomerDetail(row)">
+              {{ row.battlefield || '—' }}
+            </a>
+          </template>
+        </el-table-column>
         <el-table-column prop="model" label="型号" width="120" align="center" sortable />
 
         <el-table-column prop="current_stage" label="当前阶段" width="160" align="center" sortable>
@@ -227,7 +233,28 @@
           <el-input v-model="form.machine_id" :disabled="!!editing" :placeholder="editing ? '创建后不可修改' : '请输入'" />
         </el-form-item>
         <el-form-item label="客户">
-          <el-input v-model="form.battlefield" :disabled="!!editing" :placeholder="editing ? '创建后不可修改' : '请输入'" />
+          <template v-if="editing">
+            <el-input v-model="form.battlefield" disabled placeholder="创建后不可修改" />
+          </template>
+          <template v-else>
+            <el-select
+              v-model="form.battlefield"
+              filterable
+              placeholder="请选择客户（仅可从客户管理中选）"
+              style="width: 100%"
+              no-data-text="客户管理中暂无客户，请先到「客户管理」新增"
+            >
+              <el-option
+                v-for="c in customers"
+                :key="c.id"
+                :label="c.display_name ? `${c.code} · ${c.display_name}` : c.code"
+                :value="c.code"
+              />
+            </el-select>
+            <div class="dialog-tip">
+              候选来自<router-link to="/customers" class="bf-link">客户管理</router-link>；如缺少请先到那里新增
+            </div>
+          </template>
         </el-form-item>
         <el-form-item label="型号">
           <el-input v-model="form.model" :disabled="!!editing" :placeholder="editing ? '创建后不可修改' : '请输入'" />
@@ -342,21 +369,26 @@
       </template>
       <el-empty v-else description="无问题单数据，请检查是否已配置报表目录" />
     </el-drawer>
+
   </div>
 </template>
 
 <script setup>
 import { computed, nextTick, onMounted, reactive, ref, watch } from 'vue'
+import { useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { ArrowDown, ArrowRight, Delete, Download, Edit, Link, Plus, Refresh } from '@element-plus/icons-vue'
-import { configApi, customerStatusApi, downloadBlob, issueApi, majorVersionApi } from '../api'
+import { configApi, customerApi, customerStatusApi, downloadBlob, issueApi, majorVersionApi } from '../api'
 import { auth } from '../store/auth'
+
+const router = useRouter()
 
 const isAdmin = auth.isAdmin
 
 const list    = ref([])
 const stages  = ref([])
 const versions = ref([])
+const customers = ref([])     // 来自客户管理的主数据，用于"新增机台"时的下拉
 const loading = ref(false)
 const dialogVisible = ref(false)
 const editing = ref(null)
@@ -420,6 +452,15 @@ async function loadConfig() {
     const { data } = await configApi.get()
     stages.value = data.current_stages || []
   } catch {}
+}
+
+async function loadCustomers() {
+  try {
+    const { data } = await customerApi.list()
+    customers.value = data
+  } catch (e) {
+    console.error('[CustomerStatus] 加载客户主数据失败:', e)
+  }
 }
 
 async function loadVersions() {
@@ -751,9 +792,33 @@ async function onExport() {
   }
 }
 
+// ── 点击客户列：跳到完整的客户详情页 ──────────────────
+async function openCustomerDetail(row) {
+  const name = (row.battlefield || '').trim()
+  if (!name) {
+    ElMessage.warning('该机台未设置客户')
+    return
+  }
+  try {
+    const { data } = await customerApi.resolve(name)
+    if (data && data.id) {
+      router.push(`/customers/${data.id}`)
+    } else {
+      ElMessageBox.confirm(
+        `「${name}」尚未在客户管理中登记（或作为别名关联）。是否现在去客户管理新建？`,
+        '客户未关联',
+        { type: 'info', confirmButtonText: '去客户管理', cancelButtonText: '取消' }
+      ).then(() => router.push('/customers')).catch(() => {})
+    }
+  } catch (e) {
+    ElMessage.error(e.response?.data?.detail || '查询客户失败')
+  }
+}
+
 onMounted(async () => {
   loadConfig()
   loadVersions()
+  loadCustomers()
   await load()
   loadIssueData()   // 后台拉取问题单分布，不阻塞表格渲染
 })
@@ -776,6 +841,23 @@ onMounted(async () => {
   cursor: text;
   min-height: 22px;
   white-space: pre-wrap;
+}
+.bf-link {
+  color: #409eff;
+  font-weight: 600;
+  cursor: pointer;
+  text-decoration: none;
+}
+.bf-link:hover { text-decoration: underline; }
+.dialog-tip {
+  font-size: 12px;
+  color: #909399;
+  margin-top: 4px;
+}
+.hint {
+  color: #909399;
+  font-size: 13px;
+  padding: 8px 4px;
 }
 
 /* ── 清单单元格 ── */

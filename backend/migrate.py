@@ -65,10 +65,19 @@ _ADDITIONS = [
     ("specials", "email_cc", "VARCHAR(512) NOT NULL DEFAULT ''"),
     ("specials", "email_subject_tpl", "VARCHAR(256) NOT NULL DEFAULT ''"),
     ("special_tasks", "status", "VARCHAR(16) NOT NULL DEFAULT 'open'"),
+    ("special_risks", "status", "VARCHAR(16) NOT NULL DEFAULT 'open'"),
     ("special_contents", "extra_grids_json", "TEXT NOT NULL DEFAULT '[]'"),
 
     # v0.15: 迭代需求增加责任人所属小组
     ("iteration_requirements", "owner_group", "VARCHAR(64) NOT NULL DEFAULT ''"),
+
+    # v0.16: 客户主数据扩展字段
+    # 注意：customers 表是 v0.16 才引入的。如果你在两次后端启动之间，先用了仅含基础列的
+    # Customer 模型版本（早期 PR），后续才加这几列，那么 create_all 不会自动补列 —
+    # 必须显式 ALTER。新库直接 create_all 时 has_table=False，这些 ALTER 会自动跳过。
+    ("customers", "industry", "VARCHAR(128) NOT NULL DEFAULT ''"),
+    ("customers", "intro", "TEXT NOT NULL DEFAULT ''"),
+    ("customers", "key_focus", "TEXT NOT NULL DEFAULT ''"),
 ]
 
 

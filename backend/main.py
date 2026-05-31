@@ -10,7 +10,7 @@ from migrate import ensure_schema
 from routers import annual_iterations, iteration_product_requirements, iteration_requirements
 from routers import auth as auth_router
 from routers import config as config_router
-from routers import customer_status, handbook, issues, iterations, major_versions, op_logs, project_formation, roadmap, specials, stakeholders, system as system_router, users, versions
+from routers import customer_status, customers, handbook, issues, iterations, licenses, major_versions, op_logs, project_formation, roadmap, sow, specials, stakeholders, system as system_router, users, versions
 
 # 先做轻量迁移（给老库加列），再 create_all 补齐缺失的表。
 ensure_schema()
@@ -32,7 +32,10 @@ app.include_router(config_router.router)   # GET 公开读，PUT 内部已限 re
 
 # 业务路由：全部需要登录
 authed = [Depends(get_current_user)]
+app.include_router(customers.router, dependencies=authed)
 app.include_router(customer_status.router, dependencies=authed)
+app.include_router(sow.router, dependencies=authed)
+app.include_router(licenses.router, dependencies=authed)
 app.include_router(versions.router, dependencies=authed)
 app.include_router(iterations.router, dependencies=authed)
 app.include_router(annual_iterations.router, dependencies=authed)

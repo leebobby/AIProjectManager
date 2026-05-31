@@ -19,7 +19,19 @@ const routes = [
     path: '/customer-status',
     name: 'CustomerStatus',
     component: () => import('../views/CustomerStatus.vue'),
-    meta: { title: '客户面状态', icon: 'DataLine' },
+    meta: { title: '客户面状态', icon: 'DataLine', customersParent: true },
+  },
+  {
+    path: '/customers',
+    name: 'CustomerManagement',
+    component: () => import('../views/CustomerManagement.vue'),
+    meta: { title: '客户管理', icon: 'OfficeBuilding', hidden: true },
+  },
+  {
+    path: '/customers/:id(\\d+)',
+    name: 'CustomerDetail',
+    component: () => import('../views/CustomerDetail.vue'),
+    meta: { title: '客户详情', hidden: true },
   },
   {
     path: '/versions',

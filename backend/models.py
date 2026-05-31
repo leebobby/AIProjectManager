@@ -6,6 +6,52 @@ from sqlalchemy.orm import relationship
 from database import Base
 
 
+class Customer(Base):
+    """客户主数据：以缩写英文名 code 作为业务主键，配合多个别名做模糊匹配。
+
+    其他业务模块（客户面状态、战场沟通矩阵、版本、迭代、专项 …）后续都会
+    引用 customers.id；本表是单一来源（single source of truth）。
+    """
+    __tablename__ = "customers"
+
+    id = Column(Integer, primary_key=True, index=True)
+    code = Column(String(64), nullable=False, unique=True, index=True,
+                  comment="缩写英文名 / 业务主键 / 默认展示名称")
+    display_name = Column(String(256), default="", comment="完整名称（可选，未填则展示 code）")
+    region = Column(String(64), default="", comment="区域，如华东/华南/华北")
+    industry = Column(String(128), default="", comment="所属行业 / 业务领域")
+    intro = Column(Text, default="", comment="客户档案 / 背景介绍（富文本）")
+    key_focus = Column(Text, default="", comment="近期重点关注事项（富文本）")
+    remark = Column(Text, default="", comment="备注")
+    is_active = Column(Boolean, default=True)
+    sort_order = Column(Integer, default=0)
+    version = Column(Integer, nullable=False, default=0, comment="乐观锁版本号")
+    created_at = Column(DateTime, default=datetime.utcnow)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+    aliases = relationship(
+        "CustomerAlias", back_populates="customer",
+        cascade="all, delete-orphan", order_by="CustomerAlias.id",
+    )
+
+
+class CustomerAlias(Base):
+    """客户别名：同一客户可有多个写法（中文全称、历史叫法、产品线绰号等）。
+
+    alias 全局唯一，保证按名称反查时不歧义。
+    """
+    __tablename__ = "customer_aliases"
+
+    id = Column(Integer, primary_key=True, index=True)
+    customer_id = Column(Integer, ForeignKey("customers.id", ondelete="CASCADE"),
+                         nullable=False, index=True)
+    alias = Column(String(256), nullable=False, index=True)
+
+    customer = relationship("Customer", back_populates="aliases")
+
+    __table_args__ = (UniqueConstraint("alias", name="uq_customer_aliases_alias"),)
+
+
 class CustomerStatus(Base):
     __tablename__ = "customer_status"
 
@@ -22,6 +68,71 @@ class CustomerStatus(Base):
     issue_url = Column(String(512), default="", comment="问题单链接")
     version = Column(Integer, nullable=False, default=0, comment="乐观锁版本号")
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+    sow_rows = relationship(
+        "SowRow", back_populates="machine_status",
+        cascade="all, delete-orphan", order_by="SowRow.sort_order",
+    )
+    licenses = relationship(
+        "MachineLicense", back_populates="machine_status",
+        cascade="all, delete-orphan", order_by="MachineLicense.id",
+    )
+
+
+class SowFieldDef(Base):
+    """SOW 表格列定义（全局共享一份）。
+    所有客户、所有机台共用同一套列；admin 在 客户管理 → SOW 字段配置 里维护。
+    """
+    __tablename__ = "sow_field_defs"
+
+    id = Column(Integer, primary_key=True, index=True)
+    key = Column(String(64), nullable=False, unique=True, comment="列 key（内部 ID）")
+    label = Column(String(128), nullable=False, comment="表头显示文本")
+    field_type = Column(String(16), nullable=False, default="text",
+                        comment="text / date / select")
+    options = Column(Text, default="[]", comment="select 列的候选项 JSON 数组")
+    required = Column(Boolean, default=False, comment="是否必填")
+    sort_order = Column(Integer, default=0)
+    is_active = Column(Boolean, default=True)
+    created_at = Column(DateTime, default=datetime.utcnow)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+
+class SowRow(Base):
+    """单台机台下的一行 SOW 数据。data 字段以 JSON 形式存 {field_key: value}。"""
+    __tablename__ = "sow_rows"
+
+    id = Column(Integer, primary_key=True, index=True)
+    machine_status_id = Column(
+        Integer, ForeignKey("customer_status.id", ondelete="CASCADE"),
+        nullable=False, index=True,
+    )
+    data = Column(Text, default="{}", comment="JSON 字典: {field_key: value}")
+    sort_order = Column(Integer, default=0)
+    version = Column(Integer, nullable=False, default=0, comment="乐观锁版本号")
+    created_at = Column(DateTime, default=datetime.utcnow)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+    machine_status = relationship("CustomerStatus", back_populates="sow_rows")
+
+
+class MachineLicense(Base):
+    """机台 license 文件。一台机台可以上传多个 license。"""
+    __tablename__ = "machine_licenses"
+
+    id = Column(Integer, primary_key=True, index=True)
+    machine_status_id = Column(
+        Integer, ForeignKey("customer_status.id", ondelete="CASCADE"),
+        nullable=False, index=True,
+    )
+    file_name = Column(String(256), nullable=False, comment="原始文件名")
+    file_path = Column(String(512), nullable=False, comment="uploads/ 下的相对路径")
+    file_size = Column(Integer, default=0)
+    remark = Column(Text, default="", comment="备注")
+    uploaded_by = Column(String(64), default="", comment="上传人 username")
+    uploaded_at = Column(DateTime, default=datetime.utcnow)
+
+    machine_status = relationship("CustomerStatus", back_populates="licenses")
 
 
 class Version(Base):
@@ -453,6 +564,7 @@ class SpecialRisk(Base):
     progress = Column(Text, default="", comment="当前进展")
     owner = Column(String(64), default="", comment="责任人")
     planned_close_date = Column(String(32), default="", comment="计划闭环时间")
+    status = Column(String(16), default="open", comment="open / closed")
     sort_order = Column(Integer, default=0)
     created_at = Column(DateTime, default=datetime.utcnow)
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)

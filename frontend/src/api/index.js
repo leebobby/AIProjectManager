@@ -136,6 +136,51 @@ export const issueApi = {
   exportPptx:   (date) => http.get('/issues/export.pptx', { responseType: 'blob', ...(date ? { params: { date } } : {}) }),
 }
 
+export const customerApi = {
+  list: (include_inactive = false) => http.get('/customers', { params: { include_inactive } }),
+  get: (id) => http.get(`/customers/${id}`),
+  create: (data) => http.post('/customers', data),
+  update: (id, data) => http.put(`/customers/${id}`, data),
+  remove: (id) => http.delete(`/customers/${id}`),
+  resolve: (name) => http.get('/customers/resolve', { params: { name } }),
+  machines: (id) => http.get(`/customers/${id}/machines`),
+}
+
+export const sowApi = {
+  // 字段定义（全局共享）
+  listFields: (include_inactive = false) => http.get('/sow/fields', { params: { include_inactive } }),
+  createField: (data) => http.post('/sow/fields', data),
+  updateField: (id, data) => http.put(`/sow/fields/${id}`, data),
+  removeField: (id) => http.delete(`/sow/fields/${id}`),
+  // 每台机台的行
+  listRows: (machine_status_id) => http.get('/sow/rows', { params: { machine_status_id } }),
+  createRow: (machine_status_id, data) => http.post('/sow/rows', data, { params: { machine_status_id } }),
+  updateRow: (id, data) => http.put(`/sow/rows/${id}`, data),
+  removeRow: (id) => http.delete(`/sow/rows/${id}`),
+}
+
+export const licenseApi = {
+  list: (machine_status_id) => http.get('/licenses', { params: { machine_status_id } }),
+  upload: ({ machine_status_id, file, remark = '' }) => {
+    const fd = new FormData()
+    fd.append('machine_status_id', String(machine_status_id))
+    fd.append('remark', remark)
+    fd.append('file', file)
+    return http.post('/licenses', fd, {
+      headers: { 'Content-Type': 'multipart/form-data' },
+    })
+  },
+  updateRemark: (id, remark) => {
+    const fd = new FormData()
+    fd.append('remark', remark)
+    return http.put(`/licenses/${id}`, fd, {
+      headers: { 'Content-Type': 'multipart/form-data' },
+    })
+  },
+  remove: (id) => http.delete(`/licenses/${id}`),
+  download: (id) => http.get(`/licenses/${id}/download`, { responseType: 'blob' }),
+}
+
 export const customerStatusApi = {
   list: () => http.get('/customer-status'),
   create: (data) => http.post('/customer-status', data),

@@ -49,7 +49,7 @@
 
       <el-table :data="battlefields" v-loading="loadingBattlefield" border stripe class="battlefield-table">
         <el-table-column type="index" label="#" width="50" align="center" />
-        <el-table-column prop="battlefield" label="战场" min-width="100" />
+        <el-table-column prop="battlefield" label="客户" min-width="120" />
         <el-table-column prop="region" label="地域" min-width="80" />
         <el-table-column prop="service" label="服务" min-width="120" />
         <el-table-column label="联系方式" min-width="180">
@@ -262,8 +262,23 @@
       @close="resetBattlefieldForm"
     >
       <el-form :model="battlefieldForm" label-width="90px">
-        <el-form-item label="战场">
-          <el-input v-model="battlefieldForm.battlefield" placeholder="战场名称" />
+        <el-form-item label="客户">
+          <el-select
+            v-model="battlefieldForm.battlefield"
+            placeholder="从客户管理中选择"
+            filterable
+            style="width: 100%"
+          >
+            <el-option
+              v-for="c in customerList"
+              :key="c.id"
+              :label="c.display_name ? `${c.code} · ${c.display_name}` : c.code"
+              :value="c.code"
+            />
+          </el-select>
+          <div class="form-hint">
+            选项来自客户管理；没有想要的客户？请联系管理员先到「客户面状态 → 客户管理」新增
+          </div>
         </el-form-item>
         <el-form-item label="地域">
           <el-input v-model="battlefieldForm.region" placeholder="地域" />
@@ -304,7 +319,7 @@ import { computed, onMounted, reactive, ref } from 'vue'
 import { ElMessage } from 'element-plus'
 import { DataAnalysis, Delete, Download, Edit as EditIcon, Grid, Plus, Upload, UploadFilled, UserFilled } from '@element-plus/icons-vue'
 import { auth } from '../store/auth'
-import http, { downloadBlob, formationApi, stakeholderApi } from '../api'
+import http, { customerApi, downloadBlob, formationApi, stakeholderApi } from '../api'
 import { checkStorageOrWarn } from '../store/storage'
 
 const isAdmin = auth.isAdmin
@@ -376,6 +391,17 @@ const battlefieldSaving     = ref(false)
 const battlefieldForm       = reactive({
   id: null, battlefield: '', region: '', service: '', contact1: '', apps: '', contact2: '',
 })
+
+// 客户下拉的可选项（从客户管理加载）
+const customerList = ref([])
+async function loadCustomerList() {
+  try {
+    const { data } = await customerApi.list(false)
+    customerList.value = data || []
+  } catch {
+    // 静默：客户列表加载失败不阻塞页面
+  }
+}
 
 async function loadBattlefields() {
   loadingBattlefield.value = true
@@ -640,6 +666,7 @@ onMounted(() => {
   loadBattlefields()
   loadFormationImageInfo()
   loadMembers()
+  loadCustomerList()
 })
 </script>
 
@@ -682,6 +709,13 @@ onMounted(() => {
   color: #909399;
   padding: 32px 0;
   font-size: 13px;
+}
+
+.form-hint {
+  color: #909399;
+  font-size: 12px;
+  line-height: 1.5;
+  margin-top: 4px;
 }
 
 .contact-table :deep(.el-table__cell),

@@ -48,6 +48,25 @@
             </el-menu-item>
           </el-sub-menu>
 
+          <!-- 客户面状态：二级菜单（总览 + 客户管理） -->
+          <el-sub-menu
+            v-else-if="r.meta.customersParent"
+            :index="r.path"
+          >
+            <template #title>
+              <el-icon><component :is="r.meta.icon" /></el-icon>
+              <span>{{ r.meta.title }}</span>
+            </template>
+            <el-menu-item :index="r.path">
+              <el-icon><DataLine /></el-icon>
+              <template #title>总览</template>
+            </el-menu-item>
+            <el-menu-item v-if="auth.isAdmin.value" index="/customers">
+              <el-icon><Setting /></el-icon>
+              <template #title>客户管理</template>
+            </el-menu-item>
+          </el-sub-menu>
+
           <el-menu-item v-else-if="!r.meta.specialsParent" :index="r.path">
             <el-icon><component :is="r.meta.icon" /></el-icon>
             <template #title>{{ r.meta.title }}</template>
@@ -121,7 +140,7 @@
 import { computed, onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
-import { Aim, Expand, Fold, Setting } from '@element-plus/icons-vue'
+import { Aim, DataLine, Expand, Fold, Setting } from '@element-plus/icons-vue'
 import { authApi } from './api'
 import { auth, installCrossTabAuth } from './store/auth'
 import { startIdleWatcher } from './store/idleWatcher'
@@ -158,6 +177,10 @@ const currentTitle = computed(() => {
 const activeMenuPath = computed(() => {
   if (route.name === 'SpecialDetail') {
     return `/specials/${route.params.id}`
+  }
+  if (route.name === 'CustomerDetail') {
+    // 客户详情在二级菜单里没有独立条目，回落到"总览"项高亮
+    return '/customer-status'
   }
   return route.path
 })
