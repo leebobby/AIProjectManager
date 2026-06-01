@@ -8,8 +8,12 @@ import schemas
 from auth import require_admin
 from database import get_db
 from op_log import log_op
+from notify import broadcast
 
 router = APIRouter(prefix="/api", tags=["versions"])
+
+# 触发"版本计划变更"广播的字段（计划相关；纯文字描述/排序不广播）
+_PLAN_FIELDS = {"version_no", "title", "range_start", "range_end", "actual_release_date"}
 
 
 @router.get("/major-versions", response_model=List[schemas.MajorVersionDetailOut])
@@ -36,6 +40,11 @@ def create_major_version(
     log_op(db, action="新增", target="大版本", target_id=item.id,
            detail=f"version_no={item.version_no}",
            user=current_admin, request=request)
+    broadcast(
+        db, kind="version_plan",
+        title=f"新增版本计划：{item.version_no}{(' ' + item.title) if item.title else ''}",
+        body="", link="/roadmaps", actor=current_admin,
+    )
     return item
 
 
@@ -58,6 +67,14 @@ def update_major_version(
     log_op(db, action="修改", target="大版本", target_id=item.id,
            detail=f"version_no={item.version_no} fields={','.join(changes.keys()) or '无'}",
            user=current_admin, request=request)
+    plan_changed = sorted(set(changes.keys()) & _PLAN_FIELDS)
+    if plan_changed:
+        broadcast(
+            db, kind="version_plan",
+            title=f"版本计划变更：{item.version_no}{(' ' + item.title) if item.title else ''}",
+            body=f"变更字段：{'、'.join(plan_changed)}",
+            link="/roadmaps", actor=current_admin,
+        )
     return item
 
 
