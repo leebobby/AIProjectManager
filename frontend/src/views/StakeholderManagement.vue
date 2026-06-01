@@ -93,7 +93,51 @@
       <el-tabs v-model="formationTab" class="formation-tabs">
         <!-- Tab 1: 阵型图 -->
         <el-tab-pane label="阵型图" name="image">
-          <div class="formation-image-wrap">
+          <div class="formation-mode-bar">
+            <el-radio-group v-model="formationMode" size="small">
+              <el-radio-button value="org">组织阵型图（自动）</el-radio-button>
+              <el-radio-button value="upload">上传图片</el-radio-button>
+            </el-radio-group>
+          </div>
+
+          <!-- 自动组织树 -->
+          <div v-if="formationMode === 'org'" class="org-tree-wrap">
+            <div v-if="orgTree.length === 0" class="empty-hint">
+              暂无组织架构，请先到「组织架构」页建立 部门 / PL 组，并在「用户管理」给成员挂上 PL 组
+            </div>
+            <div v-else class="org-tree">
+              <div v-for="dept in orgTree" :key="dept.id" class="org-dept">
+                <div class="org-dept-head">
+                  <el-icon><OfficeBuilding /></el-icon>
+                  <span class="org-dept-name">{{ dept.name }}</span>
+                  <span v-if="dept.leader_name" class="org-leader">负责人：{{ dept.leader_name }}</span>
+                  <span class="org-dept-count">{{ dept.memberCount }} 人</span>
+                </div>
+                <div class="org-pl-row">
+                  <div v-for="pl in dept.pls" :key="pl.id" class="org-pl">
+                    <div class="org-pl-head">
+                      <span class="org-pl-name">{{ pl.name }}</span>
+                      <span v-if="pl.leader_name" class="org-pl-leader">PL：{{ pl.leader_name }}</span>
+                    </div>
+                    <div class="org-members">
+                      <div v-for="m in pl.members" :key="m.id" class="org-member">
+                        <span class="m-name">{{ m.full_name || m.username }}</span>
+                        <span v-if="m.job_title" class="m-title">{{ m.job_title }}</span>
+                      </div>
+                      <div v-if="pl.members.length === 0" class="org-member empty">（暂无成员）</div>
+                    </div>
+                  </div>
+                  <div v-if="dept.pls.length === 0" class="org-pl-empty">该部门下暂无 PL 组</div>
+                </div>
+              </div>
+            </div>
+            <div class="org-tree-tip">
+              此图由「组织架构 + 用户管理」自动生成，随组织调整实时更新；如需手绘版本，请切到「上传图片」。
+            </div>
+          </div>
+
+          <!-- 上传图片（保留原功能）-->
+          <div v-else class="formation-image-wrap">
             <div class="formation-image-toolbar">
               <el-upload
                 v-if="isAdmin"
@@ -113,8 +157,8 @@
           </div>
         </el-tab-pane>
 
-        <!-- Tab 2: 人员名单 -->
-        <el-tab-pane :label="`人员名单 (${members.length})`" name="members">
+        <!-- Tab 2: 工时名单 -->
+        <el-tab-pane :label="`工时名单 (${members.length})`" name="members">
           <div class="member-toolbar">
             <el-input
               v-model="memberKeyword"
@@ -317,9 +361,9 @@
 <script setup>
 import { computed, onMounted, reactive, ref } from 'vue'
 import { ElMessage } from 'element-plus'
-import { DataAnalysis, Delete, Download, Edit as EditIcon, Grid, Plus, Upload, UploadFilled, UserFilled } from '@element-plus/icons-vue'
+import { DataAnalysis, Delete, Download, Edit as EditIcon, Grid, OfficeBuilding, Plus, Upload, UploadFilled, UserFilled } from '@element-plus/icons-vue'
 import { auth } from '../store/auth'
-import http, { customerApi, downloadBlob, formationApi, stakeholderApi } from '../api'
+import http, { customerApi, downloadBlob, formationApi, resourceGroupApi, stakeholderApi, userApi } from '../api'
 import { checkStorageOrWarn } from '../store/storage'
 
 const isAdmin = auth.isAdmin
@@ -475,7 +519,42 @@ async function deleteBattlefield(id) {
 // ── 项目阵型 ──────────────────────────────────────────────
 const formationTab = ref('image')
 
-// 阵型图
+// 阵型图：自动组织树 vs 上传图片
+const formationMode = ref('org')
+const orgGroups = ref([])
+const orgUsers = ref([])
+
+const orgTree = computed(() => {
+  const depts = orgGroups.value.filter((g) => g.kind === 'dept')
+  const pls = orgGroups.value.filter((g) => g.kind === 'pl')
+  const byGroup = {}
+  for (const u of orgUsers.value) {
+    if (u.group_id == null) continue
+    ;(byGroup[u.group_id] || (byGroup[u.group_id] = [])).push(u)
+  }
+  return depts.map((d) => {
+    const childPls = pls
+      .filter((p) => p.parent_id === d.id)
+      .map((p) => ({ ...p, members: byGroup[p.id] || [] }))
+    const memberCount = childPls.reduce((sum, p) => sum + p.members.length, 0)
+    return { ...d, pls: childPls, memberCount }
+  })
+})
+
+async function loadOrg() {
+  try {
+    const [{ data: gs }, { data: us }] = await Promise.all([
+      resourceGroupApi.list({}),
+      userApi.options({ include_inactive: false }),
+    ])
+    orgGroups.value = gs
+    orgUsers.value = us
+  } catch {
+    // 静默：组织树加载失败不阻塞页面（可回退到上传图片）
+  }
+}
+
+// 阵型图（上传图片）
 const formationImage = ref({ image_path: '', image_name: '', updated_at: null })
 const formationImageSrc = ref('')
 
@@ -665,6 +744,7 @@ onMounted(() => {
   loadProjectContacts()
   loadBattlefields()
   loadFormationImageInfo()
+  loadOrg()
   loadMembers()
   loadCustomerList()
 })
@@ -759,6 +839,93 @@ onMounted(() => {
   color: #c0c4cc;
   padding: 60px 0;
 }
+/* ── 自动组织阵型树 ── */
+.formation-mode-bar {
+  margin-bottom: 14px;
+}
+.org-tree {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+.org-dept {
+  border: 1px solid #d9ecff;
+  border-radius: 6px;
+  background: #f5faff;
+  padding: 12px 14px;
+}
+.org-dept-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 15px;
+  font-weight: 600;
+  color: #1f4e7a;
+  margin-bottom: 12px;
+}
+.org-dept-name { font-size: 15px; }
+.org-leader {
+  font-size: 12px;
+  font-weight: 400;
+  color: #909399;
+}
+.org-dept-count {
+  margin-left: auto;
+  font-size: 12px;
+  font-weight: 400;
+  color: #409eff;
+  background: #ecf5ff;
+  border-radius: 10px;
+  padding: 1px 10px;
+}
+.org-pl-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+}
+.org-pl {
+  flex: 0 1 220px;
+  border: 1px solid #ebeef5;
+  border-radius: 6px;
+  background: #fff;
+  overflow: hidden;
+}
+.org-pl-head {
+  background: #f0f5ff;
+  padding: 8px 10px;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  border-bottom: 1px solid #ebeef5;
+}
+.org-pl-name { font-weight: 600; color: #303133; font-size: 13px; }
+.org-pl-leader { font-size: 12px; color: #909399; }
+.org-members {
+  padding: 8px 10px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.org-member {
+  display: flex;
+  align-items: baseline;
+  gap: 6px;
+  font-size: 13px;
+}
+.org-member .m-name { color: #303133; }
+.org-member .m-title { color: #909399; font-size: 12px; }
+.org-member.empty { color: #c0c4cc; font-size: 12px; }
+.org-pl-empty {
+  color: #c0c4cc;
+  font-size: 12px;
+  padding: 8px 4px;
+}
+.org-tree-tip {
+  margin-top: 14px;
+  color: #909399;
+  font-size: 12px;
+}
+
 .member-toolbar {
   display: flex;
   gap: 8px;

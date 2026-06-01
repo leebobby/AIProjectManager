@@ -87,6 +87,10 @@ class VersionMetric(BaseModel):
     total: int
     done: int
     avg_completion: float    # 0-1
+    # 版本质量统计（仅领域需求填报，汇总求和）
+    total_code_volume: int
+    total_self_test_issues: int
+    total_post_test_issues: int
     items: List[VersionItem]
 
 
@@ -119,6 +123,9 @@ def version_metric(
     items: list[VersionItem] = []
     completions: list[float] = []
     done_cnt = 0
+    code_volume = 0
+    self_test_issues = 0
+    post_test_issues = 0
 
     for r in domain_q.all():
         c = _row_completion(r, _DOMAIN_PROGRESS_FIELDS)
@@ -130,6 +137,9 @@ def version_metric(
         completions.append(c)
         if done:
             done_cnt += 1
+        code_volume += r.code_volume or 0
+        self_test_issues += r.self_test_issue_count or 0
+        post_test_issues += r.post_test_issue_count or 0
     for r in product_q.all():
         c = _row_completion(r, _PRODUCT_PROGRESS_FIELDS)
         done = _is_done(r, _PRODUCT_PROGRESS_FIELDS)
@@ -148,6 +158,9 @@ def version_metric(
         total=len(items),
         done=done_cnt,
         avg_completion=round(avg, 3),
+        total_code_volume=code_volume,
+        total_self_test_issues=self_test_issues,
+        total_post_test_issues=post_test_issues,
         items=items,
     )
 

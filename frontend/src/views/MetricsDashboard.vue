@@ -36,6 +36,18 @@
               <div class="label">平均完成度</div>
               <div class="value primary">{{ pct(versionMetric.avg_completion) }}</div>
             </div>
+            <div class="stat">
+              <div class="label">代码量(行)</div>
+              <div class="value">{{ versionMetric.total_code_volume }}</div>
+            </div>
+            <div class="stat">
+              <div class="label">自验证问题</div>
+              <div class="value">{{ versionMetric.total_self_test_issues }}</div>
+            </div>
+            <div class="stat">
+              <div class="label">转测后问题单</div>
+              <div class="value danger">{{ versionMetric.total_post_test_issues }}</div>
+            </div>
           </div>
 
           <el-table :data="versionMetric?.items || []" v-loading="versionLoading" border stripe size="small">

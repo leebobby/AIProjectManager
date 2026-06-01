@@ -189,6 +189,59 @@
         </el-table-column>
       </el-table-column>
 
+      <el-table-column label="版本质量统计" align="center">
+        <el-table-column label="合入链接" width="150">
+          <template #default="{ row }">
+            <div class="merge-links">
+              <template v-if="splitLinks(row.merge_links).length">
+                <el-link
+                  v-for="(lk, i) in splitLinks(row.merge_links)"
+                  :key="i"
+                  :href="lk"
+                  type="primary"
+                  target="_blank"
+                  class="merge-link"
+                >链接{{ i + 1 }}</el-link>
+              </template>
+              <span v-else class="num-empty">—</span>
+            </div>
+          </template>
+        </el-table-column>
+        <el-table-column label="代码量" width="96" align="center">
+          <template #default="{ row }">
+            <el-input
+              :model-value="row.code_volume"
+              size="small"
+              type="number"
+              placeholder="—"
+              @change="(v) => onNumChange(row, 'code_volume', v)"
+            />
+          </template>
+        </el-table-column>
+        <el-table-column label="自验证问题" width="96" align="center">
+          <template #default="{ row }">
+            <el-input
+              :model-value="row.self_test_issue_count"
+              size="small"
+              type="number"
+              placeholder="—"
+              @change="(v) => onNumChange(row, 'self_test_issue_count', v)"
+            />
+          </template>
+        </el-table-column>
+        <el-table-column label="转测问题单" width="96" align="center">
+          <template #default="{ row }">
+            <el-input
+              :model-value="row.post_test_issue_count"
+              size="small"
+              type="number"
+              placeholder="—"
+              @change="(v) => onNumChange(row, 'post_test_issue_count', v)"
+            />
+          </template>
+        </el-table-column>
+      </el-table-column>
+
       <el-table-column label="备注" min-width="180">
         <template #default="{ row }">
           <el-input
@@ -302,6 +355,24 @@
           <el-select v-model="form[col.field]" style="width: 100%">
             <el-option v-for="s in PROGRESS_STATUSES" :key="s" :label="s" :value="s" />
           </el-select>
+        </el-form-item>
+        <el-divider content-position="left">版本质量统计</el-divider>
+        <el-form-item label="合入链接">
+          <el-input
+            v-model="form.merge_links"
+            type="textarea"
+            :rows="3"
+            placeholder="支持多个，每行一个链接"
+          />
+        </el-form-item>
+        <el-form-item label="代码量(行)">
+          <el-input-number v-model="form.code_volume" :min="0" :controls="false" style="width: 160px" />
+        </el-form-item>
+        <el-form-item label="自验证问题数量">
+          <el-input-number v-model="form.self_test_issue_count" :min="0" :controls="false" style="width: 160px" />
+        </el-form-item>
+        <el-form-item label="转测后问题单数量">
+          <el-input-number v-model="form.post_test_issue_count" :min="0" :controls="false" style="width: 160px" />
         </el-form-item>
         <el-form-item label="备注">
           <el-input v-model="form.remark" type="textarea" :rows="2" placeholder="如有变更，请说明……" />
@@ -438,8 +509,20 @@ function defaultForm() {
     progress_coding: '未开始',
     progress_bbit: '未开始',
     progress_clarify: '未开始',
+    merge_links: '',
+    code_volume: null,
+    self_test_issue_count: null,
+    post_test_issue_count: null,
     remark: '',
   }
+}
+
+function splitLinks(text) {
+  if (!text) return []
+  return String(text)
+    .split(/\r?\n/)
+    .map((s) => s.trim())
+    .filter(Boolean)
 }
 
 async function load() {
@@ -574,6 +657,15 @@ async function onFieldChange(row, field, value) {
   }
 }
 
+async function onNumChange(row, field, v) {
+  const newVal = v === '' || v === null || v === undefined ? null : Number(v)
+  if (newVal !== null && Number.isNaN(newVal)) {
+    ElMessage.warning('请输入数字')
+    return
+  }
+  await onFieldChange(row, field, newVal)
+}
+
 async function onOwnerChange(row, value) {
   // value 可能是 user.id (number) 或 手输的姓名 (string)
   const payload = { version: row.version }
@@ -703,6 +795,14 @@ onMounted(() => {
 }
 .remark-text { color: #e6a23c; }
 .remark-empty { color: #c0c4cc; }
+.merge-links {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  line-height: 1.4;
+}
+.merge-link { font-size: 12px; }
+.num-empty { color: #c0c4cc; }
 .import-tip {
   color: #606266;
   line-height: 1.7;

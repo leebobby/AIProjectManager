@@ -273,6 +273,12 @@ class IterationRequirement(Base):
     progress_bbit = Column(String(16), default="未开始", comment="BBIT")
     progress_clarify = Column(String(16), default="未开始", comment="转测澄清")
 
+    # 版本质量统计 ─── 迭代质量度量用
+    merge_links = Column(Text, default="", comment="合入链接（支持多个，每行一个）")
+    code_volume = Column(Integer, nullable=True, comment="代码量(行)")
+    self_test_issue_count = Column(Integer, nullable=True, comment="自验证问题数量")
+    post_test_issue_count = Column(Integer, nullable=True, comment="转测后问题单数量")
+
     remark = Column(Text, default="", comment="备注（是否存在变更等）")
 
     version = Column(Integer, nullable=False, default=0, comment="乐观锁版本号")
