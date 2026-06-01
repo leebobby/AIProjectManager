@@ -7,6 +7,7 @@
         <span>{{ special.name }}</span>
         <div class="owner-and-actions">
           <span class="owner">责任人：{{ special.owner || '-' }}</span>
+          <SubscribeButton source-type="special" :source-id="Number(route.params.id)" />
           <el-button size="small" type="primary" :icon="Message" @click="openReportDialog">发周报</el-button>
         </div>
       </div>
@@ -299,6 +300,7 @@ import EditableText from '../components/EditableText.vue'
 import MilestoneTimeline from '../components/MilestoneTimeline.vue'
 import FormationGrid from '../components/FormationGrid.vue'
 import RichTextEditor from '../components/RichTextEditor.vue'
+import SubscribeButton from '../components/SubscribeButton.vue'
 
 const route = useRoute()
 const loading = ref(false)

@@ -112,6 +112,7 @@
           </el-dropdown>
         </div>
       </el-header>
+      <NotificationMarquee v-if="auth.isLoggedIn.value" />
       <el-main>
         <router-view />
       </el-main>
@@ -147,6 +148,7 @@ import { auth, installCrossTabAuth } from './store/auth'
 import { startIdleWatcher } from './store/idleWatcher'
 import { specials, reloadSpecials, clearSpecials } from './store/specials'
 import NotificationBell from './components/NotificationBell.vue'
+import NotificationMarquee from './components/NotificationMarquee.vue'
 
 const sidebarCollapsed = ref(localStorage.getItem('sidebarCollapsed') === '1')
 function toggleSidebar() {

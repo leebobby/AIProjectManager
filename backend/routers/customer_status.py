@@ -22,6 +22,7 @@ import schemas
 from auth import get_current_user, require_admin
 from database import get_db
 from op_log import log_op
+from notify import dispatch
 
 router = APIRouter(prefix="/api/customer-status", tags=["customer-status"])
 
@@ -102,6 +103,17 @@ def update_item(
     log_op(db, action="修改", target="客户面状态", target_id=item.id,
            detail=f"machine_id={item.machine_id} fields={','.join(changes.keys()) or '无'}",
            user=current_user, request=request)
+
+    # 通知：订阅了该客户的人
+    if changes and item.customer_id:
+        dispatch(
+            db, kind="status_change",
+            title=f"客户面状态更新：{item.battlefield or ''} {item.machine_id or ''}".strip(),
+            body=f"变更字段：{'、'.join(changes.keys())}",
+            link=f"/customers/{item.customer_id}",
+            source_type="customer", source_id=item.customer_id,
+            actor=current_user, recipient_ids=[], extra_subs=True,
+        )
     return item
 
 

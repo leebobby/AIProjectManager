@@ -24,6 +24,7 @@ import schemas
 from auth import get_current_user, require_admin
 from database import get_db
 from op_log import log_op
+from notify import dispatch
 from routers._lookups import fill_user_fk
 
 router = APIRouter(prefix="/api/specials", tags=["specials"])
@@ -44,6 +45,17 @@ def _get_or_404(db: Session, sid: int) -> models.Special:
     if not item:
         raise HTTPException(404, "专项不存在")
     return item
+
+
+def _notify_special_change(db: Session, special: models.Special, *, summary: str, actor) -> None:
+    """给订阅了该专项/攻关的人发通知（订阅 source_type='special'）。"""
+    dispatch(
+        db, kind="status_change",
+        title=f"{_kind_label(special.kind)}更新：{special.name or ''}",
+        body=summary, link=f"/specials/{special.id}",
+        source_type="special", source_id=special.id,
+        actor=actor, recipient_ids=[], extra_subs=True,
+    )
 
 
 def _ensure_content(db: Session, special: models.Special) -> models.SpecialContent:
@@ -113,6 +125,8 @@ def update_special(
     log_op(db, action="修改", target=_kind_label(item.kind), target_id=item.id,
            detail=f"name={item.name} fields={','.join(data.keys()) or '无'}",
            user=current_admin, request=request)
+    if data:
+        _notify_special_change(db, item, summary=f"变更字段：{'、'.join(data.keys())}", actor=current_admin)
     return item
 
 
@@ -173,6 +187,8 @@ def update_content(
     log_op(db, action="修改", target=f"{_kind_label(special.kind)}内容", target_id=sid,
            detail=f"name={special.name} fields={','.join(data.keys()) or '无'}",
            user=current_user, request=request)
+    if data:
+        _notify_special_change(db, special, summary=f"内容更新：{'、'.join(data.keys())}", actor=current_user)
     return content
 
 
@@ -282,7 +298,7 @@ def _create_item(
     user: models.User,
     request: Request,
 ):
-    _get_or_404(db, sid)
+    special = _get_or_404(db, sid)
     Model = _item_model(kind)
     data = payload.model_dump(exclude_unset=True)
     if not data.get("seq"):
@@ -298,6 +314,11 @@ def _create_item(
     log_op(db, action="新增", target=_action_target(kind), target_id=item.id,
            detail=f"special_id={sid} content={(item.content or '')[:60]}",
            user=user, request=request)
+    _notify_special_change(
+        db, special,
+        summary=f"新增{_action_target(kind)}：{_strip_html(item.content or '')[:60]}",
+        actor=user,
+    )
     return item
 
 
@@ -322,6 +343,14 @@ def _update_item(
     log_op(db, action="修改", target=_action_target(kind), target_id=item.id,
            detail=f"special_id={item.special_id} fields={','.join(data.keys()) or '无'}",
            user=user, request=request)
+    if data:
+        special = db.query(models.Special).filter(models.Special.id == item.special_id).first()
+        if special:
+            _notify_special_change(
+                db, special,
+                summary=f"{_action_target(kind)}更新：{_strip_html(item.content or '')[:60]}",
+                actor=user,
+            )
     return item
 
 
