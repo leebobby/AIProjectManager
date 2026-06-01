@@ -108,7 +108,7 @@ _ADDITIONS = [
     # v0.21: 领域需求版本质量统计
     ("iteration_requirements", "merge_links", "TEXT NOT NULL DEFAULT ''"),
     ("iteration_requirements", "code_volume", "INTEGER"),
-    ("iteration_requirements", "self_test_issue_count", "INTEGER"),
+    ("iteration_requirements", "self_test_case_count", "INTEGER"),
     ("iteration_requirements", "post_test_issue_count", "INTEGER"),
 ]
 

@@ -279,7 +279,7 @@ class IterationRequirementBase(BaseModel):
     progress_clarify: Optional[str] = "未开始"
     merge_links: Optional[str] = ""
     code_volume: Optional[int] = None
-    self_test_issue_count: Optional[int] = None
+    self_test_case_count: Optional[int] = None
     post_test_issue_count: Optional[int] = None
     remark: Optional[str] = ""
 
@@ -309,7 +309,7 @@ class IterationRequirementUpdate(BaseModel):
     progress_clarify: Optional[str] = None
     merge_links: Optional[str] = None
     code_volume: Optional[int] = None
-    self_test_issue_count: Optional[int] = None
+    self_test_case_count: Optional[int] = None
     post_test_issue_count: Optional[int] = None
     remark: Optional[str] = None
 

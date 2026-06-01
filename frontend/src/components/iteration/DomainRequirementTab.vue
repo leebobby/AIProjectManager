@@ -218,14 +218,14 @@
             />
           </template>
         </el-table-column>
-        <el-table-column label="自验证问题" width="96" align="center">
+        <el-table-column label="自验证用例数" width="110" align="center">
           <template #default="{ row }">
             <el-input
-              :model-value="row.self_test_issue_count"
+              :model-value="row.self_test_case_count"
               size="small"
               type="number"
               placeholder="—"
-              @change="(v) => onNumChange(row, 'self_test_issue_count', v)"
+              @change="(v) => onNumChange(row, 'self_test_case_count', v)"
             />
           </template>
         </el-table-column>
@@ -368,8 +368,8 @@
         <el-form-item label="代码量(行)">
           <el-input-number v-model="form.code_volume" :min="0" :controls="false" style="width: 160px" />
         </el-form-item>
-        <el-form-item label="自验证问题数量">
-          <el-input-number v-model="form.self_test_issue_count" :min="0" :controls="false" style="width: 160px" />
+        <el-form-item label="自验证用例数">
+          <el-input-number v-model="form.self_test_case_count" :min="0" :controls="false" style="width: 160px" />
         </el-form-item>
         <el-form-item label="转测后问题单数量">
           <el-input-number v-model="form.post_test_issue_count" :min="0" :controls="false" style="width: 160px" />
@@ -511,7 +511,7 @@ function defaultForm() {
     progress_clarify: '未开始',
     merge_links: '',
     code_volume: null,
-    self_test_issue_count: null,
+    self_test_case_count: null,
     post_test_issue_count: null,
     remark: '',
   }

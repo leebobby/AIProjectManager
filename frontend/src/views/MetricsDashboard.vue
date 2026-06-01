@@ -41,8 +41,8 @@
               <div class="value">{{ versionMetric.total_code_volume }}</div>
             </div>
             <div class="stat">
-              <div class="label">自验证问题</div>
-              <div class="value">{{ versionMetric.total_self_test_issues }}</div>
+              <div class="label">自验证用例数</div>
+              <div class="value">{{ versionMetric.total_self_test_cases }}</div>
             </div>
             <div class="stat">
               <div class="label">转测后问题单</div>
@@ -121,6 +121,43 @@
                 <div class="prio-label">{{ p }}</div>
                 <div class="prio-cnt">{{ cnt }}</div>
               </div>
+            </div>
+          </el-card>
+
+          <el-card shadow="never" style="margin-top: 12px">
+            <div class="block-title">{{ selectedYear }} 年各迭代质量（领域需求汇总）</div>
+            <el-table :data="qualityRows" v-loading="qualityLoading" border stripe size="small">
+              <el-table-column label="迭代" min-width="140">
+                <template #default="{ row }">
+                  {{ row.month }}月{{ row.name ? ' · ' + row.name : '' }}
+                </template>
+              </el-table-column>
+              <el-table-column label="代码量(行)" width="110" align="right">
+                <template #default="{ row }">{{ row.code_volume.toLocaleString() }}</template>
+              </el-table-column>
+              <el-table-column label="自验证用例数" width="120" align="right">
+                <template #default="{ row }">{{ row.self_test_cases }}</template>
+              </el-table-column>
+              <el-table-column label="用例密度(个/kloc)" width="150" align="right">
+                <template #default="{ row }">
+                  <span :class="row.code_volume ? '' : 'muted'">
+                    {{ row.code_volume ? row.self_test_case_density : '—' }}
+                  </span>
+                </template>
+              </el-table-column>
+              <el-table-column label="转测后问题单" width="120" align="right">
+                <template #default="{ row }">{{ row.post_test_issues }}</template>
+              </el-table-column>
+              <el-table-column label="问题单密度(个/kloc)" width="160" align="right">
+                <template #default="{ row }">
+                  <span :class="row.code_volume ? '' : 'muted'">
+                    {{ row.code_volume ? row.post_test_issue_density : '—' }}
+                  </span>
+                </template>
+              </el-table-column>
+            </el-table>
+            <div class="quality-tip">
+              密度 = 数量 ÷ (代码量 / 1000)；代码量为空的迭代不计算密度。数据来源于领域需求页填报的版本质量统计。
             </div>
           </el-card>
         </el-tab-pane>
@@ -221,6 +258,8 @@ const selectedYear = ref(new Date().getFullYear())
 const iterations = ref([])
 const selectedIterationId = ref(null)
 const iterMetric = ref(null)
+const qualityRows = ref([])
+const qualityLoading = ref(false)
 
 async function loadYears() {
   try {
@@ -233,8 +272,22 @@ async function loadYears() {
   }
 }
 
+async function loadQuality() {
+  if (!selectedYear.value) return
+  qualityLoading.value = true
+  try {
+    const { data } = await metricsApi.iterationQuality(selectedYear.value)
+    qualityRows.value = data
+  } catch (e) {
+    ElMessage.error(e.response?.data?.detail || '加载迭代质量失败')
+  } finally {
+    qualityLoading.value = false
+  }
+}
+
 async function onYearChange() {
   if (!selectedYear.value) return
+  loadQuality()
   try {
     const { data } = await annualIterationApi.list(selectedYear.value)
     iterations.value = data
@@ -329,4 +382,5 @@ onMounted(async () => {
 .prio-label { color: #909399; font-size: 12px; }
 .prio-cnt { font-size: 18px; font-weight: 600; color: #303133; }
 .muted { color: #c0c4cc; }
+.quality-tip { margin-top: 10px; color: #909399; font-size: 12px; line-height: 1.6; }
 </style>

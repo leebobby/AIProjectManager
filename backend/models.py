@@ -276,7 +276,7 @@ class IterationRequirement(Base):
     # 版本质量统计 ─── 迭代质量度量用
     merge_links = Column(Text, default="", comment="合入链接（支持多个，每行一个）")
     code_volume = Column(Integer, nullable=True, comment="代码量(行)")
-    self_test_issue_count = Column(Integer, nullable=True, comment="自验证问题数量")
+    self_test_case_count = Column(Integer, nullable=True, comment="自验证用例数")
     post_test_issue_count = Column(Integer, nullable=True, comment="转测后问题单数量")
 
     remark = Column(Text, default="", comment="备注（是否存在变更等）")

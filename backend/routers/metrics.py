@@ -89,7 +89,7 @@ class VersionMetric(BaseModel):
     avg_completion: float    # 0-1
     # 版本质量统计（仅领域需求填报，汇总求和）
     total_code_volume: int
-    total_self_test_issues: int
+    total_self_test_cases: int
     total_post_test_issues: int
     items: List[VersionItem]
 
@@ -124,7 +124,7 @@ def version_metric(
     completions: list[float] = []
     done_cnt = 0
     code_volume = 0
-    self_test_issues = 0
+    self_test_cases = 0
     post_test_issues = 0
 
     for r in domain_q.all():
@@ -138,7 +138,7 @@ def version_metric(
         if done:
             done_cnt += 1
         code_volume += r.code_volume or 0
-        self_test_issues += r.self_test_issue_count or 0
+        self_test_cases += r.self_test_case_count or 0
         post_test_issues += r.post_test_issue_count or 0
     for r in product_q.all():
         c = _row_completion(r, _PRODUCT_PROGRESS_FIELDS)
@@ -159,7 +159,7 @@ def version_metric(
         done=done_cnt,
         avg_completion=round(avg, 3),
         total_code_volume=code_volume,
-        total_self_test_issues=self_test_issues,
+        total_self_test_cases=self_test_cases,
         total_post_test_issues=post_test_issues,
         items=items,
     )
@@ -231,6 +231,54 @@ def iteration_metric(
         avg_completion=round(avg, 3),
         by_priority=by_priority,
     )
+
+
+# ─── 迭代质量（按年度逐迭代的代码量/用例/密度）─────────────────────────────
+class IterationQualityRow(BaseModel):
+    iteration_id: int
+    year: int
+    month: int
+    name: str
+    code_volume: int                 # 代码量（行）
+    self_test_cases: int             # 自验证用例数
+    post_test_issues: int            # 转测后问题单数
+    self_test_case_density: float    # 自验证用例密度（个/kloc）
+    post_test_issue_density: float   # 转测后问题单密度（个/kloc）
+
+
+def _per_kloc(count: int, code_volume: int) -> float:
+    """每千行代码的数量；代码量为 0 时返回 0。"""
+    if not code_volume:
+        return 0.0
+    return round(count / (code_volume / 1000.0), 2)
+
+
+@router.get("/iteration-quality/{year}", response_model=List[IterationQualityRow])
+def iteration_quality_by_year(year: int, db: Session = Depends(get_db)):
+    """返回某年度每个迭代（月）的质量统计，质量数据来自领域需求填报的汇总。"""
+    iters = (
+        db.query(models.AnnualIteration)
+        .filter(models.AnnualIteration.year == year)
+        .order_by(models.AnnualIteration.month.asc())
+        .all()
+    )
+    rows: list[IterationQualityRow] = []
+    for it in iters:
+        domain_rows = (
+            db.query(models.IterationRequirement)
+            .filter(models.IterationRequirement.iteration_id == it.id)
+            .all()
+        )
+        cv = sum(r.code_volume or 0 for r in domain_rows)
+        cases = sum(r.self_test_case_count or 0 for r in domain_rows)
+        issues = sum(r.post_test_issue_count or 0 for r in domain_rows)
+        rows.append(IterationQualityRow(
+            iteration_id=it.id, year=it.year, month=it.month, name=it.name or "",
+            code_volume=cv, self_test_cases=cases, post_test_issues=issues,
+            self_test_case_density=_per_kloc(cases, cv),
+            post_test_issue_density=_per_kloc(issues, cv),
+        ))
+    return rows
 
 
 # ─── 组级负载 ─────────────────────────────────────────────────────────────

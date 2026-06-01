@@ -144,6 +144,7 @@ export const mappingApi = {
 export const metricsApi = {
   version: (major_version_id) => http.get(`/metrics/version/${major_version_id}`),
   iteration: (iteration_id) => http.get(`/metrics/iteration/${iteration_id}`),
+  iterationQuality: (year) => http.get(`/metrics/iteration-quality/${year}`),
   group: (group_id, params = {}) => http.get(`/metrics/group/${group_id}`, { params }),
 }
 
