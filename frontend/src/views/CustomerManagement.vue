@@ -4,6 +4,7 @@
       <div class="toolbar">
         <el-button v-if="isAdmin" type="primary" :icon="Plus" @click="openDialog()">新增客户</el-button>
         <el-button v-if="isAdmin" :icon="Setting" @click="sowDialog.visible = true">SOW 字段配置</el-button>
+        <el-button v-if="isAdmin" :icon="Setting" @click="extraDialog.visible = true">信息块配置</el-button>
         <el-button :icon="Refresh" @click="load">刷新</el-button>
         <el-checkbox v-model="includeInactive" @change="load">显示停用</el-checkbox>
         <el-input
@@ -126,6 +127,52 @@
       </template>
     </el-dialog>
 
+    <!-- 自定义信息块配置（全局共享一份）-->
+    <el-dialog
+      v-model="extraDialog.visible"
+      title="自定义信息块配置"
+      width="720px"
+      @open="loadExtraFields"
+    >
+      <div style="margin-bottom: 8px;">
+        <el-button size="small" :icon="Plus" @click="addExtraField">新增信息块</el-button>
+        <span class="muted-hint" style="margin-left: 8px;">
+          每个信息块在客户详情的每台机台下渲染为「一段文本 + 一个附件/图片」（如 MPH状态）；停用的不显示
+        </span>
+      </div>
+      <el-table :data="extraDialog.fields" v-loading="extraDialog.loading" border size="small">
+        <el-table-column label="Key（内部）" width="160">
+          <template #default="{ row }">
+            <el-input v-model="row.key" size="small" :disabled="!!row.id" placeholder="如 mph_status" />
+          </template>
+        </el-table-column>
+        <el-table-column label="标题显示" min-width="180">
+          <template #default="{ row }">
+            <el-input v-model="row.label" size="small" placeholder="如 MPH状态" />
+          </template>
+        </el-table-column>
+        <el-table-column label="排序" width="90">
+          <template #default="{ row }">
+            <el-input-number v-model="row.sort_order" :min="0" size="small" controls-position="right" />
+          </template>
+        </el-table-column>
+        <el-table-column label="启用" width="70" align="center">
+          <template #default="{ row }">
+            <el-switch v-model="row.is_active" />
+          </template>
+        </el-table-column>
+        <el-table-column label="操作" width="160" fixed="right">
+          <template #default="{ row, $index }">
+            <el-button size="small" type="primary" @click="saveExtraField(row, $index)">保存</el-button>
+            <el-button size="small" type="danger" @click="removeExtraField(row, $index)">删除</el-button>
+          </template>
+        </el-table-column>
+      </el-table>
+      <template #footer>
+        <el-button @click="extraDialog.visible = false">关闭</el-button>
+      </template>
+    </el-dialog>
+
     <el-dialog v-model="dialog.visible" title="新增客户" width="560px">
       <el-form :model="dialog.form" label-width="120px">
         <el-form-item label="客户编码">
@@ -171,7 +218,7 @@ import { computed, onMounted, reactive, ref } from 'vue'
 import { useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { Plus, Refresh, Setting } from '@element-plus/icons-vue'
-import { customerApi, sowApi } from '../api'
+import { customerApi, customerExtraApi, sowApi } from '../api'
 import { auth } from '../store/auth'
 
 const isAdmin = computed(() => auth.isAdmin.value)
@@ -353,6 +400,86 @@ async function removeSowField(row, idx) {
   try {
     await sowApi.removeField(row.id)
     sowDialog.fields.splice(idx, 1)
+    ElMessage.success('已删除')
+  } catch (e) {
+    ElMessage.error(e.response?.data?.detail || '删除失败')
+  }
+}
+
+// ─── 自定义信息块配置 ────────────────────────────────────────
+const extraDialog = reactive({
+  visible: false,
+  loading: false,
+  fields: [],
+})
+
+async function loadExtraFields() {
+  extraDialog.loading = true
+  try {
+    const { data } = await customerExtraApi.listFields(true)
+    extraDialog.fields = data.map((f) => ({ ...f }))
+  } catch (e) {
+    ElMessage.error(e.response?.data?.detail || '加载失败')
+  } finally {
+    extraDialog.loading = false
+  }
+}
+
+function addExtraField() {
+  extraDialog.fields.push({
+    id: null,
+    key: '',
+    label: '',
+    sort_order: extraDialog.fields.length,
+    is_active: true,
+  })
+}
+
+async function saveExtraField(row, _idx) {
+  const key = (row.key || '').trim()
+  const label = (row.label || '').trim() || key
+  if (!key) {
+    ElMessage.warning('请填写 key')
+    return
+  }
+  try {
+    if (row.id) {
+      const { data } = await customerExtraApi.updateField(row.id, {
+        label,
+        sort_order: row.sort_order || 0,
+        is_active: !!row.is_active,
+      })
+      Object.assign(row, data)
+    } else {
+      const { data } = await customerExtraApi.createField({
+        key,
+        label,
+        sort_order: row.sort_order || 0,
+        is_active: !!row.is_active,
+      })
+      Object.assign(row, data)
+    }
+    ElMessage.success('已保存')
+  } catch (e) {
+    ElMessage.error(e.response?.data?.detail || '保存失败')
+  }
+}
+
+async function removeExtraField(row, idx) {
+  if (!row.id) {
+    extraDialog.fields.splice(idx, 1)
+    return
+  }
+  try {
+    await ElMessageBox.confirm(
+      `确认删除信息块「${row.label || row.key}」？所有机台下该块的文本和附件都会被删除。建议改用"停用"。`,
+      '提示',
+      { type: 'warning' }
+    )
+  } catch { return }
+  try {
+    await customerExtraApi.removeField(row.id)
+    extraDialog.fields.splice(idx, 1)
     ElMessage.success('已删除')
   } catch (e) {
     ElMessage.error(e.response?.data?.detail || '删除失败')

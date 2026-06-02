@@ -27,7 +27,7 @@ from notify import dispatch
 router = APIRouter(prefix="/api/customer-status", tags=["customer-status"])
 
 _ADMIN_ONLY_FIELDS = {"current_stage", "field_version", "attention_level", "issue_url"}
-_USER_FIELDS = {"customer_status", "recent_focus", "key_issues"}
+_USER_FIELDS = {"customer_status", "recent_focus", "key_issues", "milestones_json"}
 
 
 def _resolve_customer_id_by_name(db: Session, name: str):

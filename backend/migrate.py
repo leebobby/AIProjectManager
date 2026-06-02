@@ -110,6 +110,9 @@ _ADDITIONS = [
     ("iteration_requirements", "code_volume", "INTEGER"),
     ("iteration_requirements", "self_test_case_count", "INTEGER"),
     ("iteration_requirements", "post_test_issue_count", "INTEGER"),
+
+    # v0.22: 机台里程碑（自定义信息块走新表，由 create_all 建）
+    ("customer_status", "milestones_json", "TEXT NOT NULL DEFAULT ''"),
 ]
 
 

@@ -226,6 +226,36 @@ export const customerStatusApi = {
   exportPptx: () => http.get('/customer-status/export.pptx', { responseType: 'blob' }),
 }
 
+export const customerExtraApi = {
+  // 信息块定义（全局共享）
+  listFields: (include_inactive = false) => http.get('/customer-extra/fields', { params: { include_inactive } }),
+  createField: (data) => http.post('/customer-extra/fields', data),
+  updateField: (id, data) => http.put(`/customer-extra/fields/${id}`, data),
+  removeField: (id) => http.delete(`/customer-extra/fields/${id}`),
+  // 每台机台的值
+  listValues: (machine_status_id) => http.get('/customer-extra/values', { params: { machine_status_id } }),
+  saveText: (machine_status_id, field_id, text) =>
+    http.put('/customer-extra/values', { machine_status_id, field_id, text }),
+  uploadAttachment: ({ machine_status_id, field_id, file }) => {
+    const fd = new FormData()
+    fd.append('machine_status_id', String(machine_status_id))
+    fd.append('field_id', String(field_id))
+    fd.append('file', file)
+    return http.post('/customer-extra/values/attachment', fd, {
+      headers: { 'Content-Type': 'multipart/form-data' },
+    })
+  },
+  downloadAttachment: (value_id) => http.get(`/customer-extra/values/${value_id}/attachment`, { responseType: 'blob' }),
+  removeAttachment: (value_id) => http.delete(`/customer-extra/values/${value_id}/attachment`),
+}
+
+export const customerCustomReqApi = {
+  list: (customer_id) => http.get('/customer-custom-reqs', { params: { customer_id } }),
+  create: (data) => http.post('/customer-custom-reqs', data),
+  update: (id, data) => http.put(`/customer-custom-reqs/${id}`, data),
+  remove: (id) => http.delete(`/customer-custom-reqs/${id}`),
+}
+
 export const versionApi = {
   list: () => http.get('/versions'),
   create: (data) => http.post('/versions', data),

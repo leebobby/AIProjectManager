@@ -69,6 +69,7 @@ class CustomerStatus(Base):
     recent_focus = Column(Text, default="", comment="近期现场关键诉求")
     key_issues = Column(Text, default="", comment="软件类风险和问题")
     issue_url = Column(String(512), default="", comment="问题单链接")
+    milestones_json = Column(Text, default="", comment="机台里程碑 JSON：[{name,date,status}]")
     version = Column(Integer, nullable=False, default=0, comment="乐观锁版本号")
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
 
@@ -136,6 +137,64 @@ class MachineLicense(Base):
     uploaded_at = Column(DateTime, default=datetime.utcnow)
 
     machine_status = relationship("CustomerStatus", back_populates="licenses")
+
+
+class CustomerExtraField(Base):
+    """机台自定义信息块定义（全局共享一份）。
+
+    管理员在 客户管理 → 自定义信息块 里维护。每个块在机台详情里渲染为
+    "一段文本 + 一个附件/图片" 的卡片（如 MPH 状态）。
+    """
+    __tablename__ = "customer_extra_fields"
+
+    id = Column(Integer, primary_key=True, index=True)
+    key = Column(String(64), nullable=False, unique=True, comment="块 key（内部 ID）")
+    label = Column(String(128), nullable=False, comment="块标题，如 MPH状态")
+    sort_order = Column(Integer, default=0)
+    is_active = Column(Boolean, default=True)
+    created_at = Column(DateTime, default=datetime.utcnow)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+
+class CustomerExtraValue(Base):
+    """单台机台下某个自定义信息块的值：文本 + 单个附件。"""
+    __tablename__ = "customer_extra_values"
+
+    id = Column(Integer, primary_key=True, index=True)
+    machine_status_id = Column(
+        Integer, ForeignKey("customer_status.id", ondelete="CASCADE"),
+        nullable=False, index=True,
+    )
+    field_id = Column(
+        Integer, ForeignKey("customer_extra_fields.id", ondelete="CASCADE"),
+        nullable=False, index=True,
+    )
+    text = Column(Text, default="", comment="文本内容")
+    file_name = Column(String(256), default="", comment="附件原始文件名")
+    file_path = Column(String(512), default="", comment="uploads/ 下的相对路径")
+    file_size = Column(Integer, default=0)
+    version = Column(Integer, nullable=False, default=0, comment="乐观锁版本号")
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+
+class CustomerCustomReq(Base):
+    """客户定制化需求（客户级，非机台级）。客户详情页"问题单情况"上方的表格。"""
+    __tablename__ = "customer_custom_reqs"
+
+    id = Column(Integer, primary_key=True, index=True)
+    customer_id = Column(Integer, ForeignKey("customers.id", ondelete="CASCADE"),
+                         nullable=False, index=True)
+    seq = Column(Integer, default=0, comment="序号")
+    description = Column(Text, default="", comment="需求描述")
+    customer_value = Column(Text, default="", comment="对客户价值")
+    domain = Column(String(128), default="", comment="领域")
+    designer = Column(String(64), default="", comment="设计人员")
+    involves_other = Column(String(16), default="", comment="是否涉及其他项目")
+    planned_version = Column(String(64), default="", comment="预计合入版本")
+    remark = Column(Text, default="", comment="备注")
+    version = Column(Integer, nullable=False, default=0, comment="乐观锁版本号")
+    created_at = Column(DateTime, default=datetime.utcnow)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
 
 
 class Version(Base):

@@ -81,6 +81,20 @@
               :name="String(m.id)"
             >
               <div class="machine-pane">
+                <!-- 里程碑 -->
+                <div class="block">
+                  <div class="block-head">
+                    <span>里程碑</span>
+                    <span class="muted-hint">出厂 → Tier0 → Tier1 → Tier2 → Tier3 → 验收</span>
+                    <div class="actions">
+                      <el-button v-if="canEditStage" size="small" :icon="Edit" @click="openMilestoneDialog(m)">编辑里程碑</el-button>
+                    </div>
+                  </div>
+                  <div class="block-body">
+                    <MilestoneTimeline :milestones="machineState[m.id].milestones" :editable="false" />
+                  </div>
+                </div>
+
                 <!-- 当前进展 -->
                 <div class="block">
                   <div class="block-head">
@@ -183,6 +197,59 @@
                   </div>
                 </div>
 
+                <!-- 自定义信息块（如 MPH状态）-->
+                <div
+                  v-for="f in extraFields"
+                  :key="f.id"
+                  class="block"
+                >
+                  <div class="block-head">
+                    <span>{{ f.label }}</span>
+                    <span class="muted-hint">自定义信息块，由管理员在「客户管理」维护</span>
+                  </div>
+                  <div class="block-body">
+                    <el-input
+                      v-model="getExtra(m.id, f.id).text"
+                      type="textarea"
+                      autosize
+                      placeholder="—"
+                      :readonly="!canEdit"
+                    />
+                    <div class="extra-foot">
+                      <div class="extra-file">
+                        <template v-if="getExtra(m.id, f.id).has_file">
+                          <el-link type="primary" :icon="Paperclip" @click="downloadExtra(m.id, f.id)">
+                            {{ getExtra(m.id, f.id).file_name }}
+                          </el-link>
+                          <el-button
+                            v-if="canEdit"
+                            size="small"
+                            link
+                            type="danger"
+                            @click="removeExtraFile(m.id, f.id)"
+                          >删除附件</el-button>
+                        </template>
+                        <span v-else class="muted">暂无附件</span>
+                      </div>
+                      <div v-if="canEdit" class="extra-actions">
+                        <el-upload
+                          :auto-upload="false"
+                          :show-file-list="false"
+                          :on-change="(file) => onExtraFileChange(m.id, f.id, file)"
+                        >
+                          <el-button size="small" :icon="Upload">上传附件/图片</el-button>
+                        </el-upload>
+                        <el-button
+                          size="small"
+                          type="primary"
+                          :disabled="!isExtraDirty(m.id, f.id)"
+                          @click="saveExtraText(m.id, f.id)"
+                        >保存文本</el-button>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+
                 <!-- License 管理 -->
                 <div class="block">
                   <div class="block-head">
@@ -236,7 +303,80 @@
         </div>
       </section>
 
-      <!-- 区块 3：问题单情况（整客户范围，tab 外）-->
+      <!-- 区块 3：客户定制化需求（整客户范围，tab 外）-->
+      <section class="sec">
+        <div class="sec-head">
+          <span>客户定制化需求</span>
+          <span class="muted-hint">本客户的定制化需求清单</span>
+          <div class="actions">
+            <el-button v-if="canEdit" size="small" :icon="Plus" @click="addCustomReq">新增需求</el-button>
+            <el-button size="small" :icon="Refresh" @click="loadCustomReqs">刷新</el-button>
+          </div>
+        </div>
+        <div class="sec-body">
+          <el-table
+            :data="customReqs"
+            v-loading="customReqLoading"
+            border
+            stripe
+            size="small"
+            empty-text="暂无定制化需求"
+            style="width: 100%"
+          >
+            <el-table-column prop="seq" label="序号" width="64" align="center">
+              <template #default="{ row }">
+                <el-input v-model.number="row.seq" size="small" :disabled="!canEdit" />
+              </template>
+            </el-table-column>
+            <el-table-column label="需求描述" min-width="200">
+              <template #default="{ row }">
+                <el-input v-model="row.description" type="textarea" autosize size="small" :disabled="!canEdit" placeholder="—" />
+              </template>
+            </el-table-column>
+            <el-table-column label="对客户价值" min-width="180">
+              <template #default="{ row }">
+                <el-input v-model="row.customer_value" type="textarea" autosize size="small" :disabled="!canEdit" placeholder="—" />
+              </template>
+            </el-table-column>
+            <el-table-column label="领域" width="120">
+              <template #default="{ row }">
+                <el-input v-model="row.domain" size="small" :disabled="!canEdit" placeholder="—" />
+              </template>
+            </el-table-column>
+            <el-table-column label="设计人员" width="120">
+              <template #default="{ row }">
+                <el-input v-model="row.designer" size="small" :disabled="!canEdit" placeholder="—" />
+              </template>
+            </el-table-column>
+            <el-table-column label="是否涉及其他项目" width="140" align="center">
+              <template #default="{ row }">
+                <el-select v-model="row.involves_other" size="small" clearable :disabled="!canEdit" style="width: 100%">
+                  <el-option label="是" value="是" />
+                  <el-option label="否" value="否" />
+                </el-select>
+              </template>
+            </el-table-column>
+            <el-table-column label="预计合入版本" width="140">
+              <template #default="{ row }">
+                <el-input v-model="row.planned_version" size="small" :disabled="!canEdit" placeholder="—" />
+              </template>
+            </el-table-column>
+            <el-table-column label="备注" min-width="160">
+              <template #default="{ row }">
+                <el-input v-model="row.remark" type="textarea" autosize size="small" :disabled="!canEdit" placeholder="—" />
+              </template>
+            </el-table-column>
+            <el-table-column v-if="canEdit" label="操作" width="150" fixed="right">
+              <template #default="{ row, $index }">
+                <el-button size="small" type="primary" :disabled="!isCustomReqDirty(row, $index)" @click="saveCustomReq(row)">保存</el-button>
+                <el-button size="small" type="danger" @click="deleteCustomReq(row)">删除</el-button>
+              </template>
+            </el-table-column>
+          </el-table>
+        </div>
+      </section>
+
+      <!-- 区块 4：问题单情况（整客户范围，tab 外）-->
       <section class="sec">
         <div class="sec-head">
           <span>问题单情况</span>
@@ -338,17 +478,68 @@
         <el-button type="primary" :loading="licenseDialog.uploading" @click="submitLicenseUpload">上传</el-button>
       </template>
     </el-dialog>
+
+    <!-- 编辑里程碑 -->
+    <el-dialog v-model="milestoneDialog.visible" title="编辑里程碑" width="560px" append-to-body>
+      <el-table :data="milestoneDialog.rows" border size="small">
+        <el-table-column prop="name" label="节点" width="100" />
+        <el-table-column label="状态" width="140">
+          <template #default="{ row }">
+            <el-select v-model="row.status" size="small" style="width: 100%">
+              <el-option v-for="s in MS_STATUS" :key="s.value" :label="s.label" :value="s.value" />
+            </el-select>
+          </template>
+        </el-table-column>
+        <el-table-column label="日期">
+          <template #default="{ row }">
+            <el-date-picker
+              v-model="row.date"
+              type="date"
+              value-format="YYYY-MM-DD"
+              size="small"
+              placeholder="可选"
+              style="width: 100%"
+            />
+          </template>
+        </el-table-column>
+      </el-table>
+      <template #footer>
+        <el-button @click="milestoneDialog.visible = false">取消</el-button>
+        <el-button type="primary" :loading="milestoneDialog.saving" @click="saveMilestones">保存</el-button>
+      </template>
+    </el-dialog>
   </div>
 </template>
 
 <script setup>
 import { computed, nextTick, reactive, ref, watch } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
-import { Plus, Refresh, Upload } from '@element-plus/icons-vue'
+import { Edit, Paperclip, Plus, Refresh, Upload } from '@element-plus/icons-vue'
 import {
-  customerApi, customerStatusApi, downloadBlob, issueApi, licenseApi, sowApi,
+  customerApi, customerCustomReqApi, customerExtraApi, customerStatusApi, downloadBlob, issueApi, licenseApi, sowApi,
 } from '../api'
 import { auth } from '../store/auth'
+import MilestoneTimeline from './MilestoneTimeline.vue'
+
+const MILESTONE_STAGES = ['出厂', 'Tier0', 'Tier1', 'Tier2', 'Tier3', '验收']
+const MS_STATUS = [
+  { value: 'planning', label: '未开始' },
+  { value: 'in_progress', label: '进行中' },
+  { value: 'done', label: '已完成' },
+  { value: 'delayed', label: '已延期' },
+]
+
+function parseMilestones(raw) {
+  let stored = []
+  try { stored = raw ? JSON.parse(raw) : [] } catch { stored = [] }
+  const byName = {}
+  for (const s of stored) if (s && s.name) byName[s.name] = s
+  return MILESTONE_STAGES.map((name) => ({
+    name,
+    date: byName[name]?.date || '',
+    status: byName[name]?.status || 'planning',
+  }))
+}
 
 const props = defineProps({
   customerId: { type: [Number, String], required: true },
@@ -377,6 +568,17 @@ const machineState = reactive({})
 
 // SOW 字段定义（全局共享）
 const sowFields = ref([])
+
+// 自定义信息块定义（全局共享）
+const extraFields = ref([])
+
+// 里程碑编辑
+const milestoneDialog = reactive({ visible: false, saving: false, machineId: null, rows: [] })
+
+// 客户定制化需求
+const customReqs = ref([])
+const customReqLoading = ref(false)
+const customReqOrig = reactive({}) // id -> JSON 快照，用于 dirty 判断
 
 // 问题单
 const issues = reactive({
@@ -421,6 +623,41 @@ async function loadSowFields() {
   }
 }
 
+async function loadExtraFields() {
+  try {
+    const { data } = await customerExtraApi.listFields(false)
+    extraFields.value = data
+  } catch {
+    /* 信息块加载失败不阻塞详情页 */
+  }
+}
+
+async function loadExtraValues(mid) {
+  const st = machineState[mid]
+  if (!st) return
+  try {
+    const { data } = await customerExtraApi.listValues(mid)
+    const map = {}
+    const orig = {}
+    for (const v of data) {
+      map[v.field_id] = v
+      orig[v.field_id] = v.text || ''
+    }
+    // 没有值记录的字段，给一个本地占位（保存时后端按需创建）
+    for (const f of extraFields.value) {
+      if (!map[f.id]) {
+        map[f.id] = { id: null, field_id: f.id, text: '', file_name: '', file_size: 0, has_file: false, version: 0 }
+        orig[f.id] = ''
+      }
+    }
+    st.extra = map
+    st.extraOrig = orig
+    st.extraLoaded = true
+  } catch {
+    /* 静默 */
+  }
+}
+
 async function loadMachines() {
   try {
     const { data } = await customerApi.machines(props.customerId)
@@ -429,21 +666,26 @@ async function loadMachines() {
       if (!machineState[m.id]) {
         machineState[m.id] = {
           current: m.customer_status || '',
+          milestones: parseMilestones(m.milestones_json),
           sowLoading: false,
           sowRows: [],
           sowOriginals: {}, // id -> JSON of original data, 用于判断 dirty
           licenseLoading: false,
           licenses: [],
+          extra: {},        // field_id -> {id, text, file_name, file_size, has_file, version}
+          extraOrig: {},    // field_id -> 原始 text，用于 dirty 判断
+          extraLoaded: false,
         }
       } else {
         machineState[m.id].current = m.customer_status || ''
+        machineState[m.id].milestones = parseMilestones(m.milestones_json)
       }
     }
     machines.value = data
     if (data.length) {
       activeMachine.value = String(data[0].id)
       // 先把第一个 tab 的子数据加载出来
-      await Promise.all([loadSowRows(data[0].id), loadLicenses(data[0].id)])
+      await Promise.all([loadSowRows(data[0].id), loadLicenses(data[0].id), loadExtraValues(data[0].id)])
     }
   } catch (e) {
     ElMessage.error(e.response?.data?.detail || '机台加载失败')
@@ -497,6 +739,75 @@ async function loadLicenses(mid) {
   }
 }
 
+// ─── 客户定制化需求 ───────────────────────────────────────────
+const CUSTOM_REQ_KEYS = ['seq', 'description', 'customer_value', 'domain', 'designer', 'involves_other', 'planned_version', 'remark']
+
+function customReqSnapshot(row) {
+  const o = {}
+  for (const k of CUSTOM_REQ_KEYS) o[k] = row[k]
+  return JSON.stringify(o)
+}
+
+async function loadCustomReqs() {
+  if (!props.customerId) return
+  customReqLoading.value = true
+  try {
+    const { data } = await customerCustomReqApi.list(props.customerId)
+    customReqs.value = data
+    for (const r of data) customReqOrig[r.id] = customReqSnapshot(r)
+  } catch (e) {
+    ElMessage.error(e.response?.data?.detail || '定制化需求加载失败')
+  } finally {
+    customReqLoading.value = false
+  }
+}
+
+function isCustomReqDirty(row) {
+  if (!row.id) return true
+  return customReqOrig[row.id] !== customReqSnapshot(row)
+}
+
+async function addCustomReq() {
+  try {
+    const { data } = await customerCustomReqApi.create({ customer_id: Number(props.customerId) })
+    customReqs.value.push(data)
+    customReqOrig[data.id] = customReqSnapshot(data)
+  } catch (e) {
+    ElMessage.error(e.response?.data?.detail || '新增失败')
+  }
+}
+
+async function saveCustomReq(row) {
+  try {
+    const payload = { version: row.version }
+    for (const k of CUSTOM_REQ_KEYS) payload[k] = row[k]
+    const { data } = await customerCustomReqApi.update(row.id, payload)
+    Object.assign(row, data)
+    customReqOrig[row.id] = customReqSnapshot(row)
+    ElMessage.success('已保存')
+  } catch (e) {
+    if (e.response?.status === 409) {
+      await loadCustomReqs()
+    } else {
+      ElMessage.error(e.response?.data?.detail || '保存失败')
+    }
+  }
+}
+
+async function deleteCustomReq(row) {
+  try {
+    await ElMessageBox.confirm('确认删除该定制化需求？', '提示', { type: 'warning' })
+  } catch { return }
+  try {
+    await customerCustomReqApi.remove(row.id)
+    customReqs.value = customReqs.value.filter((r) => r.id !== row.id)
+    delete customReqOrig[row.id]
+    ElMessage.success('已删除')
+  } catch (e) {
+    ElMessage.error(e.response?.data?.detail || '删除失败')
+  }
+}
+
 async function loadIssues() {
   if (!customer.value) return
   issues.loading = true
@@ -538,9 +849,9 @@ async function loadIssues() {
 
 watch(() => props.customerId, async () => {
   if (!props.customerId) return
-  await Promise.all([loadCustomer(), loadSowFields()])
+  await Promise.all([loadCustomer(), loadSowFields(), loadExtraFields()])
   await loadMachines()
-  await loadIssues()
+  await Promise.all([loadIssues(), loadCustomReqs()])
 }, { immediate: true })
 
 watch(activeMachine, async (mid) => {
@@ -552,6 +863,7 @@ watch(activeMachine, async (mid) => {
   await Promise.all([
     st.sowRows.length === 0 && !st.sowLoading ? loadSowRows(id) : Promise.resolve(),
     st.licenses.length === 0 && !st.licenseLoading ? loadLicenses(id) : Promise.resolve(),
+    !st.extraLoaded ? loadExtraValues(id) : Promise.resolve(),
   ])
 })
 
@@ -648,6 +960,111 @@ async function saveCurrentStage(m) {
     } else {
       ElMessage.error(e.response?.data?.detail || '保存失败')
     }
+  }
+}
+
+// ─── 里程碑 ───────────────────────────────────────────────────
+
+function openMilestoneDialog(m) {
+  const st = machineState[m.id]
+  milestoneDialog.machineId = m.id
+  // 深拷贝当前里程碑供编辑
+  milestoneDialog.rows = (st.milestones || parseMilestones('')).map((x) => ({ ...x }))
+  milestoneDialog.visible = true
+}
+
+async function saveMilestones() {
+  const mid = milestoneDialog.machineId
+  const m = machines.value.find((x) => x.id === mid)
+  if (!m) return
+  milestoneDialog.saving = true
+  try {
+    const json = JSON.stringify(milestoneDialog.rows)
+    const { data } = await customerStatusApi.update(mid, {
+      version: m.version,
+      milestones_json: json,
+    })
+    // 同步本地
+    const idx = machines.value.findIndex((x) => x.id === mid)
+    if (idx >= 0) machines.value[idx] = { ...machines.value[idx], version: data.version, milestones_json: json }
+    machineState[mid].milestones = parseMilestones(json)
+    milestoneDialog.visible = false
+    ElMessage.success('里程碑已保存')
+  } catch (e) {
+    if (e.response?.status === 409) {
+      await loadMachines()
+    } else {
+      ElMessage.error(e.response?.data?.detail || '保存失败')
+    }
+  } finally {
+    milestoneDialog.saving = false
+  }
+}
+
+// ─── 自定义信息块 ─────────────────────────────────────────────
+
+function getExtra(mid, fid) {
+  const st = machineState[mid]
+  if (!st || !st.extra[fid]) {
+    return { id: null, field_id: fid, text: '', file_name: '', file_size: 0, has_file: false, version: 0 }
+  }
+  return st.extra[fid]
+}
+
+function isExtraDirty(mid, fid) {
+  const st = machineState[mid]
+  if (!st) return false
+  return (st.extra[fid]?.text || '') !== (st.extraOrig[fid] || '')
+}
+
+async function saveExtraText(mid, fid) {
+  try {
+    const { data } = await customerExtraApi.saveText(mid, fid, getExtra(mid, fid).text || '')
+    machineState[mid].extra[fid] = data
+    machineState[mid].extraOrig[fid] = data.text || ''
+    ElMessage.success('已保存')
+  } catch (e) {
+    ElMessage.error(e.response?.data?.detail || '保存失败')
+  }
+}
+
+async function onExtraFileChange(mid, fid, file) {
+  const raw = file?.raw || file
+  if (!raw) return
+  try {
+    const { data } = await customerExtraApi.uploadAttachment({ machine_status_id: mid, field_id: fid, file: raw })
+    machineState[mid].extra[fid] = data
+    machineState[mid].extraOrig[fid] = data.text || ''
+    ElMessage.success('附件已上传')
+  } catch (e) {
+    ElMessage.error(e.response?.data?.detail || '上传失败')
+  }
+}
+
+async function downloadExtra(mid, fid) {
+  const v = getExtra(mid, fid)
+  if (!v.id) return
+  try {
+    const resp = await customerExtraApi.downloadAttachment(v.id)
+    downloadBlob(resp.data, v.file_name || 'attachment')
+  } catch (e) {
+    ElMessage.error(e.response?.data?.detail || '下载失败')
+  }
+}
+
+async function removeExtraFile(mid, fid) {
+  const v = getExtra(mid, fid)
+  if (!v.id) return
+  try {
+    await ElMessageBox.confirm('确认删除该附件？', '提示', { type: 'warning' })
+  } catch { return }
+  try {
+    const { data } = await customerExtraApi.removeAttachment(v.id)
+    machineState[mid].extra[fid] = data
+    machineState[mid].extraOrig[fid] = data.text || ''
+    ElMessage.success('附件已删除')
+  } catch (e) {
+    ElMessage.error(e.response?.data?.detail || '删除失败')
   }
 }
 
@@ -902,6 +1319,17 @@ defineExpose({ reload: loadCustomer })
   padding: 12px;
 }
 .block-body .right { text-align: right; margin-top: 8px; }
+
+.extra-foot {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-top: 8px;
+  flex-wrap: wrap;
+}
+.extra-file { display: flex; align-items: center; gap: 10px; }
+.extra-actions { display: flex; align-items: center; gap: 8px; }
 
 .issue-cards {
   display: flex;

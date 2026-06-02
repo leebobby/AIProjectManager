@@ -72,6 +72,7 @@ class CustomerStatusBase(BaseModel):
     recent_focus: Optional[str] = ""
     key_issues: Optional[str] = ""
     issue_url: Optional[str] = ""
+    milestones_json: Optional[str] = ""
 
 
 class CustomerStatusCreate(CustomerStatusBase):
@@ -94,6 +95,7 @@ class CustomerStatusUpdate(BaseModel):
     customer_status: Optional[str] = None
     recent_focus: Optional[str] = None
     key_issues: Optional[str] = None
+    milestones_json: Optional[str] = None
 
 
 class CustomerStatusOut(CustomerStatusBase):
@@ -114,6 +116,7 @@ class CustomerMachineOut(BaseModel):
     customer_status: Optional[str] = ""
     field_version: Optional[str] = ""
     attention_level: Optional[int] = 0
+    milestones_json: Optional[str] = ""
     version: int
 
     model_config = ConfigDict(from_attributes=True, protected_namespaces=())
@@ -179,6 +182,84 @@ class MachineLicenseOut(BaseModel):
     remark: Optional[str] = ""
     uploaded_by: Optional[str] = ""
     uploaded_at: datetime
+
+    model_config = ConfigDict(from_attributes=True)
+
+
+# ===== 客户自定义信息块（如 MPH状态）=====
+class CustomerExtraFieldBase(BaseModel):
+    key: str
+    label: str
+    sort_order: Optional[int] = 0
+    is_active: Optional[bool] = True
+
+
+class CustomerExtraFieldCreate(CustomerExtraFieldBase):
+    pass
+
+
+class CustomerExtraFieldUpdate(BaseModel):
+    label: Optional[str] = None
+    sort_order: Optional[int] = None
+    is_active: Optional[bool] = None
+
+
+class CustomerExtraFieldOut(CustomerExtraFieldBase):
+    id: int
+
+    model_config = ConfigDict(from_attributes=True)
+
+
+class CustomerExtraValueOut(BaseModel):
+    id: int
+    machine_status_id: int
+    field_id: int
+    text: Optional[str] = ""
+    file_name: Optional[str] = ""
+    file_size: int = 0
+    has_file: bool = False
+    version: int
+
+    model_config = ConfigDict(from_attributes=True)
+
+
+class CustomerExtraValueUpdate(BaseModel):
+    version: int
+    text: Optional[str] = None
+
+
+# ===== 客户定制化需求 =====
+class CustomerCustomReqBase(BaseModel):
+    seq: Optional[int] = 0
+    description: Optional[str] = ""
+    customer_value: Optional[str] = ""
+    domain: Optional[str] = ""
+    designer: Optional[str] = ""
+    involves_other: Optional[str] = ""
+    planned_version: Optional[str] = ""
+    remark: Optional[str] = ""
+
+
+class CustomerCustomReqCreate(CustomerCustomReqBase):
+    customer_id: int
+
+
+class CustomerCustomReqUpdate(BaseModel):
+    version: int
+    seq: Optional[int] = None
+    description: Optional[str] = None
+    customer_value: Optional[str] = None
+    domain: Optional[str] = None
+    designer: Optional[str] = None
+    involves_other: Optional[str] = None
+    planned_version: Optional[str] = None
+    remark: Optional[str] = None
+
+
+class CustomerCustomReqOut(CustomerCustomReqBase):
+    id: int
+    customer_id: int
+    version: int
 
     model_config = ConfigDict(from_attributes=True)
 

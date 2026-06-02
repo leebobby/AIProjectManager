@@ -10,7 +10,7 @@ from migrate import ensure_schema
 from routers import annual_iterations, iteration_product_requirements, iteration_requirements
 from routers import auth as auth_router
 from routers import config as config_router
-from routers import customer_status, customers, handbook, issues, iterations, licenses, major_versions, mapping, metrics, notifications, op_logs, project_formation, resource_groups, roadmap, sow, specials, stakeholders, system as system_router, users, versions
+from routers import customer_custom_req, customer_extra, customer_status, customers, handbook, issues, iterations, licenses, major_versions, mapping, metrics, notifications, op_logs, project_formation, resource_groups, roadmap, sow, specials, stakeholders, system as system_router, users, versions
 
 # 先做轻量迁移（给老库加列），再 create_all 补齐缺失的表。
 ensure_schema()
@@ -38,6 +38,8 @@ app.include_router(mapping.router, dependencies=authed)
 app.include_router(customer_status.router, dependencies=authed)
 app.include_router(sow.router, dependencies=authed)
 app.include_router(licenses.router, dependencies=authed)
+app.include_router(customer_extra.router, dependencies=authed)
+app.include_router(customer_custom_req.router, dependencies=authed)
 app.include_router(versions.router, dependencies=authed)
 app.include_router(iterations.router, dependencies=authed)
 app.include_router(annual_iterations.router, dependencies=authed)
