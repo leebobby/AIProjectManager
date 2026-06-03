@@ -45,12 +45,28 @@ from pptx.util import Emu, Inches, Pt
 _SLIDE_W = Emu(12192000)  # 16:9 默认 13.333"
 _SLIDE_H = Emu(6858000)
 
-_BRAND = RGBColor(0x40, 0x73, 0xBA)
-_BRAND_DARK = RGBColor(0x2C, 0x55, 0x8C)
-_ZEBRA = RGBColor(0xF5, 0xF7, 0xFA)
+# 华为风格：标志性红 #C7000B，深红压顶 + 浅红斑马
+_BRAND = RGBColor(0xC7, 0x00, 0x0B)        # 华为红
+_BRAND_DARK = RGBColor(0x9E, 0x00, 0x09)   # 深红（横幅）
+_ZEBRA = RGBColor(0xFB, 0xF2, 0xF2)        # 极浅红灰斑马
 _WHITE = RGBColor(0xFF, 0xFF, 0xFF)
-_TEXT = RGBColor(0x30, 0x31, 0x33)
-_BORDER = RGBColor(0xD0, 0xD7, 0xE2)
+_TEXT = RGBColor(0x26, 0x26, 0x26)
+_BORDER = RGBColor(0xE3, 0xC9, 0xCB)       # 浅红灰边框
+_SUBTITLE = RGBColor(0xF2, 0xD0, 0xD2)     # 横幅副标题浅红
+
+# 中文 / 西文字体（华为优先 HarmonyOS Sans，回退微软雅黑）
+_FONT_LATIN = "HarmonyOS Sans SC"
+_FONT_EA = "微软雅黑"
+
+# 进展状态着色（领域/产品需求 slide 自动染色，提升可读性）
+_STATUS_COLORS = {
+    "已完成": RGBColor(0x2E, 0x7D, 0x32),
+    "进行中": RGBColor(0x15, 0x65, 0xC0),
+    "已延期": RGBColor(0xC6, 0x28, 0x28),
+    "已变更": RGBColor(0xB9, 0x6A, 0x00),
+    "未开始": RGBColor(0x90, 0x93, 0x99),
+    "不涉及": RGBColor(0xB0, 0xB3, 0xB8),
+}
 
 
 def _new_pres() -> Presentation:
@@ -75,10 +91,7 @@ def _add_banner(slide, title: str, subtitle: str):
     tf.text = title
     p = tf.paragraphs[0]
     p.alignment = PP_ALIGN.LEFT
-    run = p.runs[0]
-    run.font.size = Pt(22)
-    run.font.bold = True
-    run.font.color.rgb = _WHITE
+    _apply_run_font(p.runs[0], 22, True, _WHITE)
 
     # 副标题
     sub_box = slide.shapes.add_textbox(Inches(0.4), Inches(0.5), Inches(10), Inches(0.3))
@@ -86,9 +99,7 @@ def _add_banner(slide, title: str, subtitle: str):
     tf2.margin_left = tf2.margin_right = 0
     tf2.text = subtitle
     p2 = tf2.paragraphs[0]
-    run2 = p2.runs[0]
-    run2.font.size = Pt(11)
-    run2.font.color.rgb = RGBColor(0xCD, 0xDC, 0xEE)
+    _apply_run_font(p2.runs[0], 11, False, _SUBTITLE)
 
 
 def _fit_font_size(rows_count: int) -> int:
@@ -103,6 +114,43 @@ def _fit_font_size(rows_count: int) -> int:
 
 def _rgb_to_hex(color: RGBColor) -> str:
     return str(color)  # python-pptx RGBColor 的 __str__ 返回 6 位大写十六进制
+
+
+def _apply_run_font(run, size: int, bold: bool, color: RGBColor):
+    """统一设置 run 的字号/粗细/颜色，并补齐东亚字体（中文不走默认衬线）。"""
+    run.font.size = Pt(size)
+    run.font.bold = bold
+    run.font.color.rgb = color
+    run.font.name = _FONT_LATIN
+    rPr = run._r.get_or_add_rPr()
+    for tag in ("a:ea", "a:cs"):
+        el = rPr.find(qn(tag))
+        if el is None:
+            el = etree.SubElement(rPr, qn(tag))
+        el.set("typeface", _FONT_EA)
+
+
+def _set_cell_margins(cell, lr=5, tb=2):
+    cell.margin_left = Pt(lr)
+    cell.margin_right = Pt(lr)
+    cell.margin_top = Pt(tb)
+    cell.margin_bottom = Pt(tb)
+
+
+def _clear_table_style(table):
+    """清掉 python-pptx 默认套用的主题表样式（带蓝色条纹），
+    换成"无样式"，让我们手动设置的填充/边框完全生效。"""
+    tbl = table._tbl
+    tblPr = tbl.find(qn("a:tblPr"))
+    if tblPr is None:
+        tblPr = etree.SubElement(tbl, qn("a:tblPr"))
+    for attr in ("firstRow", "lastRow", "firstCol", "lastCol", "bandRow", "bandCol"):
+        tblPr.set(attr, "0")
+    style_id = tblPr.find(qn("a:tableStyleId"))
+    if style_id is None:
+        style_id = etree.SubElement(tblPr, qn("a:tableStyleId"))
+    # "No Style, No Grid"
+    style_id.text = "{2D5ABB26-0587-4C30-8999-92F81FD0307C}"
 
 
 def _set_cell_border(cell, color: RGBColor = _BORDER):
@@ -130,25 +178,32 @@ def _style_header_cell(cell, text: str, font_size: int):
     cell.fill.solid()
     cell.fill.fore_color.rgb = _BRAND
     cell.vertical_anchor = MSO_ANCHOR.MIDDLE
+    _set_cell_margins(cell)
     for para in cell.text_frame.paragraphs:
         para.alignment = PP_ALIGN.CENTER
         for r in para.runs:
-            r.font.size = Pt(font_size + 1)
-            r.font.bold = True
-            r.font.color.rgb = _WHITE
+            _apply_run_font(r, font_size + 1, True, _WHITE)
     _set_cell_border(cell, _WHITE)
 
 
-def _style_data_cell(cell, value, font_size: int, zebra: bool):
-    cell.text = "" if value is None else str(value)
+def _style_data_cell(cell, value, font_size: int, zebra: bool, center: bool = False):
+    text = "" if value is None else str(value)
+    cell.text = text
     cell.fill.solid()
     cell.fill.fore_color.rgb = _ZEBRA if zebra else _WHITE
     cell.vertical_anchor = MSO_ANCHOR.MIDDLE
+    _set_cell_margins(cell)
+
+    # 进展状态自动染色 + 居中加粗；短列居中
+    stripped = text.strip()
+    status_color = _STATUS_COLORS.get(stripped)
+    is_status = status_color is not None
+    color = status_color if is_status else _TEXT
+
     for para in cell.text_frame.paragraphs:
-        para.alignment = PP_ALIGN.LEFT
+        para.alignment = PP_ALIGN.CENTER if (center or is_status) else PP_ALIGN.LEFT
         for r in para.runs:
-            r.font.size = Pt(font_size)
-            r.font.color.rgb = _TEXT
+            _apply_run_font(r, font_size, is_status, color)
     _set_cell_border(cell)
 
 
@@ -167,12 +222,15 @@ def _add_grouped_table(
     leaf_headers: Sequence[str],
     rows: Sequence[Sequence[str]],
     col_widths_in: Optional[Sequence[float]] = None,
+    center_cols: Optional[set] = None,
 ):
     """支持「父表头 + 子表头」两行表头的表格。
 
     parent_headers: 长度与 leaf_headers 相同。每个元素是 (group_id, label) 或 None。
         相邻同 group_id 会被合并；None 表示该列没有父分组，会与子表头单元格垂直合并显示。
+    center_cols: 需要居中显示的数据列下标集合（短列，如序号/优先级）。
     """
+    center_cols = center_cols or set()
     n_cols = len(leaf_headers)
     n_rows = 2 + len(rows)  # 2 行表头
 
@@ -183,6 +241,7 @@ def _add_grouped_table(
 
     table_shape = slide.shapes.add_table(n_rows, n_cols, left, top, width, height)
     table = table_shape.table
+    _clear_table_style(table)
 
     if col_widths_in and len(col_widths_in) == n_cols:
         for i, w in enumerate(col_widths_in):
@@ -233,7 +292,7 @@ def _add_grouped_table(
     for i, row in enumerate(rows, start=2):
         zebra = (i - 2) % 2 == 1
         for j, val in enumerate(row):
-            _style_data_cell(table.cell(i, j), val, font_size, zebra)
+            _style_data_cell(table.cell(i, j), val, font_size, zebra, center=(j in center_cols))
 
 
 def build_customer_status_pptx(rows: Iterable) -> io.BytesIO:
@@ -267,7 +326,8 @@ def build_customer_status_pptx(rows: Iterable) -> io.BytesIO:
         "客户面状态总览",
         f"导出时间：{datetime.now().strftime('%Y-%m-%d %H:%M')}   ·   共 {len(data)} 条",
     )
-    _add_grouped_table(slide, parent_headers, leaf_headers, data, col_widths)
+    _add_grouped_table(slide, parent_headers, leaf_headers, data, col_widths,
+                       center_cols={0, 2, 3, 4, 5, 9})
 
     buf = io.BytesIO()
     pres.save(buf)
@@ -317,7 +377,8 @@ def _add_domain_slide(pres, iteration, requirements: Iterable):
     if iteration.owner:
         subtitle += f"   ·   负责人：{iteration.owner}"
     _add_banner(slide, title, subtitle)
-    _add_grouped_table(slide, parent_headers, leaf_headers, data, col_widths)
+    _add_grouped_table(slide, parent_headers, leaf_headers, data, col_widths,
+                       center_cols={0, 5, 7, 8, 9, 10, 11, 12})
 
 
 def _add_product_slides(pres, iteration, product_reqs: Iterable):
@@ -366,7 +427,8 @@ def _add_product_slides(pres, iteration, product_reqs: Iterable):
     ]
     parents1: List[Optional[tuple]] = [None] * 11
     widths1 = [0.4, 1.0, 1.9, 0.9, 0.55, 1.0, 0.7, 0.7, 0.7, 1.6, 2.5]
-    _add_grouped_table(slide1, parents1, leaf1, rows_basic, widths1)
+    _add_grouped_table(slide1, parents1, leaf1, rows_basic, widths1,
+                       center_cols={0, 4, 6, 7, 8})
 
     # —— Slide 2：交付进展跟踪 ——
     slide2 = pres.slides.add_slide(pres.slide_layouts[6])
@@ -378,7 +440,8 @@ def _add_product_slides(pres, iteration, product_reqs: Iterable):
     ]
     parents2: List[Optional[tuple]] = [None, None, None] + [("progress", "交付进展跟踪")] * 10
     widths2 = [0.4, 1.0, 1.5, 0.8, 0.7, 0.85, 0.6, 0.85, 0.85, 0.85, 0.95, 0.95, 0.95]
-    _add_grouped_table(slide2, parents2, leaf2, rows_progress, widths2)
+    _add_grouped_table(slide2, parents2, leaf2, rows_progress, widths2,
+                       center_cols={0, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12})
 
 
 def build_iteration_pptx(iteration, requirements: Iterable, product_reqs: Optional[Iterable] = None) -> io.BytesIO:

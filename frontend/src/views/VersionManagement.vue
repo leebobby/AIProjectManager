@@ -25,6 +25,7 @@
         border
         stripe
         style="width: 100%"
+        :default-sort="{ prop: 'version_no', order: 'ascending' }"
       >
         <el-table-column type="expand">
           <template #default="{ row }">
@@ -46,10 +47,12 @@
                 border
                 size="small"
                 style="width: 100%"
+                :default-sort="{ prop: 'version_no', order: 'ascending' }"
               >
-                <el-table-column prop="version_no" label="版本号" width="130" />
+                <el-table-column prop="version_no" label="版本号" width="130" sortable
+                  :sort-method="(a, b) => naturalCompare(a.version_no, b.version_no)" />
                 <el-table-column prop="title" label="标题" min-width="200" show-overflow-tooltip />
-                <el-table-column label="预计发布日期" width="150">
+                <el-table-column prop="planned_date" label="预计发布日期" width="150" sortable>
                   <template #default="{ row: ir }">{{ formatDate(ir.planned_date) }}</template>
                 </el-table-column>
                 <el-table-column v-if="isAdmin" label="操作" width="140" fixed="right">
@@ -63,8 +66,10 @@
           </template>
         </el-table-column>
 
-        <el-table-column prop="version_no" label="版本号" width="120" />
-        <el-table-column prop="title" label="标题" min-width="160" />
+        <el-table-column prop="version_no" label="版本号" width="120" sortable
+          :sort-method="(a, b) => naturalCompare(a.version_no, b.version_no)" />
+        <el-table-column prop="title" label="标题" min-width="160" sortable
+          :sort-method="(a, b) => naturalCompare(a.title, b.title)" />
         <el-table-column prop="description" label="版本说明" min-width="200" show-overflow-tooltip />
         <el-table-column label="版本范围" width="230">
           <template #default="{ row }">
@@ -74,7 +79,7 @@
             <span v-else style="color:#c0c4cc">—</span>
           </template>
         </el-table-column>
-        <el-table-column label="实际发布" width="120">
+        <el-table-column prop="actual_release_date" label="实际发布" width="120" sortable>
           <template #default="{ row }">
             <el-tag v-if="row.actual_release_date" type="success" size="small">
               {{ formatDate(row.actual_release_date) }}
@@ -184,6 +189,11 @@ import { majorVersionApi, roadmapApi } from '../api'
 import { auth } from '../store/auth'
 
 const isAdmin = auth.isAdmin
+
+// 自然排序：让 V2.2 < V2.10（数字段按数值比较，而非字符串）
+function naturalCompare(a, b) {
+  return String(a ?? '').localeCompare(String(b ?? ''), 'zh-Hans-CN', { numeric: true, sensitivity: 'base' })
+}
 
 const projects = ref([])
 const activeTab = ref('global')

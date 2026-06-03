@@ -822,6 +822,39 @@ def _build_eml(special: models.Special, subject: str, to: str, cc: str,
     return bytes(msg)
 
 
+@router.get("/{sid}/export.xlsx")
+def export_special_xlsx(
+    sid: int,
+    request: Request,
+    db: Session = Depends(get_db),
+    current_user: models.User = Depends(get_current_user),
+):
+    """导出该专项/攻关为美观的 Excel（华为红风格，含目标/进展/里程碑/事务/风险）。"""
+    from xlsx_utils import build_special_xlsx
+
+    special = _get_or_404(db, sid)
+    _ensure_content(db, special)
+    db.refresh(special)
+    stream = build_special_xlsx(special)
+
+    fname_base = "".join(
+        c for c in (special.name or "special") if c not in '\\/:*?"<>|'
+    ).strip() or "special"
+    fname = f"{fname_base}_{datetime.now().strftime('%Y%m%d')}.xlsx"
+    log_op(db, action="导出Excel", target=_kind_label(special.kind), target_id=sid,
+           detail=f"name={special.name}", user=current_user, request=request)
+    return Response(
+        content=stream.getvalue(),
+        media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        headers={
+            "Content-Disposition": (
+                f'attachment; filename="special_{sid}.xlsx"; '
+                f"filename*=UTF-8''{url_quote(fname)}"
+            ),
+        },
+    )
+
+
 @router.get("/{sid}/report-draft", response_model=schemas.SpecialReportDraft)
 def get_report_draft(sid: int, db: Session = Depends(get_db)):
     special = _get_or_404(db, sid)

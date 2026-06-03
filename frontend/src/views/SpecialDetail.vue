@@ -8,6 +8,7 @@
         <div class="owner-and-actions">
           <span class="owner">责任人：{{ special.owner || '-' }}</span>
           <SubscribeButton source-type="special" :source-id="Number(route.params.id)" />
+          <el-button size="small" :icon="Download" @click="onExportXlsx">导出 Excel</el-button>
           <el-button size="small" type="primary" :icon="Message" @click="openReportDialog">发周报</el-button>
         </div>
       </div>
@@ -609,6 +610,18 @@ async function saveExtraGrids() {
 }
 
 // 周报
+async function onExportXlsx() {
+  try {
+    const resp = await specialApi.exportXlsx(special.value.id)
+    const today = new Date().toISOString().slice(0, 10).replace(/-/g, '')
+    const safeName = (special.value.name || 'special').replace(/[\\/:*?"<>|]/g, '')
+    downloadBlob(resp.data, `${safeName}_${today}.xlsx`)
+    ElMessage.success('已导出')
+  } catch (e) {
+    ElMessage.error(e.response?.data?.detail || '导出失败')
+  }
+}
+
 async function openReportDialog() {
   reportDialog.visible = true
   reportDialog.loading = true

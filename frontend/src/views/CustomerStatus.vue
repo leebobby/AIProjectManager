@@ -14,10 +14,13 @@
         </span>
       </div>
 
-      <el-table :data="list" v-loading="loading" border stripe style="width:100%">
+      <el-table :data="list" v-loading="loading" border stripe style="width:100%"
+        :default-sort="{ prop: 'machine_id', order: 'ascending' }">
         <el-table-column type="index" label="序号" width="60" align="center" :index="(i) => i + 1" />
-        <el-table-column prop="machine_id" label="机台编号" width="110" align="center" sortable />
-        <el-table-column prop="battlefield" label="客户" width="140" align="center" sortable>
+        <el-table-column prop="machine_id" label="机台编号" width="110" align="center" sortable
+          :sort-method="(a, b) => naturalCompare(a.machine_id, b.machine_id)" />
+        <el-table-column prop="battlefield" label="客户" width="140" align="center" sortable
+          :sort-method="(a, b) => naturalCompare(a.battlefield, b.battlefield)">
           <template #default="{ row }">
             <a class="bf-link" :title="'点击查看客户详情'" @click.stop="openCustomerDetail(row)">
               {{ row.battlefield || '—' }}
@@ -35,7 +38,8 @@
           </template>
         </el-table-column>
 
-        <el-table-column label="现场版本" width="170" align="center">
+        <el-table-column prop="field_version" label="现场版本" width="170" align="center" sortable
+          :sort-method="(a, b) => naturalCompare(a.field_version, b.field_version)">
           <template #default="{ row }">
             <el-select v-if="isAdmin" :model-value="row.field_version" size="small" filterable allow-create
               default-first-option placeholder="选择或输入" @change="(v) => onVersionChange(row, v)">
@@ -45,7 +49,8 @@
           </template>
         </el-table-column>
 
-        <el-table-column label="近期关注度" width="170" align="center">
+        <el-table-column prop="attention_level" label="近期关注度" width="170" align="center" sortable
+          :sort-method="(a, b) => (a.attention_level || 0) - (b.attention_level || 0)">
           <template #default="{ row }">
             <el-rate :model-value="row.attention_level || 0" :max="5" :disabled="!isAdmin"
               show-score score-template="{value}" @change="(v) => onRateChange(row, v)" />
@@ -401,6 +406,11 @@ const ADMIN_FIELDS = ['current_stage', 'field_version', 'attention_level', 'issu
 const USER_FIELDS  = ['customer_status', 'recent_focus', 'key_issues']
 
 const versionOptions = computed(() => versions.value)
+
+// 自然排序：让 M2 < M10、V2.2 < V2.10（数字段按数值比较，而非字符串）
+function naturalCompare(a, b) {
+  return String(a ?? '').localeCompare(String(b ?? ''), 'zh-Hans-CN', { numeric: true, sensitivity: 'base' })
+}
 
 function defaultForm() {
   return {

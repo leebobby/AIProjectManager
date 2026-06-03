@@ -113,6 +113,7 @@ export const specialApi = {
   removeRisk: (item_id) => http.delete(`/specials/risks/${item_id}`),
   reportDraft: (id) => http.get(`/specials/${id}/report-draft`),
   reportEml: (id, payload) => http.post(`/specials/${id}/report.eml`, payload, { responseType: 'blob' }),
+  exportXlsx: (id) => http.get(`/specials/${id}/export.xlsx`, { responseType: 'blob' }),
 }
 
 export const userApi = {
