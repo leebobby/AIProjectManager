@@ -1,6 +1,15 @@
 <template>
   <div v-loading="loading" class="special-page">
     <div v-if="special" class="page-card">
+      <!-- 编辑锁提示：他人正在编辑时，本页为只读 -->
+      <el-alert
+        v-if="lockedByOther"
+        type="warning"
+        :closable="false"
+        show-icon
+        class="lock-banner"
+        :title="`${lock.by || '他人'} 正在编辑${lock.since ? `（自 ${fmtSince(lock.since)}）` : ''}，当前为只读模式${auth.isAdmin.value ? '；管理员可点右上角「强制接管」' : '，请稍后再试'}`"
+      />
       <!-- 标题 -->
       <div class="sec-title-main">
         <el-tag :type="isAssault ? 'danger' : 'info'" effect="dark" style="margin-right: 8px">{{ label }}</el-tag>
@@ -11,11 +20,12 @@
           <el-button
             v-if="auth.isLoggedIn.value"
             size="small"
-            :type="editMode ? 'success' : 'warning'"
+            :type="editMode ? 'success' : (lockedByOther ? 'info' : 'warning')"
             :icon="editMode ? Check : EditPen"
+            :disabled="lockedByOther && !auth.isAdmin.value"
             :loading="extraSaving || formationSaving"
             @click="toggleEdit"
-          >{{ editMode ? '完成编辑' : '进入编辑' }}</el-button>
+          >{{ editBtnLabel }}</el-button>
           <el-button size="small" :icon="Download" @click="onExportXlsx">导出 Excel</el-button>
           <el-button size="small" type="primary" :icon="Message" @click="openReportDialog">发周报</el-button>
         </div>
@@ -310,7 +320,7 @@
 </template>
 
 <script setup>
-import { computed, onMounted, reactive, ref, watch } from 'vue'
+import { computed, onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue'
 import { useRoute } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { Check, Download, EditPen, Message, Plus } from '@element-plus/icons-vue'
@@ -351,6 +361,97 @@ const label = computed(() => (isAssault.value ? '攻关' : '专项'))
 const editMode = ref(false)
 const canEdit = computed(() => auth.isLoggedIn.value && editMode.value)
 
+// 编辑锁：同一专项同一时刻只允许一人编辑
+const lock = ref({ locked: false, mine: false, by: null, by_user_id: null, since: null, ttl: 180 })
+const lockedByOther = computed(() => lock.value.locked && !lock.value.mine)
+const editBtnLabel = computed(() => {
+  if (editMode.value) return '完成编辑'
+  if (lockedByOther.value) return auth.isAdmin.value ? '强制接管' : '他人编辑中'
+  return '进入编辑'
+})
+let heartbeatTimer = null
+let pollTimer = null
+let loadToken = 0
+
+function fmtSince(s) {
+  if (!s) return ''
+  const iso = /[zZ]|[+-]\d\d:?\d\d$/.test(s) ? s : `${s}Z` // 后端为 UTC，无时区后缀时补 Z
+  const d = new Date(iso)
+  return isNaN(d.getTime()) ? '' : d.toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit' })
+}
+
+async function refreshLock() {
+  if (!special.value) return
+  try {
+    const { data } = await specialApi.getLock(special.value.id)
+    if (!editMode.value) lock.value = data
+  } catch { /* 忽略查询失败 */ }
+}
+
+function startHeartbeat() {
+  stopHeartbeat()
+  // TTL 180s，每 60s 续期一次
+  heartbeatTimer = setInterval(async () => {
+    if (!special.value) return
+    try {
+      const { data } = await specialApi.acquireLock(special.value.id)
+      lock.value = data
+      if (!data.mine) {
+        // 编辑权被管理员强制接管 → 退回只读，避免之后保存白费
+        stopHeartbeat()
+        editMode.value = false
+        ElMessage.warning(`编辑权已被 ${data.by || '他人'} 接管，已切换为只读`)
+      }
+    } catch { /* 网络抖动忽略，靠下次续期或 TTL */ }
+  }, 60000)
+}
+function stopHeartbeat() {
+  if (heartbeatTimer) { clearInterval(heartbeatTimer); heartbeatTimer = null }
+}
+function startPoll() {
+  stopPoll()
+  pollTimer = setInterval(refreshLock, 20000)
+}
+function stopPoll() {
+  if (pollTimer) { clearInterval(pollTimer); pollTimer = null }
+}
+
+// 取锁并进入编辑；force=管理员强制接管
+async function enterEdit(force = false) {
+  try {
+    const { data } = await specialApi.acquireLock(special.value.id, force)
+    lock.value = data
+    if (!data.mine) {
+      if (auth.isAdmin.value) {
+        try {
+          await ElMessageBox.confirm(
+            `${data.by || '他人'} 正在编辑该${label.value}，是否强制接管？接管后对方将无法保存其改动。`,
+            '该内容正被编辑',
+            { type: 'warning', confirmButtonText: '强制接管', cancelButtonText: '仅查看' },
+          )
+        } catch { return } // 取消 = 保持只读
+        return enterEdit(true)
+      }
+      ElMessage.warning(`${data.by || '他人'} 正在编辑，当前为只读`)
+      return
+    }
+    editMode.value = true
+    startHeartbeat()
+  } catch (e) {
+    ElMessage.error(e.response?.data?.detail || '进入编辑失败')
+  }
+}
+
+// 释放锁（持锁人退出 / 离开页面），best-effort
+async function releaseLockSafe() {
+  stopHeartbeat()
+  if (editMode.value && lock.value.mine && special.value) {
+    try { await specialApi.releaseLock(special.value.id) } catch { /* ignore */ }
+  }
+  editMode.value = false
+  lock.value = { locked: false, mine: false, by: null, by_user_id: null, since: null, ttl: 180 }
+}
+
 // 已闭环（closed）事项的显示开关
 const showClosedTasks = ref(true)
 const showClosedRisks = ref(true)
@@ -366,13 +467,13 @@ function rowClass({ row }) {
 
 async function toggleEdit() {
   if (!editMode.value) {
-    editMode.value = true
+    await enterEdit()
     return
   }
   // 退出编辑前，把附加表格 / 阵型的未保存改动一并落库
   if (extraGrids.value.length > 0) await saveExtraGrids(true)
   if (formation.value.headers.length || formation.value.rows.length) await saveFormation(true)
-  editMode.value = false
+  await releaseLockSafe()
   ElMessage.success('已退出编辑模式')
 }
 
@@ -390,10 +491,13 @@ function defaultItem() {
 }
 
 async function load() {
+  // 请求令牌：若 await 期间又发起了新的一次 load，则丢弃本次迟到响应，避免写错专项
+  const myToken = ++loadToken
   loading.value = true
   try {
     const id = route.params.id
     const { data } = await specialApi.detail(id)
+    if (myToken !== loadToken) return
     special.value = data
     content.value = data.content || content.value
     tasks.value = data.tasks || []
@@ -402,10 +506,12 @@ async function load() {
     parseFormation()
     parseExtraGrids()
     await loadPanorama()
+    if (myToken !== loadToken) return
+    await refreshLock()
   } catch (e) {
-    ElMessage.error(e.response?.data?.detail || '加载失败')
+    if (myToken === loadToken) ElMessage.error(e.response?.data?.detail || '加载失败')
   } finally {
-    loading.value = false
+    if (myToken === loadToken) loading.value = false
   }
 }
 
@@ -440,12 +546,21 @@ function normCell(c) {
   }
   return { text: String(c ?? ''), align: 'left', color: '' }
 }
+const DEFAULT_COL_W = 130
 function normGrid(g) {
+  const headers = Array.isArray(g.headers) ? g.headers.map(normHeader) : []
+  const rows = Array.isArray(g.rows) ? g.rows.map(r => (Array.isArray(r) ? r.map(normCell) : [])) : []
+  const bodyCols = headers.reduce((n, h) => n + (Number(h.colspan) || 1), 0)
+  // 列宽随表持久化；旧数据无 colWidths 时按默认值补齐到正文列数
+  let widths = Array.isArray(g.colWidths) ? g.colWidths.map(w => Number(w) || DEFAULT_COL_W) : []
+  if (widths.length < bodyCols) widths = widths.concat(Array(bodyCols - widths.length).fill(DEFAULT_COL_W))
+  else if (widths.length > bodyCols) widths = widths.slice(0, bodyCols)
   return {
     _uid: `g${++_gridUid}`,
     title: String(g.title || ''),
-    headers: Array.isArray(g.headers) ? g.headers.map(normHeader) : [],
-    rows: Array.isArray(g.rows) ? g.rows.map(r => (Array.isArray(r) ? r.map(normCell) : [])) : [],
+    headers,
+    rows,
+    colWidths: widths,
   }
 }
 
@@ -732,8 +847,29 @@ async function onDownloadEml() {
   }
 }
 
-watch(() => route.params.id, load)
-onMounted(load)
+// 切换到另一专项前，先释放当前专项的锁，再加载新数据
+watch(() => route.params.id, async () => {
+  await releaseLockSafe()
+  await load()
+})
+
+function onBeforeUnload() {
+  // 关闭/刷新页签时尽力释放锁；若未及发出，由服务端 TTL 兜底
+  if (editMode.value && lock.value.mine && special.value) {
+    specialApi.releaseLock(special.value.id).catch(() => {})
+  }
+}
+
+onMounted(async () => {
+  await load()
+  startPoll()
+  window.addEventListener('beforeunload', onBeforeUnload)
+})
+onBeforeUnmount(() => {
+  window.removeEventListener('beforeunload', onBeforeUnload)
+  stopPoll()
+  releaseLockSafe()
+})
 </script>
 
 <style scoped>
@@ -748,6 +884,8 @@ onMounted(load)
   border-radius: 4px;
   overflow: hidden;
 }
+.lock-banner :deep(.el-alert) { border-radius: 0; }
+.lock-banner { border-radius: 0; }
 .sec-title-main {
   background: #fff;
   text-align: center;

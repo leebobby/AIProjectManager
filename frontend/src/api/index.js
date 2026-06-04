@@ -25,6 +25,8 @@ http.interceptors.response.use(
       }
     } else if (error.response?.status === 409) {
       ElMessage.warning(error.response.data?.detail || '数据已被他人修改，请刷新后重试')
+    } else if (error.response?.status === 423) {
+      ElMessage.warning(error.response.data?.detail || '该内容正被他人编辑，暂时无法保存')
     }
     return Promise.reject(error)
   }
@@ -111,6 +113,10 @@ export const specialApi = {
   createRisk: (id, data) => http.post(`/specials/${id}/risks`, data),
   updateRisk: (item_id, data) => http.put(`/specials/risks/${item_id}`, data),
   removeRisk: (item_id) => http.delete(`/specials/risks/${item_id}`),
+  // 编辑锁：getLock 查询状态；acquireLock 取锁/心跳（force=管理员强制接管）；releaseLock 释放
+  getLock: (id) => http.get(`/specials/${id}/lock`),
+  acquireLock: (id, force = false) => http.post(`/specials/${id}/lock`, null, { params: { force } }),
+  releaseLock: (id) => http.delete(`/specials/${id}/lock`),
   reportDraft: (id) => http.get(`/specials/${id}/report-draft`),
   reportEml: (id, payload) => http.post(`/specials/${id}/report.eml`, payload, { responseType: 'blob' }),
   exportXlsx: (id) => http.get(`/specials/${id}/export.xlsx`, { responseType: 'blob' }),

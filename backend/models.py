@@ -703,6 +703,24 @@ class SpecialRisk(Base):
     special = relationship("Special", back_populates="risks")
 
 
+class SpecialEditLock(Base):
+    """专项详情页「编辑锁」：同一专项同一时刻只允许一个人处于编辑模式。
+
+    - special_id 唯一 → 一项专项至多一把锁。
+    - 锁靠前端心跳续期；超过 TTL 未续期视为失效，可被他人接管（服务端按时间判断，不主动清理）。
+    - 管理员可强制接管。
+    """
+    __tablename__ = "special_edit_locks"
+
+    special_id = Column(Integer, ForeignKey("specials.id", ondelete="CASCADE"),
+                        primary_key=True)
+    user_id = Column(Integer, ForeignKey("users.id", ondelete="CASCADE"),
+                     nullable=False, index=True)
+    user_name = Column(String(64), default="", comment="持锁人展示名快照")
+    acquired_at = Column(DateTime, default=datetime.utcnow, comment="本次取得锁的时间")
+    heartbeat_at = Column(DateTime, default=datetime.utcnow, index=True, comment="最后一次心跳")
+
+
 class Notification(Base):
     """站内通知。
 

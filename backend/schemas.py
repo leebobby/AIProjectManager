@@ -1001,6 +1001,22 @@ class SpecialDetailOut(SpecialOut):
     risks: List[SpecialItemOut] = []
 
 
+class SpecialLockOut(BaseModel):
+    """编辑锁状态。
+
+    - locked: 当前是否有人正持有（未过期）的锁
+    - mine: 该锁是否归当前请求用户
+    - by / by_user_id / since: 持锁人信息
+    - ttl: 锁的存活秒数（前端据此安排心跳与过期判断）
+    """
+    locked: bool = False
+    mine: bool = False
+    by: Optional[str] = None
+    by_user_id: Optional[int] = None
+    since: Optional[datetime] = None
+    ttl: int = 180
+
+
 class FormationMemberBase(BaseModel):
     name: str
     emp_no: Optional[str] = ""

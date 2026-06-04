@@ -34,6 +34,9 @@
     </div>
 
     <table class="rg-table">
+      <colgroup>
+        <col v-for="(w, i) in displayWidths" :key="'col' + i" :style="{ width: w + 'px' }" />
+      </colgroup>
       <thead>
         <tr>
           <th
@@ -60,6 +63,14 @@
               title="删除该列组"
               @click.stop="removeHeader(hi)"
             >×</button>
+            <!-- 拖动改列宽（作用于该列组最右侧的物理列） -->
+            <span
+              v-if="editable"
+              class="rg-resizer"
+              title="拖动调整列宽"
+              @mousedown.stop.prevent="startResize($event, hi)"
+              @click.stop
+            />
           </th>
         </tr>
       </thead>
@@ -110,7 +121,9 @@
  *   }
  * 兼容旧格式：headers 为 string[]、rows 为 string[][]（由父级 normalize）。
  */
-import { computed, ref } from 'vue'
+import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
+
+const DEFAULT_W = 130
 
 const props = defineProps({
   modelValue: { type: Object, required: true },
@@ -149,6 +162,46 @@ function isSel(type, r, c = 0) {
 function bodyColCount() {
   return model.value.headers.reduce((n, h) => n + (h.colspan || 1), 0)
 }
+
+// —— 列宽：colgroup 渲染 + 拖动 ——
+// 始终返回长度 = 正文列数的宽度数组（旧数据缺省按 DEFAULT_W 补齐）
+const displayWidths = computed(() => {
+  const n = bodyColCount()
+  const w = model.value.colWidths || []
+  return Array.from({ length: n }, (_, i) => Number(w[i]) || DEFAULT_W)
+})
+function ensureWidths() {
+  if (!Array.isArray(model.value.colWidths)) model.value.colWidths = []
+  const w = model.value.colWidths
+  const n = bodyColCount()
+  while (w.length < n) w.push(DEFAULT_W)
+  if (w.length > n) w.length = n
+}
+function lastPhysCol(hi) {
+  return groupOffset(hi) + (model.value.headers[hi].colspan || 1) - 1
+}
+let resizing = null
+function startResize(e, hi) {
+  ensureWidths()
+  const col = lastPhysCol(hi)
+  resizing = { col, startX: e.clientX, startW: model.value.colWidths[col] || DEFAULT_W }
+  window.addEventListener('mousemove', onResize)
+  window.addEventListener('mouseup', stopResize)
+}
+function onResize(e) {
+  if (!resizing) return
+  model.value.colWidths[resizing.col] = Math.max(48, resizing.startW + (e.clientX - resizing.startX))
+}
+function stopResize() {
+  window.removeEventListener('mousemove', onResize)
+  window.removeEventListener('mouseup', stopResize)
+  if (resizing) {
+    resizing = null
+    emitUpdate()
+  }
+}
+onMounted(ensureWidths)
+onBeforeUnmount(stopResize)
 
 function setAlign(align) {
   const s = sel.value
@@ -250,6 +303,8 @@ function insertCol(side) {
   }
   hs.splice(headerAt, 0, { text: '新列', colspan: 1, align: 'center' })
   model.value.rows.forEach(r => r.splice(bodyAt, 0, newCell()))
+  ensureWidths()
+  model.value.colWidths.splice(bodyAt, 0, DEFAULT_W)
   emitUpdate()
 }
 function deleteSelCol() {
@@ -263,13 +318,15 @@ function removeHeader(hi) {
   const span = hs[hi].colspan || 1
   hs.splice(hi, 1)
   model.value.rows.forEach(r => r.splice(offset, span))
+  ensureWidths()
+  model.value.colWidths.splice(offset, span)
   sel.value = null
   emitUpdate()
 }
 </script>
 
 <style scoped>
-.rich-grid { font-family: '微软雅黑', 'Microsoft YaHei', sans-serif; }
+.rich-grid { font-family: '微软雅黑', 'Microsoft YaHei', sans-serif; overflow-x: auto; }
 .rg-toolbar {
   display: flex;
   align-items: center;
@@ -292,17 +349,21 @@ function removeHeader(hi) {
 }
 .rg-table {
   border-collapse: collapse;
-  width: 100%;
+  /* 固定布局：列宽由 colgroup 控制，可拖动 */
+  table-layout: fixed;
+  width: max-content;
+  min-width: 100%;
 }
 .rg-table th, .rg-table td {
   border: 1px solid #dcdfe6;
   padding: 4px 6px;
-  min-width: 90px;
   height: 32px;
   position: relative;
   vertical-align: middle;
+  overflow: hidden;
 }
-.rg-table th { background: #f5f7fa; font-weight: 600; }
+.rg-table th { background: #f5f7fa; font-weight: 700; }
+.rg-table th .rg-input, .rg-table th > span { font-weight: 700; }
 .rg-table th.selected, .rg-table td.selected {
   outline: 2px solid #C7000B;
   outline-offset: -2px;
@@ -316,7 +377,7 @@ function removeHeader(hi) {
   font-family: inherit;
   color: inherit;
 }
-.rg-input.bold { font-weight: 600; }
+.rg-input.bold { font-weight: 700; }
 .rg-del {
   position: absolute;
   border: none;
@@ -326,7 +387,18 @@ function removeHeader(hi) {
   font-size: 14px;
   line-height: 1;
 }
-.rg-del.col { right: 2px; top: 2px; }
+.rg-del.col { right: 10px; top: 2px; }
 .rg-del.row { right: -22px; top: 50%; transform: translateY(-50%); }
 .rg-del:hover { color: #c45656; }
+.rg-resizer {
+  position: absolute;
+  top: 0;
+  right: -3px;
+  width: 7px;
+  height: 100%;
+  cursor: col-resize;
+  user-select: none;
+  z-index: 3;
+}
+.rg-resizer:hover { background: rgba(199, 0, 11, 0.25); }
 </style>

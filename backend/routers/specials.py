@@ -9,7 +9,7 @@ import json
 import pathlib
 import re
 import uuid
-from datetime import datetime
+from datetime import datetime, timedelta
 from email.message import EmailMessage
 from html.parser import HTMLParser
 from typing import List
@@ -66,6 +66,121 @@ def _ensure_content(db: Session, special: models.Special) -> models.SpecialConte
     db.commit()
     db.refresh(c)
     return c
+
+
+# ─── 编辑锁 ────────────────────────────────────────────────────────
+# 同一专项同一时刻只允许一人处于编辑模式：前端进入编辑时取锁，
+# 每隔一段时间心跳续期；超过 TTL 未续期即视为失效（可被他人/管理员接管）。
+
+LOCK_TTL_SECONDS = 180
+
+
+def _is_admin(user: models.User) -> bool:
+    return getattr(user, "role", "") == "admin"
+
+
+def _user_display(user: models.User) -> str:
+    return (getattr(user, "full_name", "") or user.username or "").strip()
+
+
+def _active_lock(db: Session, sid: int):
+    """返回未过期的锁；过期或不存在返回 None（过期的旧行保留，按时间判定）。"""
+    lock = db.query(models.SpecialEditLock).filter(
+        models.SpecialEditLock.special_id == sid
+    ).first()
+    if not lock:
+        return None
+    if (datetime.utcnow() - (lock.heartbeat_at or lock.acquired_at)) > timedelta(seconds=LOCK_TTL_SECONDS):
+        return None
+    return lock
+
+
+def _lock_out(lock, current_user: models.User) -> schemas.SpecialLockOut:
+    if not lock:
+        return schemas.SpecialLockOut(locked=False, mine=False, ttl=LOCK_TTL_SECONDS)
+    return schemas.SpecialLockOut(
+        locked=True, mine=(lock.user_id == current_user.id),
+        by=lock.user_name, by_user_id=lock.user_id,
+        since=lock.acquired_at, ttl=LOCK_TTL_SECONDS,
+    )
+
+
+def _require_not_locked_by_other(db: Session, sid: int, user: models.User) -> None:
+    """写操作前置校验：若有他人持新鲜锁，拒绝（423）。无锁则放行（向后兼容）。"""
+    lock = _active_lock(db, sid)
+    if lock and lock.user_id != user.id:
+        raise HTTPException(423, f"{lock.user_name or '他人'}正在编辑该{_kind_label_by_sid(db, sid)}，暂时无法保存，请稍后再试")
+
+
+def _kind_label_by_sid(db: Session, sid: int) -> str:
+    s = db.query(models.Special.kind).filter(models.Special.id == sid).first()
+    return _kind_label(s[0] if s else "special")
+
+
+@router.get("/{sid}/lock", response_model=schemas.SpecialLockOut)
+def get_lock(sid: int, db: Session = Depends(get_db),
+             current_user: models.User = Depends(get_current_user)):
+    _get_or_404(db, sid)
+    return _lock_out(_active_lock(db, sid), current_user)
+
+
+@router.post("/{sid}/lock", response_model=schemas.SpecialLockOut)
+def acquire_lock(
+    sid: int,
+    request: Request,
+    force: bool = False,
+    db: Session = Depends(get_db),
+    current_user: models.User = Depends(get_current_user),
+):
+    """取锁 / 续期（心跳）。
+    - 无锁或锁已过期：直接占有；
+    - 自己持锁：刷新心跳；
+    - 他人持新鲜锁：默认不授予（返回 mine=False 的当前持锁人）；管理员可 force=true 强制接管。
+    """
+    _get_or_404(db, sid)
+    lock = db.query(models.SpecialEditLock).filter(
+        models.SpecialEditLock.special_id == sid
+    ).first()
+    active = _active_lock(db, sid)
+    now = datetime.utcnow()
+
+    if active and active.user_id != current_user.id:
+        if not (force and _is_admin(current_user)):
+            return _lock_out(active, current_user)  # 未授予：返回当前持锁人
+        # 管理员强制接管
+        log_op(db, action="强制接管编辑锁", target=_kind_label_by_sid(db, sid), target_id=sid,
+               detail=f"原持锁人={active.user_name}", user=current_user, request=request)
+
+    name = _user_display(current_user)
+    if lock is None:
+        lock = models.SpecialEditLock(
+            special_id=sid, user_id=current_user.id, user_name=name,
+            acquired_at=now, heartbeat_at=now,
+        )
+        db.add(lock)
+    else:
+        if lock.user_id != current_user.id:
+            lock.user_id = current_user.id
+            lock.user_name = name
+            lock.acquired_at = now
+        lock.heartbeat_at = now
+    db.commit()
+    db.refresh(lock)
+    return _lock_out(lock, current_user)
+
+
+@router.delete("/{sid}/lock", response_model=schemas.SpecialLockOut)
+def release_lock(sid: int, db: Session = Depends(get_db),
+                 current_user: models.User = Depends(get_current_user)):
+    """释放锁：仅持锁人本人或管理员可释放。"""
+    _get_or_404(db, sid)
+    lock = db.query(models.SpecialEditLock).filter(
+        models.SpecialEditLock.special_id == sid
+    ).first()
+    if lock and (lock.user_id == current_user.id or _is_admin(current_user)):
+        db.delete(lock)
+        db.commit()
+    return schemas.SpecialLockOut(locked=False, mine=False, ttl=LOCK_TTL_SECONDS)
 
 
 # ─── Specials list ─────────────────────────────────────────────────
@@ -174,6 +289,7 @@ def update_content(
     current_user: models.User = Depends(get_current_user),
 ):
     special = _get_or_404(db, sid)
+    _require_not_locked_by_other(db, sid, current_user)
     content = _ensure_content(db, special)
     if content.version != payload.version:
         raise HTTPException(409, "数据已被他人修改，请刷新后重试")
@@ -211,6 +327,7 @@ def upload_panorama(
     if not (is_image or ext in _PANORAMA_OK_EXT):
         raise HTTPException(400, "仅支持图片或 SVG 文件")
     special = _get_or_404(db, sid)
+    _require_not_locked_by_other(db, sid, current_user)
     content = _ensure_content(db, special)
 
     # 写入新文件
@@ -299,6 +416,7 @@ def _create_item(
     request: Request,
 ):
     special = _get_or_404(db, sid)
+    _require_not_locked_by_other(db, sid, user)
     Model = _item_model(kind)
     data = payload.model_dump(exclude_unset=True)
     if not data.get("seq"):
@@ -334,6 +452,7 @@ def _update_item(
     item = db.query(Model).filter(Model.id == item_id).first()
     if not item:
         raise HTTPException(404, "条目不存在")
+    _require_not_locked_by_other(db, item.special_id, user)
     data = payload.model_dump(exclude_unset=True)
     fill_user_fk(db, data, "owner", "owner_user_id")
     for k, v in data.items():
@@ -365,6 +484,7 @@ def _delete_item(
     item = db.query(Model).filter(Model.id == item_id).first()
     if not item:
         raise HTTPException(404, "条目不存在")
+    _require_not_locked_by_other(db, item.special_id, user)
     snapshot = f"special_id={item.special_id} content={(item.content or '')[:60]}"
     db.delete(item)
     db.commit()

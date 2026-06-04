@@ -114,7 +114,9 @@
       </el-header>
       <NotificationMarquee v-if="auth.isLoggedIn.value" />
       <el-main>
-        <router-view />
+        <!-- 按 fullPath 作 key：参数变化（如 /specials/1→/specials/2）也重建组件实例，
+             杜绝复用同一实例导致的迟到异步响应写错专项（内容串台） -->
+        <router-view :key="route.fullPath" />
       </el-main>
     </el-container>
   </el-container>

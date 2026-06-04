@@ -11,10 +11,12 @@
 import io
 import json
 import math
+import os
 import re
 from datetime import datetime
 
 from openpyxl import Workbook
+from openpyxl.drawing.image import Image as XLImage
 from openpyxl.styles import Alignment, Border, Font, PatternFill, Side
 from openpyxl.utils import get_column_letter
 
@@ -73,6 +75,156 @@ def _cell_lines(text: str, capacity: int) -> int:
     for seg in str(text or "").split("\n"):
         lines += max(1, math.ceil(_disp_w(seg) / cap))
     return max(1, lines)
+
+
+def _hex_to_rgb6(color: str, default: str = "262626") -> str:
+    """'#C7000B' / 'C7000B' → 'C7000B'；空 / 非法 → default。"""
+    s = (color or "").strip().lstrip("#")
+    if len(s) == 6 and all(c in "0123456789abcdefABCDEF" for c in s):
+        return s.upper()
+    return default
+
+
+# ─── 里程碑「图片」渲染（PIL）─────────────────────────────────────
+# 里程碑导出为时间轴图片而非表格。字体在 Windows / Linux 上自动发现，
+# 找不到中文字体时回退默认字体（中文可能显示为方块，需在服务器安装中文字体）。
+
+_MS_DOT_RGB = {
+    "planning": (192, 196, 204), "in_progress": (64, 158, 255),
+    "done": (103, 194, 58), "delayed": (245, 108, 108),
+}
+_MS_LEGEND = [("planning", "未开始"), ("in_progress", "进行中"),
+              ("done", "已完成"), ("delayed", "已延期")]
+
+_FONT_CANDIDATES_REGULAR = [
+    "C:/Windows/Fonts/msyh.ttc", "C:/Windows/Fonts/msyh.ttf",
+    "C:/Windows/Fonts/simhei.ttf", "C:/Windows/Fonts/simsun.ttc",
+    "/usr/share/fonts/opentype/noto/NotoSansCJK-Regular.ttc",
+    "/usr/share/fonts/opentype/noto/NotoSansCJKsc-Regular.otf",
+    "/usr/share/fonts/truetype/wqy/wqy-microhei.ttc",
+    "/usr/share/fonts/truetype/wqy/wqy-zenhei.ttc",
+    "/usr/share/fonts/truetype/droid/DroidSansFallbackFull.ttf",
+    "/System/Library/Fonts/PingFang.ttc",
+]
+_FONT_CANDIDATES_BOLD = [
+    "C:/Windows/Fonts/msyhbd.ttc", "C:/Windows/Fonts/simhei.ttf",
+    "/usr/share/fonts/opentype/noto/NotoSansCJK-Bold.ttc",
+    "/usr/share/fonts/opentype/noto/NotoSansCJKsc-Bold.otf",
+    "/usr/share/fonts/truetype/wqy/wqy-microhei.ttc",
+]
+
+
+def _load_pil_font(size: int, bold: bool = False):
+    from PIL import ImageFont
+    cands = (_FONT_CANDIDATES_BOLD if bold else []) + _FONT_CANDIDATES_REGULAR
+    for path in cands:
+        if os.path.exists(path):
+            try:
+                return ImageFont.truetype(path, size)
+            except OSError:
+                continue
+    return ImageFont.load_default()
+
+
+def _text_wh(draw, text: str, font):
+    box = draw.textbbox((0, 0), text, font=font)
+    return box[2] - box[0], box[3] - box[1]
+
+
+def _wrap_by_width(draw, text: str, font, max_w: int):
+    lines, cur = [], ""
+    for ch in str(text or ""):
+        if ch == "\n":
+            lines.append(cur)
+            cur = ""
+            continue
+        w, _ = _text_wh(draw, cur + ch, font)
+        if w > max_w and cur:
+            lines.append(cur)
+            cur = ch
+        else:
+            cur += ch
+    if cur:
+        lines.append(cur)
+    return lines or [""]
+
+
+def _render_milestone_image(milestones):
+    """把里程碑画成横向时间轴 PNG，返回 PIL.Image；PIL 不可用/出错时返回 None（调用方退回表格）。"""
+    if not milestones:
+        return None
+    try:
+        from PIL import Image, ImageDraw
+
+        n = len(milestones)
+        margin = 90
+        spacing = 175
+        width = max(760, margin * 2 + (n - 1) * spacing)
+        height = 250
+        baseline_y = 78
+        node_w = min(spacing - 16, 160)
+
+        img = Image.new("RGB", (width, height), "white")
+        d = ImageDraw.Draw(img)
+        f_name = _load_pil_font(16, bold=True)
+        f_date = _load_pil_font(13)
+        f_legend = _load_pil_font(13)
+
+        # 轴线
+        d.line([(margin, baseline_y), (width - margin, baseline_y)], fill=(220, 223, 230), width=3)
+
+        def node_x(i):
+            if n == 1:
+                return width // 2
+            return margin + i * spacing
+
+        for i, m in enumerate(milestones):
+            x = node_x(i)
+            status = m.get("status", "planning")
+            rgb = _MS_DOT_RGB.get(status, _MS_DOT_RGB["planning"])
+            # 名称（轴线上方，自动换行，加粗）
+            name_lines = _wrap_by_width(d, m.get("name", ""), f_name, node_w)
+            ny = baseline_y - 18
+            for ln in reversed(name_lines):
+                w, h = _text_wh(d, ln, f_name)
+                d.text((x - w / 2, ny - h), ln, font=f_name, fill=(48, 49, 51))
+                ny -= h + 3
+            # 节点圆点（外圈白 + 彩色实心）
+            r = 9
+            d.ellipse([x - r - 2, baseline_y - r - 2, x + r + 2, baseline_y + r + 2], fill=(255, 255, 255))
+            d.ellipse([x - r, baseline_y - r, x + r, baseline_y + r], fill=rgb)
+            # 日期（轴线下方）
+            date = m.get("date", "") or "未定"
+            w, h = _text_wh(d, date, f_date)
+            d.text((x - w / 2, baseline_y + 16), date, font=f_date, fill=(144, 147, 153))
+
+        # 图例
+        lx = margin
+        ly = height - 34
+        for status, label in _MS_LEGEND:
+            rgb = _MS_DOT_RGB[status]
+            d.ellipse([lx, ly + 3, lx + 11, ly + 14], fill=rgb)
+            d.text((lx + 16, ly), label, font=f_legend, fill=(96, 98, 102))
+            tw, _ = _text_wh(d, label, f_legend)
+            lx += 16 + tw + 26
+
+        return img
+    except Exception:
+        return None
+
+
+# ─── 附加自由表格（RichGrid）→ 独立工作表 ──────────────────────────
+
+def _safe_sheet_name(name: str, used: set) -> str:
+    base = re.sub(r"[\[\]\:\*\?\/\\]", " ", str(name or "")).strip() or "附加表格"
+    base = base[:28]
+    cand = base
+    k = 2
+    while cand in used or not cand:
+        cand = f"{base[:25]}-{k}"
+        k += 1
+    used.add(cand)
+    return cand
 
 
 def build_special_xlsx(special) -> io.BytesIO:
@@ -202,13 +354,25 @@ def build_special_xlsx(special) -> io.BytesIO:
         except (ValueError, TypeError):
             milestones = []
     section(f"四、{label}计划（里程碑）")
+    kept_images = []  # 持有 BytesIO 引用直到 wb.save，避免被 GC
     if milestones:
-        rows = [[m.get("name", ""), m.get("date", ""),
-                 _MS_STATUS_LABEL.get(m.get("status", "planning"), m.get("status", ""))]
-                for m in milestones]
-        # 里程碑→A:C，日期→D，状态→E:F
-        table([(1, 3), (4, 4), (5, 6)], ["里程碑", "日期", "状态"], rows,
-              status_col=2, center_cols={1, 2})
+        ms_img = _render_milestone_image(milestones)
+        if ms_img is not None:
+            r = state["row"]
+            bio = io.BytesIO()
+            ms_img.save(bio, format="PNG")
+            bio.seek(0)
+            ws.add_image(XLImage(bio), f"A{r}")
+            kept_images.append(bio)
+            # 预留行高（默认行高约 18px），让后续章节不与图片重叠
+            state["row"] += max(8, math.ceil(ms_img.height / 18) + 2)
+        else:
+            # PIL 不可用：退回表格形式
+            rows = [[m.get("name", ""), m.get("date", ""),
+                     _MS_STATUS_LABEL.get(m.get("status", "planning"), m.get("status", ""))]
+                    for m in milestones]
+            table([(1, 3), (4, 4), (5, 6)], ["里程碑", "日期", "状态"], rows,
+                  status_col=2, center_cols={1, 2})
     else:
         narrative("—")
     gap()
@@ -245,7 +409,116 @@ def build_special_xlsx(special) -> io.BytesIO:
     else:
         narrative("—")
 
+    # ===== 附加自由表格（事务下方新增的表格）：每个表 → 独立工作表 =====
+    extra_grids = []
+    if content and content.extra_grids_json:
+        try:
+            extra_grids = json.loads(content.extra_grids_json) or []
+        except (ValueError, TypeError):
+            extra_grids = []
+    used_names = {ws.title}
+    for gi, grid in enumerate(extra_grids):
+        if isinstance(grid, dict):
+            _render_extra_grid_sheet(wb, grid, gi, used_names)
+
     buf = io.BytesIO()
     wb.save(buf)
     buf.seek(0)
     return buf
+
+
+def _render_extra_grid_sheet(wb, grid, idx, used_names):
+    """把一个 RichGrid（{title, headers, rows, colWidths}）渲染成独立工作表。
+
+    - 表头按 colspan 合并、**加粗**、华为红底白字；
+    - 正文单元格保留对齐（left/center）与字体颜色；
+    - 列宽来自 colWidths（px → Excel 字符宽，约 px/7）。
+    兼容旧格式：headers 为 str[]、rows 为 str[][]。
+    """
+    raw_headers = grid.get("headers") or []
+    rows = grid.get("rows") or []
+    title = str(grid.get("title") or f"附加表格{idx + 1}")
+
+    hdrs = []
+    for h in raw_headers:
+        if isinstance(h, dict):
+            hdrs.append({
+                "text": str(h.get("text", "")),
+                "colspan": max(1, int(h.get("colspan", 1) or 1)),
+                "align": h.get("align") or "center",
+            })
+        else:
+            hdrs.append({"text": str(h), "colspan": 1, "align": "center"})
+
+    body_cols = sum(h["colspan"] for h in hdrs)
+    if body_cols <= 0:
+        body_cols = max((len(r) for r in rows if isinstance(r, list)), default=1)
+        hdrs = [{"text": f"列{i + 1}", "colspan": 1, "align": "center"} for i in range(body_cols)]
+
+    ws = wb.create_sheet(title=_safe_sheet_name(title, used_names))
+    ws.sheet_view.showGridLines = False
+
+    col_widths = grid.get("colWidths") or []
+
+    def _px(i, default=130):
+        if i < len(col_widths):
+            try:
+                return float(col_widths[i])
+            except (TypeError, ValueError):
+                return default
+        return default
+
+    for c in range(1, body_cols + 1):
+        ws.column_dimensions[get_column_letter(c)].width = max(6, round(_px(c - 1) / 7.0, 1))
+
+    r = 1
+    # 标题条
+    ws.merge_cells(start_row=r, start_column=1, end_row=r, end_column=body_cols)
+    tc = ws.cell(row=r, column=1, value=title)
+    tc.font = Font(name=_FONT, bold=True, size=13, color="FFFFFF")
+    tc.alignment = Alignment(horizontal="left", vertical="center")
+    for cc in range(1, body_cols + 1):
+        ws.cell(row=r, column=cc).fill = PatternFill("solid", fgColor=_BRAND_DARK)
+    ws.row_dimensions[r].height = 24
+    r += 1
+
+    # 表头（按 colspan 合并、加粗）
+    col = 1
+    for h in hdrs:
+        c1, c2 = col, col + h["colspan"] - 1
+        if c2 > c1:
+            ws.merge_cells(start_row=r, start_column=c1, end_row=r, end_column=c2)
+        for cc in range(c1, c2 + 1):
+            cell = ws.cell(row=r, column=cc, value=h["text"] if cc == c1 else None)
+            cell.fill = PatternFill("solid", fgColor=_BRAND)
+            cell.font = Font(name=_FONT, bold=True, color="FFFFFF", size=10)
+            cell.alignment = Alignment(horizontal=h["align"], vertical="center", wrap_text=True)
+            cell.border = _BORDER
+        col = c2 + 1
+    ws.row_dimensions[r].height = 20
+    r += 1
+
+    # 数据行
+    for i, row in enumerate(rows):
+        cells = row if isinstance(row, list) else []
+        zebra = (i % 2 == 1)
+        max_lines = 1
+        for c in range(1, body_cols + 1):
+            cd = cells[c - 1] if c - 1 < len(cells) else None
+            if isinstance(cd, dict):
+                text = str(cd.get("text", ""))
+                align = cd.get("align") or "left"
+                color = _hex_to_rgb6(cd.get("color", ""))
+            else:
+                text = "" if cd is None else str(cd)
+                align, color = "left", "262626"
+            cap = max(4, int(_px(c - 1) / 7))
+            max_lines = max(max_lines, _cell_lines(text, cap))
+            cell = ws.cell(row=r, column=c, value=text)
+            cell.font = Font(name=_FONT, size=10, color=color)
+            cell.alignment = Alignment(horizontal=align, vertical="center", wrap_text=True)
+            cell.border = _BORDER
+            if zebra:
+                cell.fill = PatternFill("solid", fgColor=_ZEBRA)
+        ws.row_dimensions[r].height = max(18, min(180, max_lines * 15 + 3))
+        r += 1
