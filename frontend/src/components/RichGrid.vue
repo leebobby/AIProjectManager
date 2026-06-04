@@ -21,8 +21,16 @@
       <el-button size="small" :disabled="!isHeaderSel" @click="mergeHeader">合并表头→</el-button>
       <el-button size="small" :disabled="!canSplit" @click="splitHeader">拆分表头</el-button>
       <div class="spacer" />
-      <el-button size="small" @click="addCol">+列</el-button>
-      <el-button size="small" @click="addRow">+行</el-button>
+      <el-button-group>
+        <el-button size="small" @click="insertRow('above')">↑插入行</el-button>
+        <el-button size="small" @click="insertRow('below')">↓插入行</el-button>
+        <el-button size="small" type="danger" plain :disabled="!isBodySel" @click="deleteSelRow">删除行</el-button>
+      </el-button-group>
+      <el-button-group>
+        <el-button size="small" @click="insertCol('left')">←插入列</el-button>
+        <el-button size="small" @click="insertCol('right')">→插入列</el-button>
+        <el-button size="small" type="danger" plain :disabled="!sel" @click="deleteSelCol">删除列</el-button>
+      </el-button-group>
     </div>
 
     <table class="rg-table">
@@ -178,32 +186,84 @@ function splitHeader() {
   emitUpdate()
 }
 
-function addCol() {
-  model.value.headers.push({ text: `列${model.value.headers.length + 1}`, colspan: 1, align: 'center' })
-  model.value.rows.forEach(r => r.push({ text: '', align: 'left', color: '' }))
-  emitUpdate()
+function newCell() {
+  return { text: '', align: 'left', color: '' }
 }
-function removeHeader(hi) {
+// 选中单元格所属的表头组下标（正文列 → 覆盖它的表头组）
+function selGroupIndex() {
+  const s = sel.value
+  if (!s) return -1
+  if (s.type === 'header') return s.c
+  let acc = 0
   const hs = model.value.headers
-  if (hs.length <= 1) return
-  // 计算该表头组覆盖的正文列起始偏移
+  for (let i = 0; i < hs.length; i++) {
+    const span = hs[i].colspan || 1
+    if (s.c < acc + span) return i
+    acc += span
+  }
+  return hs.length - 1
+}
+function groupOffset(gi) {
   let offset = 0
-  for (let i = 0; i < hi; i++) offset += hs[i].colspan || 1
-  const span = hs[hi].colspan || 1
-  hs.splice(hi, 1)
-  model.value.rows.forEach(r => r.splice(offset, span))
-  if (sel.value?.type === 'header') sel.value = null
+  for (let i = 0; i < gi; i++) offset += model.value.headers[i].colspan || 1
+  return offset
+}
+
+// —— 行：指定位置插入 / 删除 ——
+function insertRow(pos) {
+  const n = bodyColCount() || 1
+  const row = Array.from({ length: n }, newCell)
+  const s = sel.value
+  let at
+  if (s && s.type === 'body') at = pos === 'above' ? s.r : s.r + 1
+  else at = pos === 'above' ? 0 : model.value.rows.length
+  model.value.rows.splice(at, 0, row)
   emitUpdate()
 }
-function addRow() {
-  const n = bodyColCount()
-  model.value.rows.push(Array.from({ length: n }, () => ({ text: '', align: 'left', color: '' })))
+function deleteSelRow() {
+  const s = sel.value
+  if (!s || s.type !== 'body') return
+  if (model.value.rows.length <= 1) return
+  model.value.rows.splice(s.r, 1)
+  sel.value = null
   emitUpdate()
 }
 function removeRow(ri) {
   if (model.value.rows.length <= 1) return
   model.value.rows.splice(ri, 1)
   if (sel.value?.type === 'body') sel.value = null
+  emitUpdate()
+}
+
+// —— 列：指定位置插入 / 删除 ——
+function insertCol(side) {
+  const hs = model.value.headers
+  const gi = selGroupIndex()
+  let headerAt, bodyAt
+  if (gi < 0) {
+    headerAt = hs.length
+    bodyAt = bodyColCount()
+  } else {
+    const offset = groupOffset(gi)
+    headerAt = side === 'left' ? gi : gi + 1
+    bodyAt = side === 'left' ? offset : offset + (hs[gi].colspan || 1)
+  }
+  hs.splice(headerAt, 0, { text: '新列', colspan: 1, align: 'center' })
+  model.value.rows.forEach(r => r.splice(bodyAt, 0, newCell()))
+  emitUpdate()
+}
+function deleteSelCol() {
+  const gi = selGroupIndex()
+  if (gi >= 0) removeHeader(gi)
+}
+function removeHeader(hi) {
+  const hs = model.value.headers
+  if (hs.length <= 1) return
+  const offset = groupOffset(hi)
+  const span = hs[hi].colspan || 1
+  hs.splice(hi, 1)
+  model.value.rows.forEach(r => r.splice(offset, span))
+  sel.value = null
   emitUpdate()
 }
 </script>

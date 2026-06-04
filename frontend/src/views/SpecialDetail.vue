@@ -8,6 +8,14 @@
         <div class="owner-and-actions">
           <span class="owner">责任人：{{ special.owner || '-' }}</span>
           <SubscribeButton source-type="special" :source-id="Number(route.params.id)" />
+          <el-button
+            v-if="auth.isLoggedIn.value"
+            size="small"
+            :type="editMode ? 'success' : 'warning'"
+            :icon="editMode ? Check : EditPen"
+            :loading="extraSaving || formationSaving"
+            @click="toggleEdit"
+          >{{ editMode ? '完成编辑' : '进入编辑' }}</el-button>
           <el-button size="small" :icon="Download" @click="onExportXlsx">导出 Excel</el-button>
           <el-button size="small" type="primary" :icon="Message" @click="openReportDialog">发周报</el-button>
         </div>
@@ -97,8 +105,9 @@
         <div class="sec-head">
           <span>风险和问题</span>
           <el-button v-if="canEdit" size="small" :icon="Plus" @click="openItemDialog('risk', null)">新增风险</el-button>
+          <el-checkbox v-model="showClosedRisks" size="small" class="closed-toggle">显示已闭环</el-checkbox>
         </div>
-        <el-table :data="risks" border stripe size="small" style="width: 100%">
+        <el-table :data="visibleRisks" :row-class-name="rowClass" border stripe size="small" style="width: 100%">
           <el-table-column type="index" label="序号" width="70" align="center" />
           <el-table-column prop="content" label="问题内容" min-width="240">
             <template #default="{ row }">
@@ -134,8 +143,9 @@
           <span>{{ label }}事务</span>
           <el-button v-if="canEdit" size="small" :icon="Plus" @click="openItemDialog('task', null)">新增事务</el-button>
           <el-button v-if="canEdit" size="small" @click="addExtraGrid">+ 添加表格</el-button>
+          <el-checkbox v-model="showClosedTasks" size="small" class="closed-toggle">显示已闭环</el-checkbox>
         </div>
-        <el-table :data="tasks" border stripe size="small" style="width: 100%">
+        <el-table :data="visibleTasks" :row-class-name="rowClass" border stripe size="small" style="width: 100%">
           <el-table-column type="index" label="序号" width="70" align="center" />
           <el-table-column prop="content" label="事务内容" min-width="240">
             <template #default="{ row }">
@@ -303,7 +313,7 @@
 import { computed, onMounted, reactive, ref, watch } from 'vue'
 import { useRoute } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
-import { Download, Message, Plus } from '@element-plus/icons-vue'
+import { Check, Download, EditPen, Message, Plus } from '@element-plus/icons-vue'
 import http, { specialApi, downloadBlob } from '../api'
 import { auth } from '../store/auth'
 import { checkStorageOrWarn } from '../store/storage'
@@ -336,7 +346,35 @@ const panoramaSrc = ref('')
 
 const isAssault = computed(() => special.value?.kind === 'assault')
 const label = computed(() => (isAssault.value ? '攻关' : '专项'))
-const canEdit = computed(() => auth.isLoggedIn.value)
+
+// 编辑模式：登录用户点击「进入编辑」后才显示各类编辑控件，点「完成编辑」退出
+const editMode = ref(false)
+const canEdit = computed(() => auth.isLoggedIn.value && editMode.value)
+
+// 已闭环（closed）事项的显示开关
+const showClosedTasks = ref(true)
+const showClosedRisks = ref(true)
+const visibleTasks = computed(() =>
+  showClosedTasks.value ? tasks.value : tasks.value.filter(t => (t.status || 'open') !== 'closed'),
+)
+const visibleRisks = computed(() =>
+  showClosedRisks.value ? risks.value : risks.value.filter(r => (r.status || 'open') !== 'closed'),
+)
+function rowClass({ row }) {
+  return (row.status || 'open') === 'closed' ? 'closed-row' : ''
+}
+
+async function toggleEdit() {
+  if (!editMode.value) {
+    editMode.value = true
+    return
+  }
+  // 退出编辑前，把附加表格 / 阵型的未保存改动一并落库
+  if (extraGrids.value.length > 0) await saveExtraGrids(true)
+  if (formation.value.headers.length || formation.value.rows.length) await saveFormation(true)
+  editMode.value = false
+  ElMessage.success('已退出编辑模式')
+}
 
 const msDialog = reactive({ visible: false, editing: null, form: { name: '', date: '', status: 'planning' } })
 const itemDialog = reactive({ visible: false, editing: null, kind: 'task', form: defaultItem() })
@@ -581,7 +619,7 @@ function addFormationCol() {
   formation.value.headers.push(`列${formation.value.headers.length + 1}`)
   formation.value.rows.forEach(r => r.push(''))
 }
-async function saveFormation() {
+async function saveFormation(silent = false) {
   formationSaving.value = true
   try {
     const { data } = await specialApi.updateContent(special.value.id, {
@@ -590,7 +628,7 @@ async function saveFormation() {
     })
     content.value = data
     parseFormation()
-    ElMessage.success('阵型已保存')
+    if (silent !== true) ElMessage.success('阵型已保存')
   } catch (e) {
     ElMessage.error(e.response?.data?.detail || '保存失败')
   } finally {
@@ -612,7 +650,7 @@ function addExtraGrid() {
 function removeExtraGrid(gi) {
   extraGrids.value.splice(gi, 1)
 }
-async function saveExtraGrids() {
+async function saveExtraGrids(silent = false) {
   extraSaving.value = true
   // 去掉前端内部的 _uid 再持久化
   const payload = extraGrids.value.map(({ _uid, ...g }) => g)
@@ -623,7 +661,7 @@ async function saveExtraGrids() {
     })
     content.value = data
     parseExtraGrids()
-    ElMessage.success('附加表格已保存')
+    if (silent !== true) ElMessage.success('附加表格已保存')
   } catch (e) {
     ElMessage.error(e.response?.data?.detail || '保存失败')
   } finally {
@@ -741,6 +779,8 @@ onMounted(load)
   background: #f5f7fa;
   padding: 8px 16px;
   font-weight: 600;
+  /* #1 分段标题 18px */
+  font-size: 18px;
   color: #303133;
   display: flex;
   align-items: center;
@@ -748,9 +788,32 @@ onMounted(load)
 }
 .sec-head > :first-child { flex: 1; }
 .sec-head .muted-hint { color: #909399; font-weight: normal; font-size: 12px; }
+.sec-head .closed-toggle { font-weight: normal; }
 .sec-body {
   padding: 12px 16px;
   min-height: 60px;
+  /* #1 其他子项内容默认 16px */
+  font-size: 16px;
+}
+
+/* #1 #2 专项页表格：正文 16px、文字用近黑色（原默认偏灰） */
+.special-page :deep(.el-table) {
+  font-size: 16px;
+  color: #1f2329;
+}
+.special-page :deep(.el-table th .cell) {
+  font-size: 16px;
+  color: #1f2329;
+}
+.special-page :deep(.el-table .cell) {
+  color: #1f2329;
+}
+/* #3 已闭环行单独底色（盖过斑马纹） */
+.special-page :deep(.el-table .closed-row td.el-table__cell) {
+  background: #f0f9eb !important;
+}
+.special-page :deep(.el-table .closed-row .cell) {
+  color: #6b7d6b;
 }
 .panorama-body {
   text-align: center;
