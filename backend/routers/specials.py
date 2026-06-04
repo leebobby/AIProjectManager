@@ -446,7 +446,7 @@ _ALLOWED_TAGS = {"b", "strong", "i", "em", "u", "s", "span", "br", "div", "p", "
 _VOID_TAGS = {"br"}
 _ALLOWED_STYLE_PROPS = {
     "color", "background-color", "font-size", "font-weight",
-    "font-style", "text-decoration",
+    "font-style", "text-decoration", "font-family", "text-align",
 }
 _ALLOWED_FONT_ATTRS = {"color", "size"}
 
@@ -581,8 +581,13 @@ def _render_report_body(special: models.Special) -> str:
         parts.append("")
 
     if content and content.progress_summary:
-        parts.append("二、一句话进展 & 求助")
+        parts.append("二、整体进展")
         parts.append(_strip_html(content.progress_summary))
+        parts.append("")
+
+    if content and content.help_request:
+        parts.append("三、求助")
+        parts.append(_strip_html(content.help_request))
         parts.append("")
 
     # 里程碑
@@ -593,17 +598,30 @@ def _render_report_body(special: models.Special) -> str:
         except (ValueError, TypeError):
             milestones = []
     if milestones:
-        parts.append(f"三、{label}计划（里程碑）")
+        parts.append(f"四、{label}计划（里程碑）")
         for m in milestones:
             st = _MS_STATUS_LABEL.get(m.get("status", "planning"), m.get("status", ""))
             parts.append(f"  · {m.get('name','')}  {m.get('date','')}  [{st}]")
+        parts.append("")
+
+    # 风险（调整到事务之前）
+    risks = special.risks or []
+    if risks:
+        parts.append("五、风险和问题")
+        for i, r in enumerate(risks, 1):
+            parts.append(f"  {i}. {_strip_html(r.content)}")
+            if r.progress: parts.append(f"     当前进展：{_strip_html(r.progress)}")
+            meta = []
+            if r.owner: meta.append(f"责任人：{r.owner}")
+            if r.planned_close_date: meta.append(f"计划闭环：{r.planned_close_date}")
+            if meta: parts.append(f"     " + " / ".join(meta))
         parts.append("")
 
     # 事务
     open_tasks = [t for t in (special.tasks or []) if (t.status or "open") == "open"]
     closed_tasks = [t for t in (special.tasks or []) if (t.status or "open") == "closed"]
     if open_tasks or closed_tasks:
-        parts.append(f"四、{label}事务")
+        parts.append(f"六、{label}事务")
         if open_tasks:
             parts.append(f"  ◇ 进行中（{len(open_tasks)} 项）")
             for i, t in enumerate(open_tasks, 1):
@@ -617,19 +635,6 @@ def _render_report_body(special: models.Special) -> str:
             parts.append(f"  ◇ 本期已闭环（{len(closed_tasks)} 项）")
             for i, t in enumerate(closed_tasks, 1):
                 parts.append(f"    {i}. {_strip_html(t.content)}")
-        parts.append("")
-
-    # 风险
-    risks = special.risks or []
-    if risks:
-        parts.append("五、风险和问题")
-        for i, r in enumerate(risks, 1):
-            parts.append(f"  {i}. {_strip_html(r.content)}")
-            if r.progress: parts.append(f"     当前进展：{_strip_html(r.progress)}")
-            meta = []
-            if r.owner: meta.append(f"责任人：{r.owner}")
-            if r.planned_close_date: meta.append(f"计划闭环：{r.planned_close_date}")
-            if meta: parts.append(f"     " + " / ".join(meta))
         parts.append("")
 
     return "\n".join(parts).rstrip() + "\n"
@@ -714,8 +719,15 @@ def _render_report_html(special: models.Special) -> str:
     if content and content.progress_summary:
         sections.append(
             f'<h3 style="color:#4073BA;border-left:4px solid #4073BA;padding-left:8px;margin:18px 0 8px;">'
-            f'二、一句话进展 &amp; 求助</h3>'
+            f'二、整体进展</h3>'
             f'<div>{_rich_to_html(content.progress_summary)}</div>'
+        )
+
+    if content and content.help_request:
+        sections.append(
+            f'<h3 style="color:#4073BA;border-left:4px solid #4073BA;padding-left:8px;margin:18px 0 8px;">'
+            f'三、求助</h3>'
+            f'<div>{_rich_to_html(content.help_request)}</div>'
         )
 
     # 里程碑
@@ -733,8 +745,23 @@ def _render_report_html(special: models.Special) -> str:
         ]
         sections.append(
             f'<h3 style="color:#4073BA;border-left:4px solid #4073BA;padding-left:8px;margin:18px 0 8px;">'
-            f'三、{label}计划（里程碑）</h3>'
+            f'四、{label}计划（里程碑）</h3>'
             + _build_table(["里程碑", "日期", "状态"], rows)
+        )
+
+    # 风险（调整到事务之前）
+    risks = special.risks or []
+    if risks:
+        rows = [
+            [_rich_to_html(r.content), _rich_to_html(r.progress),
+             _e(r.owner or ""), _e(r.planned_close_date or ""),
+             "Open" if (r.status or "open") == "open" else "Closed"]
+            for r in risks
+        ]
+        sections.append(
+            f'<h3 style="color:#F56C6C;border-left:4px solid #F56C6C;padding-left:8px;margin:18px 0 8px;">'
+            f'五、风险和问题</h3>'
+            + _build_table_rich(["问题内容", "当前进展", "责任人", "计划闭环时间", "状态"], rows)
         )
 
     # 事务
@@ -743,7 +770,7 @@ def _render_report_html(special: models.Special) -> str:
     if open_tasks or closed_tasks:
         block = [
             f'<h3 style="color:#4073BA;border-left:4px solid #4073BA;padding-left:8px;margin:18px 0 8px;">'
-            f'四、{label}事务</h3>'
+            f'六、{label}事务</h3>'
         ]
         if open_tasks:
             rows = [
@@ -768,21 +795,6 @@ def _render_report_html(special: models.Special) -> str:
                 + _build_table_rich(["事务内容", "当前进展", "责任人", "计划闭环时间", "状态"], rows)
             )
         sections.append("".join(block))
-
-    # 风险
-    risks = special.risks or []
-    if risks:
-        rows = [
-            [_rich_to_html(r.content), _rich_to_html(r.progress),
-             _e(r.owner or ""), _e(r.planned_close_date or ""),
-             "Open" if (r.status or "open") == "open" else "Closed"]
-            for r in risks
-        ]
-        sections.append(
-            f'<h3 style="color:#F56C6C;border-left:4px solid #F56C6C;padding-left:8px;margin:18px 0 8px;">'
-            f'五、风险和问题</h3>'
-            + _build_table_rich(["问题内容", "当前进展", "责任人", "计划闭环时间", "状态"], rows)
-        )
 
     body_inner = "".join(sections) or '<div style="color:#909399;">（该报告无内容）</div>'
 

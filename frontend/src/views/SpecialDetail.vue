@@ -43,16 +43,30 @@
         </div>
       </div>
 
-      <!-- 3. 一句话进展&求助 -->
+      <!-- 3. 整体进展 -->
       <div class="sec">
-        <div class="sec-head">一句话进展&求助</div>
+        <div class="sec-head">整体进展</div>
         <div class="sec-body">
           <EditableText
             :value="content.progress_summary"
             :editable="canEdit"
             rich
-            placeholder="本周完成 xx 工作内容，主要风险为..."
+            placeholder="本周完成 xx 工作内容，整体进展..."
             @save="onSaveField('progress_summary', $event)"
+          />
+        </div>
+      </div>
+
+      <!-- 4. 求助 -->
+      <div class="sec">
+        <div class="sec-head">求助</div>
+        <div class="sec-body">
+          <EditableText
+            :value="content.help_request"
+            :editable="canEdit"
+            rich
+            placeholder="需要协调的资源 / 需上级支持的事项..."
+            @save="onSaveField('help_request', $event)"
           />
         </div>
       </div>
@@ -63,7 +77,7 @@
           <span>{{ label }}全景图</span>
           <span class="muted-hint">{{ isAssault ? '建议使用思维导图（支持 SVG）' : '建议使用逻辑框图（支持 SVG）' }}</span>
           <el-upload
-            v-if="auth.isAdmin.value"
+            v-if="canEdit"
             :auto-upload="false"
             :on-change="onUploadPanorama"
             :show-file-list="false"
@@ -78,7 +92,43 @@
         </div>
       </div>
 
-      <!-- 5. 事务 -->
+      <!-- 5. 风险和问题（调整到事务之前） -->
+      <div class="sec">
+        <div class="sec-head">
+          <span>风险和问题</span>
+          <el-button v-if="canEdit" size="small" :icon="Plus" @click="openItemDialog('risk', null)">新增风险</el-button>
+        </div>
+        <el-table :data="risks" border stripe size="small" style="width: 100%">
+          <el-table-column type="index" label="序号" width="70" align="center" />
+          <el-table-column prop="content" label="问题内容" min-width="240">
+            <template #default="{ row }">
+              <div class="cell-multiline rich-cell" v-html="row.content || '-'" />
+            </template>
+          </el-table-column>
+          <el-table-column prop="progress" label="当前进展" min-width="200">
+            <template #default="{ row }">
+              <div class="cell-multiline rich-cell" v-html="row.progress || '-'" />
+            </template>
+          </el-table-column>
+          <el-table-column prop="owner" label="责任人" width="110" />
+          <el-table-column prop="planned_close_date" label="计划闭环时间" width="130" />
+          <el-table-column label="当前状态" width="110" align="center">
+            <template #default="{ row }">
+              <el-tag :type="row.status === 'closed' ? 'success' : 'warning'" size="small" effect="plain">
+                {{ row.status === 'closed' ? 'Closed' : 'Open' }}
+              </el-tag>
+            </template>
+          </el-table-column>
+          <el-table-column v-if="canEdit" label="操作" width="160" fixed="right">
+            <template #default="{ row }">
+              <el-button size="small" @click="openItemDialog('risk', row)">编辑</el-button>
+              <el-button size="small" type="danger" @click="onRemoveItem('risk', row)">删除</el-button>
+            </template>
+          </el-table-column>
+        </el-table>
+      </div>
+
+      <!-- 6. 事务 -->
       <div class="sec">
         <div class="sec-head">
           <span>{{ label }}事务</span>
@@ -114,64 +164,24 @@
           </el-table-column>
         </el-table>
 
-        <!-- 附加自由表格 -->
-        <div v-for="(grid, gi) in extraGrids" :key="'eg' + gi" class="extra-grid">
+        <!-- 附加自由表格（每个专项独立，按 _uid 作为稳定 key 避免切换专项串台） -->
+        <div v-for="(grid, gi) in extraGrids" :key="grid._uid" class="extra-grid">
           <div class="extra-grid-head">
             <input
               v-if="canEdit"
-              v-model="extraGrids[gi].title"
+              v-model="grid.title"
               class="extra-grid-title-input"
               placeholder="表格标题（点击编辑）"
             />
             <span v-else>{{ grid.title || '附加表格' }}</span>
             <div class="spacer" />
-            <template v-if="canEdit">
-              <el-button size="small" @click="addExtraGridCol(gi)">+列</el-button>
-              <el-button size="small" @click="addExtraGridRow(gi)">+行</el-button>
-              <el-button size="small" type="danger" @click="removeExtraGrid(gi)">删除整表</el-button>
-            </template>
+            <el-button v-if="canEdit" size="small" type="danger" @click="removeExtraGrid(gi)">删除整表</el-button>
           </div>
-          <FormationGrid v-model="extraGrids[gi]" :editable="canEdit" />
+          <RichGrid v-model="extraGrids[gi]" :editable="canEdit" />
         </div>
         <div v-if="canEdit && extraGrids.length > 0" class="save-extra">
           <el-button size="small" type="primary" :loading="extraSaving" @click="saveExtraGrids">保存附加表格</el-button>
         </div>
-      </div>
-
-      <!-- 6. 风险和问题 -->
-      <div class="sec">
-        <div class="sec-head">
-          <span>风险和问题</span>
-          <el-button v-if="canEdit" size="small" :icon="Plus" @click="openItemDialog('risk', null)">新增风险</el-button>
-        </div>
-        <el-table :data="risks" border stripe size="small" style="width: 100%">
-          <el-table-column type="index" label="序号" width="70" align="center" />
-          <el-table-column prop="content" label="问题内容" min-width="240">
-            <template #default="{ row }">
-              <div class="cell-multiline rich-cell" v-html="row.content || '-'" />
-            </template>
-          </el-table-column>
-          <el-table-column prop="progress" label="当前进展" min-width="200">
-            <template #default="{ row }">
-              <div class="cell-multiline rich-cell" v-html="row.progress || '-'" />
-            </template>
-          </el-table-column>
-          <el-table-column prop="owner" label="责任人" width="110" />
-          <el-table-column prop="planned_close_date" label="计划闭环时间" width="130" />
-          <el-table-column label="当前状态" width="110" align="center">
-            <template #default="{ row }">
-              <el-tag :type="row.status === 'closed' ? 'success' : 'warning'" size="small" effect="plain">
-                {{ row.status === 'closed' ? 'Closed' : 'Open' }}
-              </el-tag>
-            </template>
-          </el-table-column>
-          <el-table-column v-if="canEdit" label="操作" width="160" fixed="right">
-            <template #default="{ row }">
-              <el-button size="small" @click="openItemDialog('risk', row)">编辑</el-button>
-              <el-button size="small" type="danger" @click="onRemoveItem('risk', row)">删除</el-button>
-            </template>
-          </el-table-column>
-        </el-table>
       </div>
 
       <!-- 7. 阵型 -->
@@ -300,6 +310,7 @@ import { checkStorageOrWarn } from '../store/storage'
 import EditableText from '../components/EditableText.vue'
 import MilestoneTimeline from '../components/MilestoneTimeline.vue'
 import FormationGrid from '../components/FormationGrid.vue'
+import RichGrid from '../components/RichGrid.vue'
 import RichTextEditor from '../components/RichTextEditor.vue'
 import SubscribeButton from '../components/SubscribeButton.vue'
 
@@ -307,7 +318,7 @@ const route = useRoute()
 const loading = ref(false)
 const special = ref(null)
 const content = ref({
-  goal: '', progress_summary: '',
+  goal: '', progress_summary: '', help_request: '',
   panorama_image_path: '', panorama_image_name: '',
   milestones_json: '[]',
   formation_json: '{"headers":[],"rows":[]}',
@@ -377,14 +388,33 @@ function parseFormation() {
   } catch { formation.value = { headers: [], rows: [] } }
 }
 
+let _gridUid = 0
+
+function normHeader(h) {
+  if (h && typeof h === 'object') {
+    return { text: String(h.text ?? ''), colspan: Number(h.colspan) || 1, align: h.align || 'center' }
+  }
+  return { text: String(h ?? ''), colspan: 1, align: 'center' }
+}
+function normCell(c) {
+  if (c && typeof c === 'object') {
+    return { text: String(c.text ?? ''), align: c.align || 'left', color: c.color || '' }
+  }
+  return { text: String(c ?? ''), align: 'left', color: '' }
+}
+function normGrid(g) {
+  return {
+    _uid: `g${++_gridUid}`,
+    title: String(g.title || ''),
+    headers: Array.isArray(g.headers) ? g.headers.map(normHeader) : [],
+    rows: Array.isArray(g.rows) ? g.rows.map(r => (Array.isArray(r) ? r.map(normCell) : [])) : [],
+  }
+}
+
 function parseExtraGrids() {
   try {
     const arr = JSON.parse(content.value.extra_grids_json || '[]')
-    extraGrids.value = Array.isArray(arr) ? arr.map(g => ({
-      title: String(g.title || ''),
-      headers: Array.isArray(g.headers) ? [...g.headers] : [],
-      rows: Array.isArray(g.rows) ? g.rows.map(r => [...r]) : [],
-    })) : []
+    extraGrids.value = Array.isArray(arr) ? arr.map(normGrid) : []
   } catch { extraGrids.value = [] }
 }
 
@@ -568,36 +598,28 @@ async function saveFormation() {
   }
 }
 
-// 附加自由表格
+// 附加自由表格（RichGrid 模型：headers=[{text,colspan,align}], rows=[[{text,align,color}]]）
 function addExtraGrid() {
-  extraGrids.value.push({
+  extraGrids.value.push(normGrid({
     title: `附加表格 ${extraGrids.value.length + 1}`,
-    headers: ['列1', '列2'],
-    rows: [['', ''], ['', '']],
-  })
-}
-function addExtraGridCol(gi) {
-  const g = extraGrids.value[gi]
-  g.headers.push(`列${g.headers.length + 1}`)
-  g.rows.forEach(r => r.push(''))
-}
-function addExtraGridRow(gi) {
-  const g = extraGrids.value[gi]
-  if (g.headers.length === 0) {
-    ElMessage.warning('请先添加列')
-    return
-  }
-  g.rows.push(Array(g.headers.length).fill(''))
+    headers: [{ text: '列1', colspan: 1, align: 'center' }, { text: '列2', colspan: 1, align: 'center' }],
+    rows: [
+      [{ text: '', align: 'left', color: '' }, { text: '', align: 'left', color: '' }],
+      [{ text: '', align: 'left', color: '' }, { text: '', align: 'left', color: '' }],
+    ],
+  }))
 }
 function removeExtraGrid(gi) {
   extraGrids.value.splice(gi, 1)
 }
 async function saveExtraGrids() {
   extraSaving.value = true
+  // 去掉前端内部的 _uid 再持久化
+  const payload = extraGrids.value.map(({ _uid, ...g }) => g)
   try {
     const { data } = await specialApi.updateContent(special.value.id, {
       version: content.value.version,
-      extra_grids_json: JSON.stringify(extraGrids.value),
+      extra_grids_json: JSON.stringify(payload),
     })
     content.value = data
     parseExtraGrids()
@@ -679,6 +701,8 @@ onMounted(load)
 <style scoped>
 .special-page {
   min-height: 200px;
+  /* 页面默认字体微软雅黑；富文本区可在编辑器中切换宋体/微软雅黑 */
+  font-family: '微软雅黑', 'Microsoft YaHei', 'PingFang SC', sans-serif;
 }
 .page-card {
   background: #fff;

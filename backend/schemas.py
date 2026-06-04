@@ -947,6 +947,7 @@ class SpecialContentUpdate(BaseModel):
     version: int
     goal: Optional[str] = None
     progress_summary: Optional[str] = None
+    help_request: Optional[str] = None
     milestones_json: Optional[str] = None
     formation_json: Optional[str] = None
     extra_grids_json: Optional[str] = None
@@ -957,6 +958,7 @@ class SpecialContentOut(BaseModel):
     special_id: int
     goal: str = ""
     progress_summary: str = ""
+    help_request: str = ""
     panorama_image_path: str = ""
     panorama_image_name: str = ""
     milestones_json: str = "[]"

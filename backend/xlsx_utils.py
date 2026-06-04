@@ -133,9 +133,13 @@ def build_special_xlsx(special) -> io.BytesIO:
     section(f"一、{label}目标")
     text_block(_strip_html(content.goal) if content else "")
 
-    # ===== 一句话进展 =====
-    section("二、一句话进展 & 求助")
+    # ===== 整体进展 =====
+    section("二、整体进展")
     text_block(_strip_html(content.progress_summary) if content else "")
+
+    # ===== 求助 =====
+    section("三、求助")
+    text_block(_strip_html(content.help_request) if content else "")
 
     # ===== 里程碑 =====
     milestones = []
@@ -144,7 +148,7 @@ def build_special_xlsx(special) -> io.BytesIO:
             milestones = json.loads(content.milestones_json) or []
         except (ValueError, TypeError):
             milestones = []
-    section(f"三、{label}计划（里程碑）")
+    section(f"四、{label}计划（里程碑）")
     if milestones:
         rows = [[m.get("name", ""), m.get("date", ""),
                  _MS_STATUS_LABEL.get(m.get("status", "planning"), m.get("status", ""))]
@@ -155,20 +159,7 @@ def build_special_xlsx(special) -> io.BytesIO:
     else:
         text_block("—")
 
-    # ===== 事务 =====
-    section(f"四、{label}事务")
-    tasks = sorted(special.tasks or [], key=lambda t: (t.sort_order or 0, t.id))
-    if tasks:
-        trows = []
-        for idx, t in enumerate(tasks, 1):
-            st = "已闭环" if (t.status or "open") == "closed" else "进行中"
-            trows.append([idx, _strip_html(t.content), _strip_html(t.progress),
-                          t.owner or "", t.planned_close_date or "", st])
-        table(["序号", "事务内容", "当前进展", "责任人", "计划闭环", "状态"], trows, status_col=6)
-    else:
-        text_block("—")
-
-    # ===== 风险 =====
+    # ===== 风险（调整到事务之前）=====
     section("五、风险和问题")
     risks = special.risks or []
     if risks:
@@ -178,6 +169,19 @@ def build_special_xlsx(special) -> io.BytesIO:
             rrows.append([idx, _strip_html(r.content), _strip_html(r.progress),
                           r.owner or "", r.planned_close_date or "", st])
         table(["序号", "问题内容", "当前进展", "责任人", "计划闭环", "状态"], rrows, status_col=6)
+    else:
+        text_block("—")
+
+    # ===== 事务 =====
+    section(f"六、{label}事务")
+    tasks = sorted(special.tasks or [], key=lambda t: (t.sort_order or 0, t.id))
+    if tasks:
+        trows = []
+        for idx, t in enumerate(tasks, 1):
+            st = "已闭环" if (t.status or "open") == "closed" else "进行中"
+            trows.append([idx, _strip_html(t.content), _strip_html(t.progress),
+                          t.owner or "", t.planned_close_date or "", st])
+        table(["序号", "事务内容", "当前进展", "责任人", "计划闭环", "状态"], trows, status_col=6)
     else:
         text_block("—")
 

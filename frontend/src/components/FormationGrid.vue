@@ -49,6 +49,8 @@
  * 通用网格编辑器：headers + rows[][] 的二维文本表。
  * 通过 v-model 双向绑定整个 grid 对象（{headers, rows, ...others}）。
  */
+import { computed } from 'vue'
+
 const props = defineProps({
   modelValue: {
     type: Object,
@@ -58,21 +60,22 @@ const props = defineProps({
 })
 const emit = defineEmits(['update:modelValue'])
 
-// 给模板直接用对象引用，结合 v-model on inputs 实现就地修改
-const model = props.modelValue
+// 用 computed 始终读取最新 props.modelValue：父级在切换专项时会整体替换
+// 该对象，若用 `const model = props.modelValue` 捕获一次会导致旧数据串台。
+const model = computed(() => props.modelValue)
 
 function emitUpdate() {
-  emit('update:modelValue', model)
+  emit('update:modelValue', model.value)
 }
 
 function removeCol(ci) {
-  model.headers.splice(ci, 1)
-  model.rows.forEach(r => r.splice(ci, 1))
+  model.value.headers.splice(ci, 1)
+  model.value.rows.forEach(r => r.splice(ci, 1))
   emitUpdate()
 }
 
 function removeRow(ri) {
-  model.rows.splice(ri, 1)
+  model.value.rows.splice(ri, 1)
   emitUpdate()
 }
 </script>

@@ -645,7 +645,8 @@ class SpecialContent(Base):
     special_id = Column(Integer, ForeignKey("specials.id", ondelete="CASCADE"),
                         unique=True, nullable=False, index=True)
     goal = Column(Text, default="", comment="专项目标")
-    progress_summary = Column(Text, default="", comment="一句话进展&求助")
+    progress_summary = Column(Text, default="", comment="整体进展")
+    help_request = Column(Text, default="", comment="求助")
     panorama_image_path = Column(String(512), default="", comment="专项全景图：服务器相对路径")
     panorama_image_name = Column(String(256), default="")
     # 里程碑：[{name,date,status}]
