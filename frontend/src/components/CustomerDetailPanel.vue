@@ -120,6 +120,35 @@
                   </div>
                 </div>
 
+                <!-- 现场关键事务（与总览 recent_focus 同步）-->
+                <div class="block">
+                  <div class="block-head">
+                    <span>现场关键事务</span>
+                    <span class="muted-hint">与「客户面状态」总览的"现场关键事务"同步，勾选表示已完成</span>
+                    <div v-if="canEditStage" class="actions">
+                      <el-button size="small" :icon="Plus" @click="machineState[m.id].recentFocus.push({ text: '', done: false })">添加条目</el-button>
+                    </div>
+                  </div>
+                  <div class="block-body">
+                    <div v-if="!machineState[m.id].recentFocus.length" class="empty inline">暂无现场关键事务</div>
+                    <div v-for="(item, idx) in machineState[m.id].recentFocus" :key="idx" class="rf-row">
+                      <span class="rf-box" :class="{ checked: item.done }" @click="canEditStage && (item.done = !item.done)">
+                        <svg v-if="item.done" viewBox="0 0 10 8" fill="none" stroke="#fff" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="1,4 4,7 9,1"/></svg>
+                      </span>
+                      <el-input v-model="item.text" size="small" placeholder="条目内容" :readonly="!canEditStage" :class="{ 'rf-done': item.done }" style="flex: 1" />
+                      <el-button v-if="canEditStage" :icon="Delete" size="small" circle plain type="danger" @click="machineState[m.id].recentFocus.splice(idx, 1)" />
+                    </div>
+                    <div v-if="canEditStage" class="right">
+                      <el-button
+                        type="primary"
+                        size="small"
+                        :disabled="!isRecentFocusDirty(m.id)"
+                        @click="saveRecentFocus(m)"
+                      >保存现场关键事务</el-button>
+                    </div>
+                  </div>
+                </div>
+
                 <!-- SOW 状态 -->
                 <div class="block">
                   <div class="block-head">
@@ -514,7 +543,7 @@
 <script setup>
 import { computed, nextTick, reactive, ref, watch } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
-import { Edit, Paperclip, Plus, Refresh, Upload } from '@element-plus/icons-vue'
+import { Delete, Edit, Paperclip, Plus, Refresh, Upload } from '@element-plus/icons-vue'
 import {
   customerApi, customerCustomReqApi, customerExtraApi, customerStatusApi, downloadBlob, issueApi, licenseApi, sowApi,
 } from '../api'
@@ -539,6 +568,20 @@ function parseMilestones(raw) {
     date: byName[name]?.date || '',
     status: byName[name]?.status || 'planning',
   }))
+}
+
+// 现场关键事务（recent_focus）：与总览同一字段、同一 JSON 清单格式
+function parseChecklist(val) {
+  if (!val) return []
+  try {
+    const parsed = JSON.parse(val)
+    if (Array.isArray(parsed)) return parsed.map((i) => ({ text: String(i.text ?? ''), done: !!i.done }))
+  } catch { /* 兼容旧的换行格式 */ }
+  return val.split('\n').filter((s) => s.trim()).map((t) => ({ text: t.trim(), done: false }))
+}
+function serializeChecklist(items) {
+  const clean = items.filter((i) => (i.text || '').trim())
+  return clean.length ? JSON.stringify(clean) : ''
 }
 
 const props = defineProps({
@@ -666,6 +709,8 @@ async function loadMachines() {
       if (!machineState[m.id]) {
         machineState[m.id] = {
           current: m.customer_status || '',
+          recentFocus: parseChecklist(m.recent_focus),
+          recentFocusOrig: serializeChecklist(parseChecklist(m.recent_focus)),
           milestones: parseMilestones(m.milestones_json),
           sowLoading: false,
           sowRows: [],
@@ -678,6 +723,8 @@ async function loadMachines() {
         }
       } else {
         machineState[m.id].current = m.customer_status || ''
+        machineState[m.id].recentFocus = parseChecklist(m.recent_focus)
+        machineState[m.id].recentFocusOrig = serializeChecklist(parseChecklist(m.recent_focus))
         machineState[m.id].milestones = parseMilestones(m.milestones_json)
       }
     }
@@ -956,6 +1003,38 @@ async function saveCurrentStage(m) {
   } catch (e) {
     if (e.response?.status === 409) {
       // 409 已由 axios 拦截器弹 warning；这里重新拉一遍机台状态
+      await loadMachines()
+    } else {
+      ElMessage.error(e.response?.data?.detail || '保存失败')
+    }
+  }
+}
+
+// ─── 现场关键事务（recent_focus）─────────────────────────────────
+
+function isRecentFocusDirty(mid) {
+  const st = machineState[mid]
+  if (!st) return false
+  return serializeChecklist(st.recentFocus) !== (st.recentFocusOrig || '')
+}
+
+async function saveRecentFocus(m) {
+  const st = machineState[m.id]
+  const serialized = serializeChecklist(st.recentFocus)
+  try {
+    const { data } = await customerStatusApi.update(m.id, {
+      version: m.version,
+      recent_focus: serialized,
+    })
+    const idx = machines.value.findIndex((x) => x.id === m.id)
+    if (idx >= 0) {
+      machines.value[idx] = { ...machines.value[idx], recent_focus: serialized, version: data.version }
+    }
+    st.recentFocus = parseChecklist(serialized)
+    st.recentFocusOrig = serialized
+    ElMessage.success('已同步到总览')
+  } catch (e) {
+    if (e.response?.status === 409) {
       await loadMachines()
     } else {
       ElMessage.error(e.response?.data?.detail || '保存失败')
@@ -1319,6 +1398,25 @@ defineExpose({ reload: loadCustomer })
   padding: 12px;
 }
 .block-body .right { text-align: right; margin-top: 8px; }
+
+/* 现场关键事务清单 */
+.rf-row { display: flex; align-items: center; gap: 8px; margin-bottom: 8px; }
+.rf-box {
+  width: 16px;
+  height: 16px;
+  flex-shrink: 0;
+  border: 1.5px solid #c0c4cc;
+  border-radius: 3px;
+  background: #fff;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  transition: all .15s;
+}
+.rf-box.checked { background: #67c23a; border-color: #67c23a; }
+.rf-box svg { width: 9px; height: 9px; display: block; }
+.rf-done :deep(.el-input__inner) { color: #b0b3b8; text-decoration: line-through; }
 
 .extra-foot {
   display: flex;

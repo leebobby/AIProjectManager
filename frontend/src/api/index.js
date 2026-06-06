@@ -34,7 +34,6 @@ http.interceptors.response.use(
 
 export const authApi = {
   login: (data) => http.post('/auth/login', data),
-  register: (data) => http.post('/auth/register', data),
   me: () => http.get('/auth/me'),
   logout: () => http.post('/auth/logout'),
   changePassword: (data) => http.post('/auth/change-password', data),
@@ -263,11 +262,9 @@ export const customerCustomReqApi = {
   remove: (id) => http.delete(`/customer-custom-reqs/${id}`),
 }
 
+// 遗留版本表：只读，仅项目简介页消费旧数据；写接口已在后端下线
 export const versionApi = {
   list: () => http.get('/versions'),
-  create: (data) => http.post('/versions', data),
-  update: (id, data) => http.put(`/versions/${id}`, data),
-  remove: (id) => http.delete(`/versions/${id}`),
 }
 
 export const majorVersionApi = {
@@ -279,13 +276,6 @@ export const majorVersionApi = {
   createIterVersion: (data) => http.post('/iteration-versions', data),
   updateIterVersion: (id, data) => http.put(`/iteration-versions/${id}`, data),
   removeIterVersion: (id) => http.delete(`/iteration-versions/${id}`),
-}
-
-export const iterationApi = {
-  list: () => http.get('/iterations'),
-  create: (data) => http.post('/iterations', data),
-  update: (id, data) => http.put(`/iterations/${id}`, data),
-  remove: (id) => http.delete(`/iterations/${id}`),
 }
 
 export const annualIterationApi = {
@@ -310,6 +300,13 @@ export const iterationRequirementApi = {
       headers: { 'Content-Type': 'multipart/form-data' },
     })
   },
+}
+
+export const domainApi = {
+  list: () => http.get('/domains'),
+  requirements: (groupId) => http.get(`/domains/${groupId}/requirements`),
+  issues: (groupId) => http.get(`/domains/${groupId}/issues`),
+  updateContent: (groupId, data) => http.put(`/domains/${groupId}/content`, data),
 }
 
 export const productRequirementApi = {

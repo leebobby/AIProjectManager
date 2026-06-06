@@ -795,3 +795,22 @@ class OperationLog(Base):
     detail = Column(Text, default="", comment="补充说明 (摘要,不存敏感字段)")
     ip = Column(String(64), default="")
     user_agent = Column(String(256), default="")
+
+
+class DomainContent(Base):
+    """领域管理：每个 PL 组（资源组 kind=pl）一行的手填内容。
+
+    需求情况 / 问题单情况是从迭代需求、问题单 Excel 实时聚合的派生数据，不入库；
+    这里只持久化两块需要人工维护的字段：最近主要工作（富文本）、风险与求助（结构化逐条）。
+    """
+    __tablename__ = "domain_contents"
+
+    id = Column(Integer, primary_key=True, index=True)
+    group_id = Column(Integer, ForeignKey("resource_groups.id", ondelete="CASCADE"),
+                      unique=True, nullable=False, index=True, comment="PL 组 FK")
+    recent_work = Column(Text, default="", comment="最近主要工作（富文本 HTML）")
+    # 风险与求助：[{content, type: 风险|求助, status}]
+    risks_json = Column(Text, default="[]", comment="风险与求助逐条 JSON")
+    version = Column(Integer, nullable=False, default=0, comment="乐观锁")
+    created_at = Column(DateTime, default=datetime.utcnow)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)

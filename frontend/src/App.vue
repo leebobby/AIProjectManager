@@ -19,59 +19,61 @@
         text-color="#bfcbd9"
         active-text-color="#409EFF"
       >
-        <template v-for="r in menuRoutes" :key="r.path">
-          <!-- 专项管理：动态二级菜单 -->
-          <el-sub-menu
-            v-if="r.meta.specialsParent && (auth.isAdmin.value || specials.list.length > 0)"
-            :index="r.path"
-          >
-            <template #title>
-              <el-icon><component :is="r.meta.icon" /></el-icon>
-              <span>{{ r.meta.title }}</span>
-            </template>
-            <el-menu-item v-if="auth.isAdmin.value" :index="r.path">
-              <el-icon><Setting /></el-icon>
-              <template #title>专项配置</template>
-            </el-menu-item>
-            <el-menu-item
-              v-for="s in specials.list"
-              :key="s.id"
-              :index="'/specials/' + s.id"
+        <el-menu-item-group v-for="g in menuGroups" :key="g.name" :title="g.name">
+          <template v-for="r in g.routes" :key="r.path">
+            <!-- 专项管理：动态二级菜单 -->
+            <el-sub-menu
+              v-if="r.meta.specialsParent && (auth.isAdmin.value || specials.list.length > 0)"
+              :index="r.path"
             >
-              <el-icon><Aim /></el-icon>
               <template #title>
-                <el-tag size="small" :type="s.kind === 'assault' ? 'danger' : 'info'" effect="plain" style="margin-right: 6px">
-                  {{ s.kind === 'assault' ? '攻关' : '专项' }}
-                </el-tag>
-                {{ s.name }}
+                <el-icon><component :is="r.meta.icon" /></el-icon>
+                <span>{{ r.meta.title }}</span>
               </template>
-            </el-menu-item>
-          </el-sub-menu>
+              <el-menu-item v-if="auth.isAdmin.value" :index="r.path">
+                <el-icon><Setting /></el-icon>
+                <template #title>专项配置</template>
+              </el-menu-item>
+              <el-menu-item
+                v-for="s in specials.list"
+                :key="s.id"
+                :index="'/specials/' + s.id"
+              >
+                <el-icon><Aim /></el-icon>
+                <template #title>
+                  <el-tag size="small" :type="s.kind === 'assault' ? 'danger' : 'info'" effect="plain" style="margin-right: 6px">
+                    {{ s.kind === 'assault' ? '攻关' : '专项' }}
+                  </el-tag>
+                  {{ s.name }}
+                </template>
+              </el-menu-item>
+            </el-sub-menu>
 
-          <!-- 客户面状态：二级菜单（总览 + 客户管理） -->
-          <el-sub-menu
-            v-else-if="r.meta.customersParent"
-            :index="r.path"
-          >
-            <template #title>
+            <!-- 客户面状态：二级菜单（总览 + 客户管理） -->
+            <el-sub-menu
+              v-else-if="r.meta.customersParent"
+              :index="r.path"
+            >
+              <template #title>
+                <el-icon><component :is="r.meta.icon" /></el-icon>
+                <span>{{ r.meta.title }}</span>
+              </template>
+              <el-menu-item :index="r.path">
+                <el-icon><DataLine /></el-icon>
+                <template #title>总览</template>
+              </el-menu-item>
+              <el-menu-item v-if="auth.isAdmin.value" index="/customers">
+                <el-icon><Setting /></el-icon>
+                <template #title>客户管理</template>
+              </el-menu-item>
+            </el-sub-menu>
+
+            <el-menu-item v-else-if="!r.meta.specialsParent" :index="r.path">
               <el-icon><component :is="r.meta.icon" /></el-icon>
-              <span>{{ r.meta.title }}</span>
-            </template>
-            <el-menu-item :index="r.path">
-              <el-icon><DataLine /></el-icon>
-              <template #title>总览</template>
+              <template #title>{{ r.meta.title }}</template>
             </el-menu-item>
-            <el-menu-item v-if="auth.isAdmin.value" index="/customers">
-              <el-icon><Setting /></el-icon>
-              <template #title>客户管理</template>
-            </el-menu-item>
-          </el-sub-menu>
-
-          <el-menu-item v-else-if="!r.meta.specialsParent" :index="r.path">
-            <el-icon><component :is="r.meta.icon" /></el-icon>
-            <template #title>{{ r.meta.title }}</template>
-          </el-menu-item>
-        </template>
+          </template>
+        </el-menu-item-group>
       </el-menu>
     </el-aside>
     <el-container>
@@ -161,14 +163,20 @@ function toggleSidebar() {
 const route = useRoute()
 const router = useRouter()
 
-const menuRoutes = computed(() =>
-  router.options.routes.filter((r) => {
+// 侧边栏分组顺序；未列出的分组不会渲染
+const GROUP_ORDER = ['概览', '客户面管理', '进度管理', '质量管理', '组织管理', '知识管理', '系统管理']
+
+const menuGroups = computed(() => {
+  const visible = router.options.routes.filter((r) => {
     if (!r.meta?.title) return false
     if (r.meta.hidden) return false
     if (r.meta.requireAdmin && !auth.isAdmin.value) return false
     return true
   })
-)
+  return GROUP_ORDER
+    .map((name) => ({ name, routes: visible.filter((r) => r.meta.group === name) }))
+    .filter((g) => g.routes.length > 0)
+})
 const currentTitle = computed(() => {
   if (route.name === 'SpecialDetail') {
     const s = specials.list.find(x => String(x.id) === String(route.params.id))
@@ -341,6 +349,17 @@ html, body, #app {
 }
 .app-aside .el-menu {
   border-right: none;
+}
+/* 分组标题：在深色侧栏上要够清晰，又不能抢菜单项 */
+.app-aside .el-menu-item-group__title {
+  color: #7d8ea3;
+  font-size: 12px;
+  padding: 12px 0 4px 20px;
+  letter-spacing: 1px;
+}
+/* 折叠态下隐藏分组标题，避免留白 */
+.app-aside .el-menu--collapse .el-menu-item-group__title {
+  display: none;
 }
 .app-header {
   background-color: #fff;

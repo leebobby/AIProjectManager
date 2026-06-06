@@ -2,7 +2,10 @@
   <div>
     <el-card shadow="never">
       <div class="toolbar">
-        <el-button v-if="isAdmin" type="primary" :icon="Plus" @click="openCreate">新增</el-button>
+        <el-button :type="editMode ? 'warning' : 'primary'" :icon="editMode ? Check : Edit" @click="editMode = !editMode">
+          {{ editMode ? '完成' : '编辑' }}
+        </el-button>
+        <el-button v-if="isAdmin && editMode" :icon="Plus" @click="openCreate">新增</el-button>
         <el-button :icon="Refresh" @click="load">刷新</el-button>
         <el-button v-if="isAdmin" :icon="Download" type="success" @click="onExport">导出 PPT</el-button>
         <el-button-group>
@@ -10,7 +13,7 @@
           <el-button :type="tableMode==='detail'?'primary':''" size="small" @click="tableMode='detail'">详细</el-button>
         </el-button-group>
         <span class="tip">
-          「当前进展」双击可编辑{{ isAdmin ? '；管理员可双击「问题单」编辑链接' : '' }}
+          {{ editMode ? '编辑模式：可直接修改各字段，完成后点「完成」退出' : '只读模式：点「编辑」进入可修改各字段' }}
         </span>
       </div>
 
@@ -31,7 +34,7 @@
 
         <el-table-column prop="current_stage" label="当前阶段" width="160" align="center" sortable>
           <template #default="{ row }">
-            <el-select v-if="isAdmin" :model-value="row.current_stage" size="small" @change="(v) => onStageChange(row, v)">
+            <el-select v-if="isAdmin && editMode" :model-value="row.current_stage" size="small" @change="(v) => onStageChange(row, v)">
               <el-option v-for="s in stages" :key="s" :label="s" :value="s" />
             </el-select>
             <span v-else>{{ row.current_stage || '—' }}</span>
@@ -41,7 +44,7 @@
         <el-table-column prop="field_version" label="现场版本" width="170" align="center" sortable
           :sort-method="(a, b) => naturalCompare(a.field_version, b.field_version)">
           <template #default="{ row }">
-            <el-select v-if="isAdmin" :model-value="row.field_version" size="small" filterable allow-create
+            <el-select v-if="isAdmin && editMode" :model-value="row.field_version" size="small" filterable allow-create
               default-first-option placeholder="选择或输入" @change="(v) => onVersionChange(row, v)">
               <el-option v-for="v in versionOptions" :key="v.value" :label="v.label" :value="v.value" />
             </el-select>
@@ -52,7 +55,7 @@
         <el-table-column prop="attention_level" label="近期关注度" width="170" align="center" sortable
           :sort-method="(a, b) => (a.attention_level || 0) - (b.attention_level || 0)">
           <template #default="{ row }">
-            <el-rate :model-value="row.attention_level || 0" :max="5" :disabled="!isAdmin"
+            <el-rate :model-value="row.attention_level || 0" :max="5" :disabled="!isAdmin || !editMode"
               show-score score-template="{value}" @change="(v) => onRateChange(row, v)" />
           </template>
         </el-table-column>
@@ -64,7 +67,7 @@
               @blur="commit(row, 'customer_status')"
               @keyup.enter.ctrl="commit(row, 'customer_status')"
               @keyup.esc="cancel(row, 'customer_status')" />
-            <div v-else class="editable-cell" @dblclick="startEdit(row, 'customer_status')">
+            <div v-else :class="{ 'editable-cell': editMode }" @dblclick="editMode && startEdit(row, 'customer_status')">
               {{ row.customer_status || '—' }}
             </div>
           </template>
@@ -78,61 +81,49 @@
               <template v-if="!row.recent_focus_items.length">
                 <div class="cl-compact-line">
                   <span class="cl-empty">—</span>
-                  <button class="cl-add-btn-mini" type="button" :title="'新增条目'" @click.stop="startAdding(row,'recent_focus')">＋</button>
-                </div>
-                <div v-if="addingState && addingState.rowId===row.id && addingState.field==='recent_focus'" class="cl-add-row">
-                  <input :ref="el => setAddInputRef(el, row.id, 'recent_focus')" v-model="addingText" class="cl-add-input" placeholder="输入新条目…"
-                    @keydown.enter.prevent="confirmAdd(row,'recent_focus')"
-                    @keydown.esc="cancelAdding" />
-                  <button class="cl-btn-ok" type="button" @click="confirmAdd(row,'recent_focus')">确认</button>
-                  <button class="cl-btn-no" type="button" @click="cancelAdding">取消</button>
+                  <button v-if="editMode" class="cl-add-btn-mini" type="button" title="新增条目" @click.stop="startAdding(row,'recent_focus')">＋</button>
                 </div>
               </template>
 
               <!-- 精简模式：只显第一条 -->
               <template v-else-if="tableMode==='compact'">
                 <div class="cl-compact-line">
-                  <label class="cl-item" @click.prevent="toggleItem(row,'recent_focus',0)">
+                  <label class="cl-item" :class="{ ro: !editMode }" @click.prevent="editMode && toggleItem(row,'recent_focus',0)">
                     <span class="cl-box" :class="{ checked: row.recent_focus_items[0].done }">
                       <svg v-if="row.recent_focus_items[0].done" class="cl-check-svg" viewBox="0 0 10 8" fill="none" stroke="#fff" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="1,4 4,7 9,1"/></svg>
                     </span>
                     <span class="cl-text" :class="{ done: row.recent_focus_items[0].done }">{{ row.recent_focus_items[0].text }}</span>
                   </label>
                   <span v-if="row.recent_focus_items.length > 1" class="cl-more">+{{ row.recent_focus_items.length - 1 }}</span>
-                  <button class="cl-add-btn-mini" type="button" :title="'新增条目'" @click.stop="startAdding(row,'recent_focus')">＋</button>
-                </div>
-                <div v-if="addingState && addingState.rowId===row.id && addingState.field==='recent_focus'" class="cl-add-row">
-                  <input :ref="el => setAddInputRef(el, row.id, 'recent_focus')" v-model="addingText" class="cl-add-input" placeholder="输入新条目…"
-                    @keydown.enter.prevent="confirmAdd(row,'recent_focus')"
-                    @keydown.esc="cancelAdding" />
-                  <button class="cl-btn-ok" type="button" @click="confirmAdd(row,'recent_focus')">确认</button>
-                  <button class="cl-btn-no" type="button" @click="cancelAdding">取消</button>
+                  <button v-if="editMode" class="cl-add-btn-mini" type="button" title="新增条目" @click.stop="startAdding(row,'recent_focus')">＋</button>
                 </div>
               </template>
 
               <!-- 详细模式：全部展开 -->
               <template v-else>
                 <label v-for="(item, idx) in row.recent_focus_items" :key="idx"
-                  class="cl-item" @click.prevent="toggleItem(row,'recent_focus',idx)">
+                  class="cl-item" :class="{ ro: !editMode }" @click.prevent="editMode && toggleItem(row,'recent_focus',idx)">
                   <span class="cl-box" :class="{ checked: item.done }">
                     <svg v-if="item.done" class="cl-check-svg" viewBox="0 0 10 8" fill="none" stroke="#fff" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="1,4 4,7 9,1"/></svg>
                   </span>
                   <span class="cl-text" :class="{ done: item.done }">{{ item.text }}</span>
-                  <button v-if="isAdmin" class="cl-del" type="button" @click.stop="deleteItem(row,'recent_focus',idx)">×</button>
+                  <button v-if="editMode && isAdmin" class="cl-del" type="button" @click.stop="deleteItem(row,'recent_focus',idx)">×</button>
                 </label>
                 <div class="cl-progress-wrap">
                   <div class="cl-bar"><div class="cl-fill" :style="{ width: clPct(row.recent_focus_items)+'%' }" /></div>
                   <span class="cl-pct-text">{{ clDone(row.recent_focus_items) }}/{{ row.recent_focus_items.length }}</span>
                 </div>
-                <div v-if="addingState && addingState.rowId===row.id && addingState.field==='recent_focus'" class="cl-add-row">
-                  <input :ref="el => setAddInputRef(el, row.id, 'recent_focus')" v-model="addingText" class="cl-add-input" placeholder="输入新条目…"
-                    @keydown.enter.prevent="confirmAdd(row,'recent_focus')"
-                    @keydown.esc="cancelAdding" />
-                  <button class="cl-btn-ok" type="button" @click="confirmAdd(row,'recent_focus')">确认</button>
-                  <button class="cl-btn-no" type="button" @click="cancelAdding">取消</button>
-                </div>
-                <button v-else class="cl-add-btn" type="button" @click.stop="startAdding(row,'recent_focus')">＋ 新增</button>
+                <button v-if="editMode" class="cl-add-btn" type="button" @click.stop="startAdding(row,'recent_focus')">＋ 新增</button>
               </template>
+
+              <!-- 新增输入行（各模式共用）-->
+              <div v-if="editMode && addingState && addingState.rowId===row.id && addingState.field==='recent_focus'" class="cl-add-row">
+                <input :ref="el => setAddInputRef(el, row.id, 'recent_focus')" v-model="addingText" class="cl-add-input" placeholder="输入新条目…"
+                  @keydown.enter.prevent="confirmAdd(row,'recent_focus')"
+                  @keydown.esc="cancelAdding" />
+                <button class="cl-btn-ok" type="button" @click="confirmAdd(row,'recent_focus')">确认</button>
+                <button class="cl-btn-no" type="button" @click="cancelAdding">取消</button>
+              </div>
             </div>
           </template>
         </el-table-column>
@@ -144,85 +135,52 @@
               <template v-if="!row.key_issues_items.length">
                 <div class="cl-compact-line">
                   <span class="cl-empty">—</span>
-                  <button class="cl-add-btn-mini" type="button" title="新增条目" @click.stop="startAdding(row,'key_issues')">＋</button>
-                </div>
-                <div v-if="addingState && addingState.rowId===row.id && addingState.field==='key_issues'" class="cl-add-row">
-                  <input :ref="el => setAddInputRef(el, row.id, 'key_issues')" v-model="addingText" class="cl-add-input" placeholder="输入新条目…"
-                    @keydown.enter.prevent="confirmAdd(row,'key_issues')"
-                    @keydown.esc="cancelAdding" />
-                  <button class="cl-btn-ok" type="button" @click="confirmAdd(row,'key_issues')">确认</button>
-                  <button class="cl-btn-no" type="button" @click="cancelAdding">取消</button>
+                  <button v-if="editMode" class="cl-add-btn-mini" type="button" title="新增条目" @click.stop="startAdding(row,'key_issues')">＋</button>
                 </div>
               </template>
 
               <template v-else-if="tableMode==='compact'">
                 <div class="cl-compact-line">
-                  <label class="cl-item" @click.prevent="toggleItem(row,'key_issues',0)">
+                  <label class="cl-item" :class="{ ro: !editMode }" @click.prevent="editMode && toggleItem(row,'key_issues',0)">
                     <span class="cl-box" :class="{ checked: row.key_issues_items[0].done }">
                       <svg v-if="row.key_issues_items[0].done" class="cl-check-svg" viewBox="0 0 10 8" fill="none" stroke="#fff" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="1,4 4,7 9,1"/></svg>
                     </span>
                     <span class="cl-text" :class="{ done: row.key_issues_items[0].done }">{{ row.key_issues_items[0].text }}</span>
                   </label>
                   <span v-if="row.key_issues_items.length > 1" class="cl-more">+{{ row.key_issues_items.length - 1 }}</span>
-                  <button class="cl-add-btn-mini" type="button" title="新增条目" @click.stop="startAdding(row,'key_issues')">＋</button>
-                </div>
-                <div v-if="addingState && addingState.rowId===row.id && addingState.field==='key_issues'" class="cl-add-row">
-                  <input :ref="el => setAddInputRef(el, row.id, 'key_issues')" v-model="addingText" class="cl-add-input" placeholder="输入新条目…"
-                    @keydown.enter.prevent="confirmAdd(row,'key_issues')"
-                    @keydown.esc="cancelAdding" />
-                  <button class="cl-btn-ok" type="button" @click="confirmAdd(row,'key_issues')">确认</button>
-                  <button class="cl-btn-no" type="button" @click="cancelAdding">取消</button>
+                  <button v-if="editMode" class="cl-add-btn-mini" type="button" title="新增条目" @click.stop="startAdding(row,'key_issues')">＋</button>
                 </div>
               </template>
 
               <template v-else>
                 <label v-for="(item, idx) in row.key_issues_items" :key="idx"
-                  class="cl-item" @click.prevent="toggleItem(row,'key_issues',idx)">
+                  class="cl-item" :class="{ ro: !editMode }" @click.prevent="editMode && toggleItem(row,'key_issues',idx)">
                   <span class="cl-box" :class="{ checked: item.done }">
                     <svg v-if="item.done" class="cl-check-svg" viewBox="0 0 10 8" fill="none" stroke="#fff" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="1,4 4,7 9,1"/></svg>
                   </span>
                   <span class="cl-text" :class="{ done: item.done }">{{ item.text }}</span>
-                  <button v-if="isAdmin" class="cl-del" type="button" @click.stop="deleteItem(row,'key_issues',idx)">×</button>
+                  <button v-if="editMode && isAdmin" class="cl-del" type="button" @click.stop="deleteItem(row,'key_issues',idx)">×</button>
                 </label>
                 <div class="cl-progress-wrap">
                   <div class="cl-bar"><div class="cl-fill" :style="{ width: clPct(row.key_issues_items)+'%' }" /></div>
                   <span class="cl-pct-text">{{ clDone(row.key_issues_items) }}/{{ row.key_issues_items.length }}</span>
                 </div>
-                <div v-if="addingState && addingState.rowId===row.id && addingState.field==='key_issues'" class="cl-add-row">
-                  <input :ref="el => setAddInputRef(el, row.id, 'key_issues')" v-model="addingText" class="cl-add-input" placeholder="输入新条目…"
-                    @keydown.enter.prevent="confirmAdd(row,'key_issues')"
-                    @keydown.esc="cancelAdding" />
-                  <button class="cl-btn-ok" type="button" @click="confirmAdd(row,'key_issues')">确认</button>
-                  <button class="cl-btn-no" type="button" @click="cancelAdding">取消</button>
-                </div>
-                <button v-else class="cl-add-btn" type="button" @click.stop="startAdding(row,'key_issues')">＋ 新增</button>
+                <button v-if="editMode" class="cl-add-btn" type="button" @click.stop="startAdding(row,'key_issues')">＋ 新增</button>
               </template>
+
+              <!-- 新增输入行（各模式共用）-->
+              <div v-if="editMode && addingState && addingState.rowId===row.id && addingState.field==='key_issues'" class="cl-add-row">
+                <input :ref="el => setAddInputRef(el, row.id, 'key_issues')" v-model="addingText" class="cl-add-input" placeholder="输入新条目…"
+                  @keydown.enter.prevent="confirmAdd(row,'key_issues')"
+                  @keydown.esc="cancelAdding" />
+                <button class="cl-btn-ok" type="button" @click="confirmAdd(row,'key_issues')">确认</button>
+                <button class="cl-btn-no" type="button" @click="cancelAdding">取消</button>
+              </div>
             </div>
           </template>
         </el-table-column>
 
-        <!-- ── 问题单情况 ───────────────────────────── -->
-        <el-table-column label="问题单情况" width="180" align="center">
-          <template #default="{ row }">
-            <template v-if="isAdmin && isEditing(row,'issue_url')">
-              <el-input v-model="row.issue_url" size="small" autofocus placeholder="https://..."
-                @blur="commit(row,'issue_url')"
-                @keyup.enter="commit(row,'issue_url')"
-                @keyup.esc="cancel(row,'issue_url')" />
-            </template>
-            <template v-else>
-              <el-button size="small" type="primary" link @click="openIssueDrill(row)">
-                查看分布<span v-if="row._issueCount != null">（{{ row._issueCount }}）</span>
-              </el-button>
-              <el-button v-if="row.issue_url" size="small" :icon="Link" link
-                title="打开外部链接" @click="openIssue(row)" />
-              <el-button v-if="isAdmin" size="small" :icon="Edit" link
-                :title="row.issue_url ? '修改链接' : '设置链接'" @click="startEdit(row,'issue_url')" />
-            </template>
-          </template>
-        </el-table-column>
-
-        <el-table-column v-if="isAdmin" label="操作" width="160" fixed="right">
+        <el-table-column v-if="isAdmin && editMode" label="操作" width="160" fixed="right">
           <template #default="{ row }">
             <el-button size="small" @click="openEdit(row)">编辑</el-button>
             <el-button size="small" type="danger" @click="onDelete(row)">删除</el-button>
@@ -319,71 +277,15 @@
       </template>
     </el-dialog>
 
-    <!-- ── 问题单分布 drawer ── -->
-    <el-drawer v-model="issueDrillVisible" :title="drillTitle" size="58%" direction="rtl">
-      <div v-if="issueDataLoading" class="hint">加载问题单数据…</div>
-      <template v-else-if="issueDataCache && currentDrillRow">
-        <div class="drill-meta">
-          数据来源：{{ issueDataCache.actual_file || '—' }}
-          <span v-if="issueDataCache.file_mtime"> · {{ issueDataCache.file_mtime }}</span>
-        </div>
-        <template v-if="drillRows.length">
-          <div class="drill-summary">
-            合计 <b>{{ drillTotalCount }}</b> 个问题单（点击小组查看明细）
-          </div>
-          <el-table :data="drillRows" border stripe size="small" style="margin-top:8px"
-            :row-class-name="rowClassName" @row-click="onDrillGroupClick">
-            <el-table-column prop="group" label="责任小组" />
-            <el-table-column prop="count" label="问题单数" align="center" width="120" />
-            <el-table-column label="" width="50" align="center">
-              <template #default="{ row }">
-                <el-icon v-if="drillGroupSelected === row.group"><ArrowDown /></el-icon>
-                <el-icon v-else><ArrowRight /></el-icon>
-              </template>
-            </el-table-column>
-          </el-table>
-
-          <template v-if="drillGroupSelected">
-            <div class="drill-sub-header">
-              <span><b>{{ drillGroupSelected }}</b> 小组的问题单</span>
-              <el-button size="small" link @click="drillGroupSelected = null">收起</el-button>
-            </div>
-            <p class="drill-note">
-              · 「{{ currentDrillRow.battlefield }} × {{ drillGroupSelected }}」 共 {{ drillGroupIssues.length }} 条
-            </p>
-            <el-table v-if="drillGroupIssues.length" :data="drillGroupIssues" border stripe size="small" max-height="440">
-              <el-table-column prop="issue_id" label="编号" width="170" show-overflow-tooltip />
-              <el-table-column prop="title" label="标题" min-width="220" show-overflow-tooltip />
-              <el-table-column prop="owner" label="责任人" width="90" />
-              <el-table-column prop="severity" label="严重" width="80" align="center">
-                <template #default="{ row }">
-                  <el-tag :type="sevType(row.severity)" size="small">{{ row.severity }}</el-tag>
-                </template>
-              </el-table-column>
-              <el-table-column prop="progress" label="进展" width="90" />
-            </el-table>
-            <el-empty v-else description="无原始数据，请检查报表" />
-          </template>
-        </template>
-        <el-empty v-else description="该客户在最新报表中无问题单" />
-        <div v-if="currentDrillRow.issue_url" style="margin-top:14px">
-          <el-button type="primary" :icon="Link" @click="openIssue(currentDrillRow)">
-            打开外部问题单链接
-          </el-button>
-        </div>
-      </template>
-      <el-empty v-else description="无问题单数据，请检查是否已配置报表目录" />
-    </el-drawer>
-
   </div>
 </template>
 
 <script setup>
-import { computed, nextTick, onMounted, reactive, ref, watch } from 'vue'
+import { computed, nextTick, onMounted, reactive, ref } from 'vue'
 import { useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
-import { ArrowDown, ArrowRight, Delete, Download, Edit, Link, Plus, Refresh } from '@element-plus/icons-vue'
-import { configApi, customerApi, customerStatusApi, downloadBlob, issueApi, majorVersionApi } from '../api'
+import { Check, Delete, Download, Edit, Plus, Refresh } from '@element-plus/icons-vue'
+import { configApi, customerApi, customerStatusApi, downloadBlob, majorVersionApi } from '../api'
 import { auth } from '../store/auth'
 
 const router = useRouter()
@@ -401,6 +303,7 @@ const form    = reactive(defaultForm())
 
 const editingCell = ref(null)
 const tableMode   = ref('compact')  // 'compact' | 'detail'
+const editMode    = ref(false)      // 顶部「编辑」开关：默认只读，开启后才可改
 
 const ADMIN_FIELDS = ['current_stage', 'field_version', 'attention_level', 'issue_url']
 const USER_FIELDS  = ['customer_status', 'recent_focus', 'key_issues']
@@ -448,7 +351,6 @@ async function load() {
       ...row,
       recent_focus_items: parseChecklist(row.recent_focus),
       key_issues_items:   parseChecklist(row.key_issues),
-      _issueCount: null,   // 由 loadIssueData() 异步填充
     }))
   } catch (e) {
     ElMessage.error(e.response?.data?.detail || '加载失败')
@@ -703,94 +605,6 @@ async function onVersionChange(row, value) {
   }
 }
 
-function openIssue(row) {
-  if (row.issue_url) window.open(row.issue_url, '_blank')
-}
-
-// ── 问题单分布 drawer ──────────────────────────────────
-const issueDataCache    = ref(null)
-const issueDataLoading  = ref(false)
-const issueDrillVisible = ref(false)
-const currentDrillRow   = ref(null)
-
-const drillTitle = computed(() =>
-  currentDrillRow.value ? `「${currentDrillRow.value.battlefield}」问题单分布` : '问题单分布'
-)
-
-const drillRows = computed(() => {
-  if (!issueDataCache.value || !currentDrillRow.value) return []
-  const bc = issueDataCache.value.by_customer
-  if (!bc?.columns || !bc?.rows) return []
-  const colName = bc.columns.find(c => c === currentDrillRow.value.battlefield)
-  if (!colName) return []
-  return bc.rows
-    .filter(r => r.label !== '合计')
-    .map(r => ({ group: r.label, count: Number(r[colName]) || 0 }))
-    .filter(r => r.count > 0)
-})
-
-const drillTotalCount = computed(() =>
-  drillRows.value.reduce((s, r) => s + r.count, 0)
-)
-
-async function loadIssueData() {
-  issueDataLoading.value = true
-  try {
-    const { data } = await issueApi.getData()
-    if (!data?.configured) { issueDataCache.value = null; return }
-    issueDataCache.value = data
-    // 给每行注入 _issueCount（方便表格列显示数字）
-    const bc = data.by_customer
-    if (bc?.columns && bc?.rows) {
-      const totalRow = bc.rows.find(r => r.label === '合计')
-      if (totalRow) {
-        for (const row of list.value) {
-          const colName = bc.columns.find(c => c === row.battlefield)
-          row._issueCount = colName ? (Number(totalRow[colName]) || 0) : null
-        }
-      }
-    }
-  } catch {
-    /* 报表未配置/读取失败时静默 —— 链接仍可点，drawer 内提示用户 */
-  } finally {
-    issueDataLoading.value = false
-  }
-}
-
-function openIssueDrill(row) {
-  currentDrillRow.value = row
-  issueDrillVisible.value = true
-  drillGroupSelected.value = null
-  if (!issueDataCache.value && !issueDataLoading.value) loadIssueData()
-}
-
-// ── 钻取到具体问题单（按小组）──
-const drillGroupSelected = ref(null)
-
-const drillGroupIssues = computed(() => {
-  if (!drillGroupSelected.value || !issueDataCache.value?.raw || !currentDrillRow.value) return []
-  const bf = currentDrillRow.value.battlefield
-  return issueDataCache.value.raw.filter(r =>
-    r.group === drillGroupSelected.value && r.category === bf
-  )
-})
-
-function onDrillGroupClick(row) {
-  drillGroupSelected.value = drillGroupSelected.value === row.group ? null : row.group
-}
-
-function rowClassName({ row }) {
-  return drillGroupSelected.value === row.group ? 'drill-row-active' : ''
-}
-
-function sevType(s) {
-  if (s === '严重') return 'danger'
-  if (s === '一般') return 'warning'
-  return 'info'
-}
-
-watch(issueDrillVisible, (v) => { if (!v) drillGroupSelected.value = null })
-
 async function onExport() {
   try {
     const resp = await customerStatusApi.exportPptx()
@@ -830,7 +644,6 @@ onMounted(async () => {
   loadVersions()
   loadCustomers()
   await load()
-  loadIssueData()   // 后台拉取问题单分布，不阻塞表格渲染
 })
 </script>
 
@@ -887,6 +700,8 @@ onMounted(async () => {
   user-select: none;
   line-height: 1.5;
 }
+/* 只读模式：清单项不可点 */
+.cl-item.ro { cursor: default; }
 
 .cl-box {
   width: 14px;

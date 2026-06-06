@@ -3,7 +3,7 @@ from sqlalchemy.orm import Session
 
 import models
 import schemas
-from auth import create_access_token, get_current_user, hash_password, verify_password
+from auth import create_access_token, get_current_user, hash_password, require_admin, verify_password
 from database import get_db
 from op_log import log_op
 from routers.users import _serialize_user
@@ -48,8 +48,17 @@ def logout(
 
 
 @router.post("/register", response_model=schemas.UserOut)
-def register(payload: schemas.RegisterRequest, request: Request, db: Session = Depends(get_db)):
-    """自助注册：固定 normal 角色，账户默认启用。"""
+def register(
+    payload: schemas.RegisterRequest,
+    request: Request,
+    db: Session = Depends(get_db),
+    current_admin: models.User = Depends(require_admin),
+):
+    """由管理员代为开户：固定 normal 角色，账户默认启用。
+
+    历史上这里是公开的自助注册入口，任何能访问接口的人都能建号——属于安全洞。
+    现已收紧为仅管理员可调用；日常建号建议直接走「用户管理」（/api/users）。
+    """
     if db.query(models.User).filter(models.User.username == payload.username).first():
         raise HTTPException(status_code=400, detail="用户名已存在")
     user = models.User(

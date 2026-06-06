@@ -5,52 +5,25 @@
         <h2>{{ appName }}</h2>
         <p>登录后访问业务模块</p>
       </div>
-      <el-tabs v-model="tab">
-        <el-tab-pane label="登录" name="login">
-          <el-form :model="loginForm" label-width="0" @submit.prevent="onLogin">
-            <el-form-item>
-              <el-input v-model="loginForm.username" placeholder="用户名" :prefix-icon="User" />
-            </el-form-item>
-            <el-form-item>
-              <el-input
-                v-model="loginForm.password"
-                type="password"
-                show-password
-                placeholder="密码"
-                :prefix-icon="Lock"
-                @keyup.enter="onLogin"
-              />
-            </el-form-item>
-            <el-button type="primary" :loading="loading" style="width: 100%" @click="onLogin">
-              登录
-            </el-button>
-          </el-form>
-        </el-tab-pane>
-
-        <el-tab-pane label="注册" name="register">
-          <el-form :model="registerForm" label-width="0" @submit.prevent="onRegister">
-            <el-form-item>
-              <el-input v-model="registerForm.username" placeholder="用户名" :prefix-icon="User" />
-            </el-form-item>
-            <el-form-item>
-              <el-input v-model="registerForm.full_name" placeholder="姓名（可选）" />
-            </el-form-item>
-            <el-form-item>
-              <el-input
-                v-model="registerForm.password"
-                type="password"
-                show-password
-                placeholder="密码"
-                :prefix-icon="Lock"
-              />
-            </el-form-item>
-            <el-button type="primary" :loading="loading" style="width: 100%" @click="onRegister">
-              注册
-            </el-button>
-          </el-form>
-          <p class="hint">注册的账号默认为普通用户角色。</p>
-        </el-tab-pane>
-      </el-tabs>
+      <el-form :model="loginForm" label-width="0" @submit.prevent="onLogin">
+        <el-form-item>
+          <el-input v-model="loginForm.username" placeholder="用户名" :prefix-icon="User" />
+        </el-form-item>
+        <el-form-item>
+          <el-input
+            v-model="loginForm.password"
+            type="password"
+            show-password
+            placeholder="密码"
+            :prefix-icon="Lock"
+            @keyup.enter="onLogin"
+          />
+        </el-form-item>
+        <el-button type="primary" :loading="loading" style="width: 100%" @click="onLogin">
+          登录
+        </el-button>
+      </el-form>
+      <p class="hint">如需开通账号，请联系系统管理员。</p>
     </el-card>
   </div>
 </template>
@@ -75,11 +48,9 @@ onMounted(async () => {
 
 const router = useRouter()
 const route = useRoute()
-const tab = ref('login')
 const loading = ref(false)
 
 const loginForm = reactive({ username: '', password: '' })
-const registerForm = reactive({ username: '', password: '', full_name: '' })
 
 async function onLogin() {
   if (!loginForm.username || !loginForm.password) {
@@ -95,25 +66,6 @@ async function onLogin() {
     router.replace(target)
   } catch (e) {
     ElMessage.error(e.response?.data?.detail || '登录失败')
-  } finally {
-    loading.value = false
-  }
-}
-
-async function onRegister() {
-  if (!registerForm.username || !registerForm.password) {
-    ElMessage.warning('用户名和密码必填')
-    return
-  }
-  loading.value = true
-  try {
-    await authApi.register(registerForm)
-    ElMessage.success('注册成功，请登录')
-    tab.value = 'login'
-    loginForm.username = registerForm.username
-    loginForm.password = ''
-  } catch (e) {
-    ElMessage.error(e.response?.data?.detail || '注册失败')
   } finally {
     loading.value = false
   }

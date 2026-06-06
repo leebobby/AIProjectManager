@@ -1,7 +1,7 @@
 """迭代下的需求条目 CRUD + Excel 批量导入。
 
-权限：登录用户均可读写（与客户面状态非管理员字段一致）。
-新增/删除某条需求需要登录即可；如果未来需要收紧，再加 require_admin。
+权限：协作编辑域（见 CLAUDE.md「Write-permission principle」）——日常填报，
+登录用户均可读写，与客户面状态的非管理员字段一致。
 """
 import io
 from typing import List

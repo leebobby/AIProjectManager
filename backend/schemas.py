@@ -1063,3 +1063,52 @@ class SpecialReportDraft(BaseModel):
     to: str
     cc: str
     body: str
+
+
+# ===== Domain（领域管理：按 PL 组聚合）=====
+class DomainRiskItem(BaseModel):
+    content: str = ""
+    type: str = "风险"            # 风险 / 求助
+    status: str = ""
+
+
+class DomainReqSummary(BaseModel):
+    total: int = 0
+    done: int = 0
+    in_progress: int = 0
+    not_started: int = 0
+    delayed: int = 0
+    by_priority: dict = {}        # {"P0": n, "P1": n, ...}
+
+
+class DomainIssueSummary(BaseModel):
+    available: bool = True        # 问题单 Excel 不可读时为 False
+    total: int = 0
+    by_severity: dict = {}        # {"严重": n, "一般": n, "提示": n}
+    file_mtime: Optional[str] = None
+    note: Optional[str] = None     # available=False 时的原因
+
+
+class DomainContentUpdate(BaseModel):
+    recent_work: Optional[str] = None
+    risks: Optional[List[DomainRiskItem]] = None
+    version: int
+
+
+class DomainRowOut(BaseModel):
+    group_id: int
+    code: str
+    name: str
+    dept_name: Optional[str] = None
+    leader_name: Optional[str] = None
+    member_count: int = 0
+    req_summary: DomainReqSummary
+    issue_summary: DomainIssueSummary
+    recent_work: str = ""
+    risks: List[DomainRiskItem] = []
+    version: int = 0
+
+
+class DomainListOut(BaseModel):
+    iteration_label: str = ""      # 当前进行中迭代标签，如 "2026年6月"
+    rows: List[DomainRowOut] = []
