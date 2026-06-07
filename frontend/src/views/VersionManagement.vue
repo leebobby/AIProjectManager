@@ -8,9 +8,12 @@
         :label="proj.name"
         :name="String(proj.id)"
       />
-      <el-tab-pane label="全局版本" name="global" />
+      <el-tab-pane label="客户面调试版本" name="debug" />
     </el-tabs>
 
+    <DebugVersionPanel v-if="activeTab === 'debug'" />
+
+    <template v-else>
     <VersionTimeline v-if="majorVersions.length" :majors="majorVersions" />
 
     <el-card shadow="never">
@@ -102,6 +105,7 @@
         </el-table-column>
       </el-table>
     </el-card>
+    </template>
 
     <!-- Major version dialog -->
     <el-dialog
@@ -190,6 +194,7 @@ import { Plus, Refresh } from '@element-plus/icons-vue'
 import { majorVersionApi, roadmapApi } from '../api'
 import { auth } from '../store/auth'
 import VersionTimeline from '../components/VersionTimeline.vue'
+import DebugVersionPanel from '../components/DebugVersionPanel.vue'
 
 const isAdmin = auth.isAdmin
 
@@ -199,7 +204,7 @@ function naturalCompare(a, b) {
 }
 
 const projects = ref([])
-const activeTab = ref('global')
+const activeTab = ref('debug')   // 默认若无项目则停留在「客户面调试版本」
 const majorVersions = ref([])
 const loading = ref(false)
 
@@ -237,7 +242,7 @@ async function loadProjects() {
   try {
     const { data } = await roadmapApi.listProjects(true)
     projects.value = data
-    if (data.length > 0 && activeTab.value === 'global') {
+    if (data.length > 0 && activeTab.value === 'debug') {
       activeTab.value = String(data[0].id)
     }
     load()
@@ -247,10 +252,11 @@ async function loadProjects() {
 }
 
 async function load() {
+  // 「客户面调试版本」tab 由 DebugVersionPanel 自行加载，这里不拉大版本
+  if (activeTab.value === 'debug') { majorVersions.value = []; return }
   loading.value = true
   try {
-    const projectId = activeTab.value === 'global' ? null : Number(activeTab.value)
-    const { data } = await majorVersionApi.list(projectId)
+    const { data } = await majorVersionApi.list(Number(activeTab.value))
     majorVersions.value = data
   } catch (e) {
     ElMessage.error('加载版本失败')

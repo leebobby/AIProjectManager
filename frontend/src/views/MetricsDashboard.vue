@@ -209,16 +209,52 @@
             </el-table-column>
           </el-table>
         </el-tab-pane>
+
+        <!-- 调试版本（现场使用看板） -->
+        <el-tab-pane label="调试版本" name="debug">
+          <div class="bar">
+            <span class="muted">按月统计客户面调试版本数量与目标客户分布（月份口径＝发布时间，缺失用计划发布时间）</span>
+            <el-button :icon="Refresh" style="margin-left: auto" @click="loadDebug">刷新</el-button>
+          </div>
+
+          <div v-if="debugStat" class="metric-summary">
+            <div class="stat"><div class="label">调试版本总数</div><div class="value primary">{{ debugTotal }}</div></div>
+            <div class="stat"><div class="label">涉及目标客户</div><div class="value">{{ debugStat.customers.length }}</div></div>
+            <div class="stat"><div class="label">统计月份数</div><div class="value">{{ debugStat.months.length }}</div></div>
+          </div>
+
+          <el-table :data="debugStat?.months || []" v-loading="debugLoading" border stripe size="small">
+            <el-table-column prop="month" label="月份" width="120" fixed />
+            <el-table-column
+              v-for="c in debugStat?.customers || []"
+              :key="c"
+              :label="c"
+              min-width="110"
+              align="center"
+            >
+              <template #default="{ row }">
+                <span v-if="row.by_customer[c]">{{ row.by_customer[c] }}</span>
+                <span v-else class="muted">·</span>
+              </template>
+            </el-table-column>
+            <el-table-column label="合计" width="90" align="center" fixed="right">
+              <template #default="{ row }"><b>{{ row.total }}</b></template>
+            </el-table-column>
+          </el-table>
+          <div v-if="debugStat && !debugStat.months.length" class="quality-tip">
+            暂无调试版本数据。去「版本管理 → 客户面调试版本」录入后即可统计。
+          </div>
+        </el-tab-pane>
       </el-tabs>
     </el-card>
   </div>
 </template>
 
 <script setup>
-import { onMounted, ref } from 'vue'
+import { computed, onMounted, ref } from 'vue'
 import { ElMessage } from 'element-plus'
 import { Refresh } from '@element-plus/icons-vue'
-import { annualIterationApi, majorVersionApi, metricsApi, resourceGroupApi } from '../api'
+import { annualIterationApi, debugVersionApi, majorVersionApi, metricsApi, resourceGroupApi } from '../api'
 
 const active = ref('version')
 
@@ -345,8 +381,25 @@ async function loadGroup() {
   }
 }
 
+// 调试版本看板
+const debugStat = ref(null)
+const debugLoading = ref(false)
+const debugTotal = computed(() => (debugStat.value?.months || []).reduce((s, m) => s + m.total, 0))
+
+async function loadDebug() {
+  debugLoading.value = true
+  try {
+    const { data } = await debugVersionApi.dashboard()
+    debugStat.value = data
+  } catch (e) {
+    ElMessage.error(e.response?.data?.detail || '加载调试版本看板失败')
+  } finally {
+    debugLoading.value = false
+  }
+}
+
 onMounted(async () => {
-  await Promise.all([loadVersionList(), loadYears(), loadGroupList()])
+  await Promise.all([loadVersionList(), loadYears(), loadGroupList(), loadDebug()])
 })
 </script>
 

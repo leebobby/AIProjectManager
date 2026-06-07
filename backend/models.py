@@ -797,6 +797,49 @@ class OperationLog(Base):
     user_agent = Column(String(256), default="")
 
 
+class DebugVersion(Base):
+    """客户面调试版本（T 版本）：发往现场调试的版本记录。
+
+    协作编辑域——登录用户均可填，带乐观锁。新表由 create_all 自动建。
+    """
+    __tablename__ = "debug_versions"
+
+    id = Column(Integer, primary_key=True, index=True)
+    version_no = Column(String(128), nullable=False, comment="版本号")
+    baseline_version = Column(String(128), default="", comment="基线版本")
+    target_customer_id = Column(Integer, ForeignKey("customers.id", ondelete="SET NULL"),
+                                nullable=True, index=True, comment="目标客户 FK（customers）")
+    planned_release_date = Column(DateTime, nullable=True, comment="计划发布时间")
+    release_date = Column(DateTime, nullable=True, comment="发布时间（发到现场）")
+    # 合入内容三块
+    merge_offline_cluster = Column(Text, default="", comment="合入内容-离线集群")
+    merge_online_flow = Column(Text, default="", comment="合入内容-在线流程")
+    merge_offline_analysis = Column(Text, default="", comment="合入内容-离线分析软件")
+    selfcheck_archive = Column(Text, default="", comment="自验证报告归档情况")
+    sort_order = Column(Integer, default=0)
+    version = Column(Integer, nullable=False, default=0, comment="乐观锁版本号")
+    created_at = Column(DateTime, default=datetime.utcnow)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+
+class DebugDemand(Base):
+    """客户面调试版本的「诉求收集」。涉及战场为客户 id 列表（JSON）。"""
+    __tablename__ = "debug_demands"
+
+    id = Column(Integer, primary_key=True, index=True)
+    seq = Column(Integer, default=0, comment="序号")
+    demand = Column(Text, default="", comment="诉求")
+    problem_solved = Column(Text, default="", comment="解决问题")
+    feature = Column(String(256), default="", comment="特性")
+    battlefields_json = Column(Text, default="[]", comment="涉及战场：客户 id JSON 数组")
+    expected_time = Column(String(64), default="", comment="期望时间")
+    actual_version = Column(String(128), default="", comment="实际合入版本")
+    sort_order = Column(Integer, default=0)
+    version = Column(Integer, nullable=False, default=0, comment="乐观锁版本号")
+    created_at = Column(DateTime, default=datetime.utcnow)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+
 class DomainContent(Base):
     """领域管理：每个 PL 组（资源组 kind=pl）一行的手填内容。
 

@@ -310,6 +310,21 @@ export const domainApi = {
   updateContent: (groupId, data) => http.put(`/domains/${groupId}/content`, data),
 }
 
+export const debugVersionApi = {
+  list: () => http.get('/debug-versions'),
+  create: (data) => http.post('/debug-versions', data),
+  update: (id, data) => http.put(`/debug-versions/${id}`, data),
+  remove: (id) => http.delete(`/debug-versions/${id}`),
+  dashboard: () => http.get('/debug-versions/dashboard'),
+}
+
+export const debugDemandApi = {
+  list: () => http.get('/debug-demands'),
+  create: (data) => http.post('/debug-demands', data),
+  update: (id, data) => http.put(`/debug-demands/${id}`, data),
+  remove: (id) => http.delete(`/debug-demands/${id}`),
+}
+
 export const productRequirementApi = {
   list: (iteration_id) => http.get('/iteration-product-requirements', { params: { iteration_id } }),
   create: (data) => http.post('/iteration-product-requirements', data),

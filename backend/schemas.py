@@ -1176,3 +1176,87 @@ class DomainListOut(BaseModel):
     selected_month: Optional[int] = None
     iterations: List[DomainIterationOpt] = []   # 可选月份列表（年度迭代）
     rows: List[DomainRowOut] = []
+
+
+# ===== 客户面调试版本（T 版本）+ 诉求收集 =====
+class DebugVersionBase(BaseModel):
+    version_no: str
+    baseline_version: Optional[str] = ""
+    target_customer_id: Optional[int] = None
+    planned_release_date: Optional[datetime] = None
+    release_date: Optional[datetime] = None
+    merge_offline_cluster: Optional[str] = ""
+    merge_online_flow: Optional[str] = ""
+    merge_offline_analysis: Optional[str] = ""
+    selfcheck_archive: Optional[str] = ""
+    sort_order: Optional[int] = 0
+
+
+class DebugVersionCreate(DebugVersionBase):
+    pass
+
+
+class DebugVersionUpdate(BaseModel):
+    version: int
+    version_no: Optional[str] = None
+    baseline_version: Optional[str] = None
+    target_customer_id: Optional[int] = None
+    planned_release_date: Optional[datetime] = None
+    release_date: Optional[datetime] = None
+    merge_offline_cluster: Optional[str] = None
+    merge_online_flow: Optional[str] = None
+    merge_offline_analysis: Optional[str] = None
+    selfcheck_archive: Optional[str] = None
+    sort_order: Optional[int] = None
+
+
+class DebugVersionOut(DebugVersionBase):
+    id: int
+    target_customer_name: Optional[str] = None   # 由后端解析回填
+    version: int
+
+    model_config = ConfigDict(from_attributes=True)
+
+
+class DebugDemandBase(BaseModel):
+    seq: Optional[int] = 0
+    demand: Optional[str] = ""
+    problem_solved: Optional[str] = ""
+    feature: Optional[str] = ""
+    battlefields: Optional[List[int]] = []       # 客户 id 列表（涉及战场）
+    expected_time: Optional[str] = ""
+    actual_version: Optional[str] = ""
+    sort_order: Optional[int] = 0
+
+
+class DebugDemandCreate(DebugDemandBase):
+    pass
+
+
+class DebugDemandUpdate(BaseModel):
+    version: int
+    seq: Optional[int] = None
+    demand: Optional[str] = None
+    problem_solved: Optional[str] = None
+    feature: Optional[str] = None
+    battlefields: Optional[List[int]] = None
+    expected_time: Optional[str] = None
+    actual_version: Optional[str] = None
+    sort_order: Optional[int] = None
+
+
+class DebugDemandOut(DebugDemandBase):
+    id: int
+    battlefield_names: List[str] = []            # 由后端解析回填
+    version: int
+
+
+class DebugDashboardMonth(BaseModel):
+    month: str                  # "2026-06" 或 "未排期"
+    total: int = 0
+    by_customer: dict = {}      # {客户名: 数量}
+
+
+class DebugDashboardOut(BaseModel):
+    customers: List[str] = []   # 列顺序：出现过的目标客户名
+    months: List[DebugDashboardMonth] = []

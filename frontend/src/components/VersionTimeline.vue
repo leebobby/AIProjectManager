@@ -1,5 +1,16 @@
 <template>
   <div class="vt-wrap">
+    <div class="vt-bar">
+      <span class="vt-bar-label">时间范围</span>
+      <el-select v-model="rangeMonths" size="small" style="width: 110px">
+        <el-option label="全部" :value="0" />
+        <el-option label="近 3 月" :value="3" />
+        <el-option label="近 6 月" :value="6" />
+        <el-option label="近 1 年" :value="12" />
+      </el-select>
+      <span class="vt-bar-hint">最新大版本为主线，旧版本从对应时间点拉枝；节点为迭代版本（悬停看详情）</span>
+    </div>
+
     <div v-if="layout.empty" class="vt-empty">
       暂无可绘制的版本：大版本需至少有「版本范围开始」或迭代版本的「预计发布日期」才能定位到时间轴。
     </div>
@@ -26,7 +37,6 @@
 
         <!-- 每个大版本：主线 or 支线 -->
         <g v-for="mv in layout.majors" :key="mv.id">
-          <!-- 支线：从主线对应时间点拉枝 -->
           <path
             v-if="!mv.isMain"
             :d="mv.branchPath"
@@ -34,7 +44,6 @@
             :stroke="mv.color"
             fill="none"
           />
-          <!-- 主线虚线延伸段（实际区间之外） -->
           <line
             v-if="mv.isMain && mv.preX != null"
             :x1="mv.preX" :y1="mv.y" :x2="mv.startX" :y2="mv.y"
@@ -45,12 +54,10 @@
             :x1="mv.endX" :y1="mv.y" :x2="mv.postX" :y2="mv.y"
             class="vt-main-dash" :stroke="mv.color"
           />
-          <!-- 版本主体线段（实际区间） -->
           <line
             :x1="mv.startX" :y1="mv.y" :x2="mv.endX" :y2="mv.y"
             :stroke="mv.color" :stroke-width="mv.isMain ? 5 : 3" stroke-linecap="round"
           />
-          <!-- 发布终点（实心=已实际发布） -->
           <circle
             :cx="mv.endX" :cy="mv.y" :r="mv.isMain ? 6 : 5"
             :fill="mv.released ? mv.color : '#fff'" :stroke="mv.color" stroke-width="2"
@@ -58,12 +65,22 @@
             <title>{{ mv.version_no }} {{ mv.released ? '已发布 ' + mv.releaseLabel : '计划至 ' + mv.endLabel }}</title>
           </circle>
 
-          <!-- 迭代版本节点 -->
+          <!-- 迭代版本节点：标签上下交错 + 重叠自动隐藏（仍可悬停） -->
           <g v-for="n in mv.nodes" :key="n.id">
             <circle :cx="n.x" :cy="mv.y" r="4" :fill="mv.color">
               <title>{{ n.version_no }} {{ n.title }} · {{ n.dateLabel }}</title>
             </circle>
-            <text :x="n.x" :y="mv.y - 9" text-anchor="middle" class="vt-node-label">{{ n.version_no }}</text>
+            <template v-if="n.showLabel">
+              <line
+                v-if="!n.above"
+                :x1="n.x" :y1="mv.y + 4" :x2="n.x" :y2="mv.y + 11"
+                class="vt-leader"
+              />
+              <text
+                :x="n.x" :y="n.above ? mv.y - 9 : mv.y + 22"
+                text-anchor="middle" class="vt-node-label"
+              >{{ n.version_no }}</text>
+            </template>
           </g>
 
           <!-- 大版本标签 -->
@@ -89,7 +106,7 @@
 </template>
 
 <script setup>
-import { computed } from 'vue'
+import { computed, ref } from 'vue'
 
 const props = defineProps({
   majors: { type: Array, default: () => [] },
@@ -97,6 +114,7 @@ const props = defineProps({
 
 const W = 960
 const PALETTE = ['#409EFF', '#67C23A', '#E6A23C', '#F56C6C', '#9B59B6', '#1ABC9C', '#909399']
+const rangeMonths = ref(0)   // 0=全部；3/6/12=只看最近 N 个月
 
 function ts(d) {
   if (!d) return null
@@ -113,7 +131,7 @@ const layout = computed(() => {
   const padL = 40
   const padR = 28
   const top = 34
-  const laneGap = 60
+  const laneGap = 64
 
   // 1) 解析每个大版本的起止 + 迭代节点日期
   const raw = props.majors.map((m) => {
@@ -128,23 +146,38 @@ const layout = computed(() => {
     return { m, iters, startT, endT, relT }
   })
 
-  const placeable = raw.filter((r) => r.startT != null)
+  let placeable = raw.filter((r) => r.startT != null)
   const skipped = raw.filter((r) => r.startT == null).map((r) => r.m.version_no)
   if (!placeable.length) return { empty: true, skipped }
 
-  // 2) 时间范围
+  // 2) 数据时间范围
   const allT = []
   placeable.forEach((r) => {
     allT.push(r.startT, r.endT ?? r.startT)
     r.iters.forEach((iv) => allT.push(iv.t))
   })
-  let minT = Math.min(...allT)
-  let maxT = Math.max(...allT)
+  const dataMin = Math.min(...allT)
+  const dataMax = Math.max(...allT)
+
+  // 「近 N 月」：以 max(数据最晚, 今天) 为锚回退 N 个月
+  let clipMin = dataMin
+  if (rangeMonths.value > 0) {
+    const anchor = Math.max(dataMax, Date.now())
+    const c = new Date(anchor)
+    c.setMonth(c.getMonth() - rangeMonths.value)
+    clipMin = Math.max(dataMin, c.getTime())
+    // 整段落在窗口左侧之外的版本不再展示
+    placeable = placeable.filter((r) => (r.endT ?? r.startT) >= clipMin)
+    if (!placeable.length) return { empty: true, skipped }
+  }
+
+  let minT = clipMin
+  let maxT = dataMax
   if (minT === maxT) { minT -= 15 * 864e5; maxT += 15 * 864e5 }
   const span = maxT - minT
   minT -= span * 0.04
   maxT += span * 0.04
-  const xOf = (t) => padL + ((t - minT) / (maxT - minT)) * (W - padL - padR)
+  const xOf = (t) => padL + ((Math.max(t, clipMin) - minT) / (maxT - minT)) * (W - padL - padR)
 
   // 3) 排序：最新（起始最晚）在最上 = 主线
   placeable.sort((a, b) => {
@@ -161,25 +194,39 @@ const layout = computed(() => {
     const isMain = i === 0
     const labelText = (isMain ? '主线 ' : '') + (r.m.version_no || '')
     const labelW = Math.max(34, labelText.length * 8 + 14)
-    // 标签放在起点左侧，避免越界则改放右侧
     let labelX = startX - labelW - 8
     if (labelX < 2) labelX = startX + 8
-    const nodes = r.iters.map((iv) => ({
-      id: iv.id, version_no: iv.version_no, title: iv.title,
-      x: xOf(iv.t), dateLabel: dl(iv.t),
-    }))
+
+    // 迭代节点：标签上下交错（even=上 / odd=下），同一行内重叠则隐藏标签
+    let aboveR = -1e9
+    let belowR = -1e9
+    const nodes = r.iters
+      .filter((iv) => iv.t >= clipMin)
+      .map((iv, k) => {
+        const x = xOf(iv.t)
+        const halfW = (String(iv.version_no || '').length * 5) / 2
+        const above = k % 2 === 0
+        let showLabel = true
+        if (above) {
+          if (x - halfW < aboveR + 4) showLabel = false
+          else aboveR = x + halfW
+        } else {
+          if (x - halfW < belowR + 4) showLabel = false
+          else belowR = x + halfW
+        }
+        return { id: iv.id, version_no: iv.version_no, title: iv.title, x, dateLabel: dl(iv.t), above, showLabel }
+      })
+
     const out = {
       id: r.m.id, version_no: r.m.version_no, title: r.m.title || '',
       color, y, startX, endX, isMain, nodes, labelX, labelW,
       released: r.relT != null, releaseLabel: dl(r.relT), endLabel: dl(r.endT),
     }
     if (isMain) {
-      // 主线：实际区间外用虚线延伸到整条时间轴两端
       out.preX = startX > padL + 1 ? padL : null
       out.postX = endX < W - padR - 1 ? W - padR : null
     } else {
-      // 支线：从主线（mainY）在起点处拉枝下来
-      out.branchPath = `M ${startX},${mainY} C ${startX},${mainY + 22} ${startX + 18},${y - 22} ${startX + 18},${y}`
+      out.branchPath = `M ${startX},${mainY} C ${startX},${mainY + 24} ${startX + 18},${y - 24} ${startX + 18},${y}`
       out.startX = startX + 18
     }
     return out
@@ -197,7 +244,7 @@ const layout = computed(() => {
     d.setMonth(d.getMonth() + 1)
   }
 
-  const axisY = mainY + (majors.length - 1) * laneGap + 28
+  const axisY = mainY + (majors.length - 1) * laneGap + 32
   const nowT = Date.now()
   const todayX = nowT >= minT && nowT <= maxT ? xOf(nowT) : null
 
@@ -208,14 +255,16 @@ const layout = computed(() => {
 <style scoped>
 .vt-wrap {
   width: 100%;
-  overflow-x: auto;
   background: #fff;
   border: 1px solid #ebeef5;
   border-radius: 6px;
-  padding: 6px 10px 2px;
+  padding: 8px 10px 4px;
   margin-bottom: 12px;
 }
-.vt-svg { width: 100%; min-width: 720px; display: block; }
+.vt-bar { display: flex; align-items: center; gap: 8px; margin-bottom: 4px; }
+.vt-bar-label { font-size: 13px; color: #606266; }
+.vt-bar-hint { color: #c0c4cc; font-size: 12px; margin-left: 4px; }
+.vt-svg { width: 100%; min-width: 720px; display: block; overflow: visible; }
 .vt-empty { color: #909399; font-size: 13px; padding: 18px 8px; }
 .vt-grid line { stroke: #f0f2f5; stroke-width: 1; }
 .vt-grid text { fill: #c0c4cc; font-size: 11px; }
@@ -223,6 +272,8 @@ const layout = computed(() => {
 .vt-today text { fill: #f56c6c; font-size: 10px; }
 .vt-branch-link { stroke-width: 2; opacity: 0.7; }
 .vt-main-dash { stroke-width: 2; stroke-dasharray: 4 4; opacity: 0.45; }
-.vt-node-label { fill: #909399; font-size: 9px; }
+.vt-leader { stroke: #dcdfe6; stroke-width: 1; }
+.vt-node-label { fill: #606266; font-size: 9px; }
 .vt-major-label { font-size: 11px; font-weight: 600; }
+.vt-skipped { color: #c0c4cc; font-size: 12px; padding: 2px 4px 4px; }
 </style>
