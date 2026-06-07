@@ -11,6 +11,7 @@
         {{ sidebarCollapsed ? '岳' : '岳麓山管理系统' }}
       </div>
       <el-menu
+        class="aside-menu"
         :default-active="activeMenuPath"
         :collapse="sidebarCollapsed"
         :collapse-transition="false"
@@ -297,8 +298,12 @@ html, body, #app {
   background-color: #1f2d3d;
   transition: width 0.25s ease, --el-aside-width 0.25s ease;
   overflow: hidden;
+  /* logo 固定、菜单区独立滚动：子菜单展开后底部项不再被裁掉 */
+  display: flex;
+  flex-direction: column;
 }
 .app-logo {
+  flex: 0 0 auto;
   color: #fff;
   height: 56px;
   line-height: 56px;
@@ -309,6 +314,18 @@ html, body, #app {
   white-space: nowrap;
   overflow: hidden;
 }
+/* 菜单占满剩余高度并在内部纵向滚动 */
+.aside-menu {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-y: auto;
+  overflow-x: hidden;
+}
+/* 深色侧栏上的细滚动条 */
+.aside-menu::-webkit-scrollbar { width: 6px; }
+.aside-menu::-webkit-scrollbar-thumb { background: #3a4d63; border-radius: 3px; }
+.aside-menu::-webkit-scrollbar-thumb:hover { background: #4a6080; }
+.aside-menu::-webkit-scrollbar-track { background: transparent; }
 .app-logo.collapsed { font-size: 22px; letter-spacing: 0; }
 .header-left {
   display: flex;

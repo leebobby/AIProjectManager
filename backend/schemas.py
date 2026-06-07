@@ -1135,9 +1135,19 @@ class DomainReqSummary(BaseModel):
 class DomainIssueSummary(BaseModel):
     available: bool = True        # 问题单 Excel 不可读时为 False
     total: int = 0
-    by_severity: dict = {}        # {"严重": n, "一般": n, "提示": n}
+    score: float = 0.0            # 加权总分：致命10 严重3 一般1 提示0.1
+    by_severity: dict = {}        # {"致命": n, "严重": n, "一般": n, "提示": n}
     file_mtime: Optional[str] = None
     note: Optional[str] = None     # available=False 时的原因
+
+
+class DomainIterationOpt(BaseModel):
+    """领域管理顶部「月份选择器」的一个可选项（= 一个年度迭代）。"""
+    year: int
+    month: int
+    status: str = ""               # planning / in_progress / done
+    label: str = ""                # "2026年6月"
+    in_progress: bool = False
 
 
 class DomainContentUpdate(BaseModel):
@@ -1161,5 +1171,8 @@ class DomainRowOut(BaseModel):
 
 
 class DomainListOut(BaseModel):
-    iteration_label: str = ""      # 当前进行中迭代标签，如 "2026年6月"
+    iteration_label: str = ""      # 当前生效口径标签，如 "2026年6月"
+    selected_year: Optional[int] = None     # 选中的月份（未选时为空＝进行中口径）
+    selected_month: Optional[int] = None
+    iterations: List[DomainIterationOpt] = []   # 可选月份列表（年度迭代）
     rows: List[DomainRowOut] = []

@@ -11,6 +11,8 @@
       <el-tab-pane label="全局版本" name="global" />
     </el-tabs>
 
+    <VersionTimeline v-if="majorVersions.length" :majors="majorVersions" />
+
     <el-card shadow="never">
       <div class="toolbar">
         <el-button v-if="isAdmin" type="primary" :icon="Plus" @click="openCreateMajor">新增大版本</el-button>
@@ -187,6 +189,7 @@ import { ElMessage, ElMessageBox } from 'element-plus'
 import { Plus, Refresh } from '@element-plus/icons-vue'
 import { majorVersionApi, roadmapApi } from '../api'
 import { auth } from '../store/auth'
+import VersionTimeline from '../components/VersionTimeline.vue'
 
 const isAdmin = auth.isAdmin
 

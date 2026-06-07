@@ -3,7 +3,16 @@
     <div class="page-head">
       <div class="head-left">
         <span class="muted">需求口径：</span>
-        <el-tag type="primary" effect="plain">{{ data.iteration_label || '—' }}</el-tag>
+        <el-select v-model="monthKey" size="small" style="width: 210px" @change="load">
+          <el-option label="进行中迭代（默认）" value="" />
+          <el-option
+            v-for="it in data.iterations"
+            :key="it.year + '-' + it.month"
+            :value="it.year + '-' + it.month"
+            :label="it.label + statusSuffix(it)"
+          />
+        </el-select>
+        <el-tag type="primary" effect="plain" style="margin-left: 8px">{{ data.iteration_label || '—' }}</el-tag>
         <span class="muted" style="margin-left: 16px">问题单：</span>
         <el-tag v-if="issueMeta.available" type="success" effect="plain">
           {{ issueMeta.file_mtime || '已接入' }}
@@ -45,14 +54,26 @@
         </template>
       </el-table-column>
 
-      <el-table-column label="问题单情况" min-width="170">
+      <el-table-column label="问题单情况" min-width="190">
+        <template #header>
+          问题单情况
+          <el-tooltip placement="top" content="加权总分：致命 10 分 / 严重 3 分 / 一般 1 分 / 提示 0.1 分">
+            <el-icon class="hdr-help"><QuestionFilled /></el-icon>
+          </el-tooltip>
+        </template>
         <template #default="{ row }">
           <template v-if="row.issue_summary.available">
             <div v-if="row.issue_summary.total" class="cell-clickable" @click="openIssues(row)">
-              <b>{{ row.issue_summary.total }}</b> 个
-              <span v-for="(n, s) in row.issue_summary.by_severity" :key="s">
-                <el-tag size="small" :type="sevType(s)" effect="plain">{{ s }} {{ n }}</el-tag>
-              </span>
+              <div class="sum-line">
+                <b>{{ row.issue_summary.total }}</b> 个
+                <span class="score-sep">·</span>
+                <b class="issue-score">{{ row.issue_summary.score }}</b> 分
+              </div>
+              <div class="sev-line">
+                <span v-for="(n, s) in row.issue_summary.by_severity" :key="s">
+                  <el-tag size="small" :type="sevType(s)" :effect="s === '致命' ? 'dark' : 'plain'">{{ s }} {{ n }}</el-tag>
+                </span>
+              </div>
             </div>
             <span v-else class="muted">无</span>
           </template>
@@ -154,7 +175,7 @@
 <script setup>
 import { onMounted, reactive, ref } from 'vue'
 import { ElMessage } from 'element-plus'
-import { Delete, Plus, Refresh } from '@element-plus/icons-vue'
+import { Delete, Plus, QuestionFilled, Refresh } from '@element-plus/icons-vue'
 import { domainApi } from '../api'
 import RichTextEditor from '../components/RichTextEditor.vue'
 
@@ -167,12 +188,23 @@ const PROG_COLS = [
   { key: 'progress_clarify', label: '转测澄清' },
 ]
 
-const data = reactive({ iteration_label: '', rows: [] })
+const data = reactive({ iteration_label: '', rows: [], iterations: [] })
 const issueMeta = reactive({ available: false, file_mtime: null, note: '' })
 const loading = ref(false)
+// 需求口径：'' = 当前进行中迭代；'2026-6' = 指定年度迭代月份
+const monthKey = ref('')
+
+function parseKey(k) {
+  if (!k) return {}
+  const [y, m] = k.split('-')
+  return { year: Number(y), month: Number(m) }
+}
+function statusSuffix(it) {
+  return { in_progress: '（进行中）', done: '（已完成）', planning: '（计划）' }[it.status] || ''
+}
 
 function sevType(s) {
-  return { '严重': 'danger', '一般': 'warning', '提示': 'info' }[s] || 'info'
+  return { '致命': 'danger', '严重': 'danger', '一般': 'warning', '提示': 'info' }[s] || 'info'
 }
 function progType(v) {
   return {
@@ -184,9 +216,10 @@ function progType(v) {
 async function load() {
   loading.value = true
   try {
-    const { data: d } = await domainApi.list()
+    const { data: d } = await domainApi.list(parseKey(monthKey.value))
     data.iteration_label = d.iteration_label
     data.rows = d.rows
+    data.iterations = d.iterations || []
     // 问题单接入状态取首行（全表一致）
     const first = d.rows[0]?.issue_summary
     issueMeta.available = !!first?.available
@@ -218,15 +251,16 @@ function addRisk() {
 async function saveEdit() {
   saving.value = true
   try {
-    const { data: updated } = await domainApi.updateContent(editRow.value.group_id, {
+    await domainApi.updateContent(editRow.value.group_id, {
       recent_work: editForm.recent_work,
       risks: editForm.risks,
       version: editForm.version,
     })
-    const idx = data.rows.findIndex((r) => r.group_id === updated.group_id)
-    if (idx >= 0) data.rows[idx] = updated
     ElMessage.success('已保存')
     editVisible.value = false
+    // 重新拉取（而非替换单行）：回包的需求口径恒为「进行中」，
+    // 与当前选中月份可能不一致，整表刷新最稳。
+    load()
   } catch (e) {
     // 409 由 axios 拦截器统一提示；这里刷新拿最新版本号
     if (e.response?.status === 409) {
@@ -255,7 +289,7 @@ async function openReq(row) {
   reqLoading.value = true
   reqRows.value = []
   try {
-    const { data: rows } = await domainApi.requirements(row.group_id)
+    const { data: rows } = await domainApi.requirements(row.group_id, parseKey(monthKey.value))
     reqRows.value = rows
   } catch (e) {
     ElMessage.error(e.response?.data?.detail || '加载失败')
@@ -295,6 +329,10 @@ onMounted(load)
 .cell-clickable { cursor: pointer; }
 .cell-clickable:hover { color: #409EFF; }
 .sum-line { display: flex; align-items: center; gap: 4px; flex-wrap: wrap; }
+.sev-line { margin-top: 4px; display: flex; gap: 4px; flex-wrap: wrap; }
+.score-sep { color: #c0c4cc; margin: 0 2px; }
+.issue-score { color: #e6a23c; }
+.hdr-help { font-size: 13px; color: #909399; vertical-align: -1px; cursor: help; }
 .prio-line { margin-top: 4px; }
 .prio { color: #909399; font-size: 12px; margin-right: 8px; }
 .rich-cell {

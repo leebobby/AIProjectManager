@@ -303,8 +303,9 @@ export const iterationRequirementApi = {
 }
 
 export const domainApi = {
-  list: () => http.get('/domains'),
-  requirements: (groupId) => http.get(`/domains/${groupId}/requirements`),
+  // params: { year, month }（不传＝当前进行中迭代口径）
+  list: (params) => http.get('/domains', { params }),
+  requirements: (groupId, params) => http.get(`/domains/${groupId}/requirements`, { params }),
   issues: (groupId) => http.get(`/domains/${groupId}/issues`),
   updateContent: (groupId, data) => http.put(`/domains/${groupId}/content`, data),
 }

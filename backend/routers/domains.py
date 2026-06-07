@@ -13,7 +13,7 @@ import json
 from datetime import datetime
 from typing import List, Optional, Tuple
 
-from fastapi import APIRouter, Depends, HTTPException, Request
+from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from sqlalchemy.orm import Session
 
 import models
@@ -31,6 +31,8 @@ _PROG_FIELDS = [
 ]
 _SEVERITIES = ["严重", "一般", "提示"]
 _RISK_TYPES = {"风险", "求助"}
+# 问题单加权分值：致命10 严重3 一般1 提示0.1（未列出的级别记 0 分，仍计入数量）
+_SEVERITY_WEIGHTS = {"致命": 10.0, "严重": 3.0, "一般": 1.0, "提示": 0.1}
 
 
 # ─── helpers：迭代口径 ─────────────────────────────────────────────────────────
@@ -47,6 +49,34 @@ def _iteration_label(its: List[models.AnnualIteration]) -> str:
     if not its:
         return "无进行中迭代"
     return "、".join(f"{it.year}年{it.month}月" for it in its)
+
+
+def _scope_iterations(db: Session, year: Optional[int], month: Optional[int]) -> List[models.AnnualIteration]:
+    """选中具体月份时只看该年度迭代；否则回退到「进行中」口径。"""
+    if year and month:
+        it = (
+            db.query(models.AnnualIteration)
+            .filter(models.AnnualIteration.year == year, models.AnnualIteration.month == month)
+            .first()
+        )
+        return [it] if it else []
+    return _in_progress_iterations(db)
+
+
+def _available_iterations(db: Session) -> List[schemas.DomainIterationOpt]:
+    its = (
+        db.query(models.AnnualIteration)
+        .order_by(models.AnnualIteration.year.desc(), models.AnnualIteration.month.desc())
+        .all()
+    )
+    return [
+        schemas.DomainIterationOpt(
+            year=it.year, month=it.month, status=it.status or "",
+            label=f"{it.year}年{it.month}月",
+            in_progress=(it.status == "in_progress"),
+        )
+        for it in its
+    ]
 
 
 # ─── helpers：需求聚合 ─────────────────────────────────────────────────────────
@@ -119,12 +149,15 @@ def _issue_rows_for_group(raw: List[dict], g: models.ResourceGroup) -> List[dict
 
 def _issue_summary_from_rows(rows: List[dict], mtime: Optional[str]) -> schemas.DomainIssueSummary:
     by_sev = {}
+    score = 0.0
     for r in rows:
         sev = (r.get("severity") or "").strip()
         if sev:
             by_sev[sev] = by_sev.get(sev, 0) + 1
+            score += _SEVERITY_WEIGHTS.get(sev, 0.0)
     return schemas.DomainIssueSummary(
-        available=True, total=len(rows), by_severity=by_sev, file_mtime=mtime,
+        available=True, total=len(rows), score=round(score, 1),
+        by_severity=by_sev, file_mtime=mtime,
     )
 
 
@@ -172,14 +205,18 @@ def _leader_name(db: Session, g: models.ResourceGroup) -> Optional[str]:
 
 # ─── routes ─────────────────────────────────────────────────────────────────
 @router.get("", response_model=schemas.DomainListOut)
-def list_domains(db: Session = Depends(get_db)):
+def list_domains(
+    year: Optional[int] = Query(None, description="按年度迭代月份取需求口径；与 month 同时给"),
+    month: Optional[int] = Query(None, ge=1, le=12),
+    db: Session = Depends(get_db),
+):
     groups = (
         db.query(models.ResourceGroup)
         .filter(models.ResourceGroup.kind == "pl", models.ResourceGroup.is_active.is_(True))
         .order_by(models.ResourceGroup.sort_order, models.ResourceGroup.id)
         .all()
     )
-    its = _in_progress_iterations(db)
+    its = _scope_iterations(db, year, month)
     iteration_ids = [it.id for it in its]
     raw, mtime, note = _load_issue_raw()
 
@@ -206,7 +243,12 @@ def list_domains(db: Session = Depends(get_db)):
             risks=_parse_risks(content.risks_json if content else "[]"),
             version=content.version if content else 0,
         ))
-    return schemas.DomainListOut(iteration_label=_iteration_label(its), rows=rows)
+    return schemas.DomainListOut(
+        iteration_label=_iteration_label(its),
+        selected_year=year, selected_month=month,
+        iterations=_available_iterations(db),
+        rows=rows,
+    )
 
 
 def _require_pl_group(db: Session, group_id: int) -> models.ResourceGroup:
@@ -219,10 +261,15 @@ def _require_pl_group(db: Session, group_id: int) -> models.ResourceGroup:
 
 
 @router.get("/{group_id}/requirements", response_model=List[schemas.IterationRequirementOut])
-def list_group_requirements(group_id: int, db: Session = Depends(get_db)):
-    """下钻：该领域在当前进行中迭代下的需求明细。"""
+def list_group_requirements(
+    group_id: int,
+    year: Optional[int] = Query(None),
+    month: Optional[int] = Query(None, ge=1, le=12),
+    db: Session = Depends(get_db),
+):
+    """下钻：该领域在选定月份（或进行中迭代）下的需求明细。"""
     _require_pl_group(db, group_id)
-    iteration_ids = [it.id for it in _in_progress_iterations(db)]
+    iteration_ids = [it.id for it in _scope_iterations(db, year, month)]
     if not iteration_ids:
         return []
     return (
