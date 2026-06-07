@@ -10,6 +10,7 @@ from fastapi import APIRouter, Depends, File, HTTPException, Query, Request, Upl
 from fastapi.responses import StreamingResponse
 from sqlalchemy.orm import Session
 
+import enums
 import models
 import schemas
 from auth import get_current_user
@@ -45,8 +46,9 @@ _IMPORT_COLUMNS = [
     ("备注", "remark", False),
 ]
 
-_PROGRESS_VALID = {"未开始", "进行中", "已完成", "已延期", "已变更", "不涉及"}
-_PRIORITY_VALID = {"P0", "P1", "P2", "P3"}
+# 词表统一收口到 enums（见 enums.py）；导入路径仍用集合做快速校验。
+_PROGRESS_VALID = set(enums.PROGRESS_STATUSES)
+_PRIORITY_VALID = set(enums.PRIORITIES)
 
 
 @router.get("", response_model=List[schemas.IterationRequirementOut])

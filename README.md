@@ -155,11 +155,20 @@ npm run dev
 - 表格筛选、分页、导出 Excel
 - 版本管理增加 changelog Markdown 渲染、附件上传
 - 迭代管理增加甘特图视图
-- 使用 Alembic 管理数据库迁移（替代 `create_all`）
 - 操作日志定期清理（cron + `DELETE WHERE created_at < ...`）
 - Docker Compose 一键部署 + Nginx 反向代理
 
 ## 更新日志
+
+### v0.26.0 — 2026-06-07
+
+**数据库治理（数据模型重构第一步：先打地基）**
+- **引入 Alembic**（[backend/alembic/](backend/alembic/)，用法见 [alembic/README.md](backend/alembic/README.md)）作为结构变更的系统：负责 `create_all` 做不到的改名 / 删列 / 改类型 / 加约束 / 数据回填；`env.py` 开 `render_as_batch=True` 让 SQLite 靠表重建完成 ALTER。基线 `0001_baseline`；现有库一次 `alembic stamp 0001_baseline` 接入，之后 `alembic upgrade head` 应用变更。
+  - `migrate.py`（`ADD COLUMN`）就此**冻结**，新列/表/约束一律走 Alembic；`create_all` 仍保留在启动路径（新库/新表开箱即用，零风险）。
+- **启用 SQLite 外键约束**：[database.py](backend/database.py) 给每条连接挂 `PRAGMA foreign_keys=ON`。此前 models 里所有 `ondelete=CASCADE/SET NULL` 只是写进 DDL 不生效——级联仅靠 ORM 兜底、裸 SQL 删除会留悬空外键；现已在数据库层强制（升级前已用 `PRAGMA foreign_key_check` 核验存量库零悬空外键）。
+- **状态/优先级枚举收口** 到 [backend/enums.py](backend/enums.py) 单一来源：进展状态 6 值（含「已变更」）、优先级 P0–P3、事务/迭代状态。此前这些词表以自由字符串散落在各 router 与前端，导致口径漂移、错字静默漏算。
+  - **统一两张需求表的优先级口径**：产品需求由「高/中/低」并入「P0–P3」（领域需求口径），存量数据由迁移 `0002` 按 高→P1/中→P2/低→P3 映射，Excel 导入自动转换，前端下拉同步。
+  - Pydantic 校验只挂在 **Create/Update** schema（`norm_priority`/`norm_progress`），不碰 Base/Out——避免读取老库历史值时 `from_attributes` 抛错。
 
 ### v0.25.0 — 2026-06-06
 

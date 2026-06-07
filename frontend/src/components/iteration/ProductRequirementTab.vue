@@ -325,7 +325,7 @@
     <el-dialog v-model="importVisible" title="批量导入产品需求" width="520px">
       <p class="import-tip">
         1. 先下载模板，按格式填写产品需求清单；<br />
-        2. 表头列名请勿改动；进展列填「未开始/进行中/已完成/已延期/已变更/不涉及」，优先级填 高/中/低；<br />
+        2. 表头列名请勿改动；进展列填「未开始/进行中/已完成/已延期/已变更/不涉及」，优先级填 P0/P1/P2/P3（旧高/中/低导入时自动转换）；<br />
         3. 上传 .xlsx 文件，系统将批量创建到当前迭代下。
       </p>
       <el-button :icon="Download" link type="primary" @click="onDownloadTemplate">
@@ -396,7 +396,8 @@ const props = defineProps({
 
 const isAdmin = auth.isAdmin
 
-const PRIORITIES = ['高', '中', '低']
+// 与后端 enums.PRIORITIES 保持一致（已与领域需求统一为 P0-P3）
+const PRIORITIES = ['P0', 'P1', 'P2', 'P3']
 const PROGRESS_STATUSES = ['未开始', '进行中', '已完成', '已延期', '已变更', '不涉及']
 
 // 特性角色列（FK 化）：fkField 是后端 FK 字段名
@@ -467,7 +468,7 @@ function defaultForm() {
     title: '',
     planned_version: '',
     target_version_id: null,
-    priority: '中',
+    priority: 'P2',
     feature: '',
     feature_fo: '',
     feature_fo_user_id: null,

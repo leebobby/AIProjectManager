@@ -1,7 +1,9 @@
 from datetime import datetime
 from typing import List, Optional
 
-from pydantic import BaseModel, ConfigDict
+from pydantic import BaseModel, ConfigDict, field_validator
+
+import enums
 
 
 # Pydantic v2 把 model_ 视为受保护命名空间，CustomerStatus 里有个 `model` 列，
@@ -365,8 +367,22 @@ class IterationRequirementBase(BaseModel):
     remark: Optional[str] = ""
 
 
+_IR_PROGRESS = ("progress_walkthrough", "progress_reverse", "progress_stc",
+                "progress_coding", "progress_bbit", "progress_clarify")
+
+
 class IterationRequirementCreate(IterationRequirementBase):
     iteration_id: int
+
+    @field_validator("priority")
+    @classmethod
+    def _v_priority(cls, v):
+        return enums.norm_priority(v, partial=False)
+
+    @field_validator(*_IR_PROGRESS)
+    @classmethod
+    def _v_progress(cls, v):
+        return enums.norm_progress(v, partial=False)
 
 
 class IterationRequirementUpdate(BaseModel):
@@ -394,6 +410,16 @@ class IterationRequirementUpdate(BaseModel):
     post_test_issue_count: Optional[int] = None
     remark: Optional[str] = None
 
+    @field_validator("priority")
+    @classmethod
+    def _v_priority(cls, v):
+        return enums.norm_priority(v, partial=True)
+
+    @field_validator(*_IR_PROGRESS)
+    @classmethod
+    def _v_progress(cls, v):
+        return enums.norm_progress(v, partial=True)
+
 
 class IterationRequirementOut(IterationRequirementBase):
     id: int
@@ -411,7 +437,7 @@ class IterationProductRequirementBase(BaseModel):
     title: Optional[str] = ""
     planned_version: Optional[str] = ""
     target_version_id: Optional[int] = None
-    priority: Optional[str] = "中"
+    priority: Optional[str] = "P2"
     feature: Optional[str] = ""
     feature_fo: Optional[str] = ""
     feature_fo_user_id: Optional[int] = None
@@ -433,8 +459,23 @@ class IterationProductRequirementBase(BaseModel):
     key_risks: Optional[str] = ""
 
 
+_IPR_PROGRESS = ("progress_walkthrough", "progress_reverse", "progress_domain",
+                 "progress_coding", "progress_joint_debug", "progress_clarify",
+                 "progress_test_result")
+
+
 class IterationProductRequirementCreate(IterationProductRequirementBase):
     iteration_id: int
+
+    @field_validator("priority")
+    @classmethod
+    def _v_priority(cls, v):
+        return enums.norm_priority(v, partial=False)
+
+    @field_validator(*_IPR_PROGRESS)
+    @classmethod
+    def _v_progress(cls, v):
+        return enums.norm_progress(v, partial=False)
 
 
 class IterationProductRequirementUpdate(BaseModel):
@@ -465,6 +506,16 @@ class IterationProductRequirementUpdate(BaseModel):
     actual_loc: Optional[str] = None
     actual_effort: Optional[str] = None
     key_risks: Optional[str] = None
+
+    @field_validator("priority")
+    @classmethod
+    def _v_priority(cls, v):
+        return enums.norm_priority(v, partial=True)
+
+    @field_validator(*_IPR_PROGRESS)
+    @classmethod
+    def _v_progress(cls, v):
+        return enums.norm_progress(v, partial=True)
 
 
 class IterationProductRequirementOut(IterationProductRequirementBase):

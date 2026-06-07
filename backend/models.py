@@ -268,7 +268,7 @@ class IterationProductRequirement(Base):
     planned_version = Column(String(64), default="", comment="计划交付版本（展示快照）")
     target_version_id = Column(Integer, ForeignKey("iteration_versions.id", ondelete="SET NULL"),
                                nullable=True, index=True, comment="计划交付迭代版本 FK")
-    priority = Column(String(8), default="中", comment="优先级 高/中/低")
+    priority = Column(String(8), default="P2", comment="优先级 P0/P1/P2/P3（旧高/中/低已统一）")
     feature = Column(String(128), default="", comment="所属特性")
     feature_fo = Column(String(64), default="", comment="特性FO（展示快照）")
     feature_fo_user_id = Column(Integer, ForeignKey("users.id", ondelete="SET NULL"),
@@ -324,7 +324,7 @@ class IterationRequirement(Base):
     target_version_id = Column(Integer, ForeignKey("iteration_versions.id", ondelete="SET NULL"),
                                nullable=True, index=True, comment="计划交付迭代版本 FK")
 
-    # 6 个交付进展子项：状态枚举 "未开始/进行中/已完成/已延期/不涉及"
+    # 6 个交付进展子项：状态枚举见 enums.PROGRESS_STATUSES（未开始/进行中/已完成/已延期/已变更/不涉及）
     progress_walkthrough = Column(String(16), default="未开始", comment="需求串讲")
     progress_reverse = Column(String(16), default="未开始", comment="反串讲")
     progress_stc = Column(String(16), default="未开始", comment="STC设计")

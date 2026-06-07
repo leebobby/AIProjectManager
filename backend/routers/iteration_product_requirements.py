@@ -10,6 +10,7 @@ from fastapi import APIRouter, Depends, File, HTTPException, Query, Request, Upl
 from fastapi.responses import StreamingResponse
 from sqlalchemy.orm import Session
 
+import enums
 import models
 import schemas
 from auth import get_current_user
@@ -26,8 +27,9 @@ def _fill_product_fks(db, data):
 
 router = APIRouter(prefix="/api/iteration-product-requirements", tags=["iteration-product-requirements"])
 
-_PROGRESS_VALID = {"未开始", "进行中", "已完成", "已延期", "已变更", "不涉及"}
-_PRIORITY_VALID = {"高", "中", "低"}
+# 词表统一收口到 enums（见 enums.py）。优先级已与领域需求统一为 P0-P3。
+_PROGRESS_VALID = set(enums.PROGRESS_STATUSES)
+_PRIORITY_VALID = set(enums.PRIORITIES)
 
 # Excel 模板列定义：(列标题, 字段名, 是否必填)
 _IMPORT_COLUMNS = [
@@ -66,7 +68,7 @@ def _validate_enums(data: dict) -> None:
         if pf in data and data[pf] and data[pf] not in _PROGRESS_VALID:
             raise HTTPException(status_code=400, detail=f"进展字段「{pf}」值「{data[pf]}」非法")
     if data.get("priority") and data["priority"] not in _PRIORITY_VALID:
-        raise HTTPException(status_code=400, detail=f"优先级「{data['priority']}」非法，应为 高/中/低")
+        raise HTTPException(status_code=400, detail=f"优先级「{data['priority']}」非法，应为 P0/P1/P2/P3")
 
 
 @router.get("", response_model=List[schemas.IterationProductRequirementOut])
@@ -173,7 +175,7 @@ def download_import_template():
 
     example = [
         1, "PRD-2026-001", "https://example.com/prd/2026-001", "示例产品需求标题",
-        "v0.6.0", "高", "智能投顾", "李四", "王五", "赵六",
+        "v0.6.0", "P1", "智能投顾", "李四", "王五", "赵六",
         "推荐引擎 / 用户画像",
         "已完成", "已完成", "进行中", "进行中", "未开始", "未开始", "未开始",
         "300", "180", "2人周", "关键算法依赖未到位",
@@ -191,7 +193,7 @@ def download_import_template():
     tip_row = ws.max_row + 2
     ws.cell(row=tip_row, column=1, value=(
         "提示：进展列填写「未开始/进行中/已完成/已延期/已变更/不涉及」之一；"
-        "优先级填 高/中/低；预估/实际代码量、实际工作量可填任意文本；"
+        "优先级填 P0/P1/P2/P3（旧高/中/低导入时会自动转换）；预估/实际代码量、实际工作量可填任意文本；"
         "序号留空将自动按现有最大序号顺序累加；删除示例行后再导入。"
     )).font = Font(italic=True, color="909399")
     ws.merge_cells(start_row=tip_row, start_column=1, end_row=tip_row, end_column=len(headers))
@@ -294,9 +296,12 @@ async def import_from_excel(
             continue
 
         priority = data.get("priority")
-        if priority and priority not in _PRIORITY_VALID:
-            errors.append(f"第 {r_idx} 行：优先级「{priority}」非法，应为 高/中/低，已跳过")
-            continue
+        if priority:
+            try:
+                data["priority"] = enums.norm_priority(priority)  # 旧高/中/低自动转 P 级
+            except ValueError:
+                errors.append(f"第 {r_idx} 行：优先级「{priority}」非法，应为 P0/P1/P2/P3，已跳过")
+                continue
 
         seq = data.get("seq")
         if not isinstance(seq, int) or seq <= 0:
