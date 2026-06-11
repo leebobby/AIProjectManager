@@ -70,6 +70,12 @@ const routes = [
     meta: { title: '干系人管理', icon: 'Avatar', group: '组织管理' },
   },
   {
+    path: '/business-trips',
+    name: 'BusinessTripManagement',
+    component: () => import('../views/BusinessTripManagement.vue'),
+    meta: { title: '出差管理', icon: 'Suitcase', group: '组织管理' },
+  },
+  {
     path: '/roadmaps',
     name: 'RoadmapManage',
     component: () => import('../views/RoadmapManage.vue'),

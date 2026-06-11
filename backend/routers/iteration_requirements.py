@@ -65,6 +65,20 @@ def list_by_iteration(
     return items
 
 
+@router.get("/by-version", response_model=List[schemas.IterationRequirementOut])
+def list_by_version(
+    version_id: int = Query(..., description="迭代版本 ID（按 target_version_id 过滤）"),
+    db: Session = Depends(get_db),
+):
+    """版本管理用：列出"计划交付版本"指向该迭代版本的领域需求。"""
+    return (
+        db.query(models.IterationRequirement)
+        .filter(models.IterationRequirement.target_version_id == version_id)
+        .order_by(models.IterationRequirement.seq.asc(), models.IterationRequirement.id.asc())
+        .all()
+    )
+
+
 @router.post("", response_model=schemas.IterationRequirementOut)
 def create_item(
     payload: schemas.IterationRequirementCreate,

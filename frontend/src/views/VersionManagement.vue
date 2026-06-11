@@ -60,6 +60,11 @@
                 <el-table-column prop="planned_date" label="预计发布日期" width="150" sortable>
                   <template #default="{ row: ir }">{{ formatDate(ir.planned_date) }}</template>
                 </el-table-column>
+                <el-table-column label="合入需求" width="100" align="center">
+                  <template #default="{ row: ir }">
+                    <el-button link type="primary" size="small" @click.stop="openMerge(ir)">查看</el-button>
+                  </template>
+                </el-table-column>
                 <el-table-column v-if="isAdmin" label="操作" width="140" fixed="right">
                   <template #default="{ row: ir }">
                     <el-button size="small" @click.stop="openEditIter(ir)">编辑</el-button>
@@ -156,6 +161,14 @@
       </template>
     </el-dialog>
 
+    <!-- 合入需求查看对话框 -->
+    <VersionMergeDialog
+      v-model="mergeVisible"
+      :version-id="mergeVersion.id"
+      :version-no="mergeVersion.version_no"
+      :version-title="mergeVersion.title"
+    />
+
     <!-- Iteration version dialog -->
     <el-dialog
       v-model="iterDialogVisible"
@@ -195,6 +208,7 @@ import { majorVersionApi, roadmapApi } from '../api'
 import { auth } from '../store/auth'
 import VersionTimeline from '../components/VersionTimeline.vue'
 import DebugVersionPanel from '../components/DebugVersionPanel.vue'
+import VersionMergeDialog from '../components/VersionMergeDialog.vue'
 
 const isAdmin = auth.isAdmin
 
@@ -207,6 +221,14 @@ const projects = ref([])
 const activeTab = ref('debug')   // 默认若无项目则停留在「客户面调试版本」
 const majorVersions = ref([])
 const loading = ref(false)
+
+// 合入需求查看对话框（按迭代版本看其关联的产品/领域需求）
+const mergeVisible = ref(false)
+const mergeVersion = ref({ id: null, version_no: '', title: '' })
+function openMerge(ir) {
+  mergeVersion.value = { id: ir.id, version_no: ir.version_no, title: ir.title }
+  mergeVisible.value = true
+}
 
 // major version dialog
 const majorDialogVisible = ref(false)

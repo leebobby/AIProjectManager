@@ -285,6 +285,16 @@ onBeforeUnmount(() => {
 </script>
 
 <style>
+/* 全局字体颜色统一：正文/标题/表格统一为近黑 #1f2329（与专项页一致），
+   弃用 Element Plus 默认的灰色正文 #606266，避免页面发灰、对比度不足 */
+:root {
+  --el-text-color-primary: #1f2329;
+  --el-text-color-regular: #1f2329;
+  --el-table-text-color: #1f2329;
+  --el-table-header-text-color: #1f2329;
+  /* 次要文字（提示/说明）保留中灰，维持层级 */
+  --el-text-color-secondary: #6b7280;
+}
 html, body, #app {
   height: 100%;
   margin: 0;

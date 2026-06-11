@@ -1260,3 +1260,58 @@ class DebugDashboardMonth(BaseModel):
 class DebugDashboardOut(BaseModel):
     customers: List[str] = []   # 列顺序：出现过的目标客户名
     months: List[DebugDashboardMonth] = []
+
+
+# ===== Business trip（成员出差管理） =====
+class BusinessTripBase(BaseModel):
+    user_id: Optional[int] = None
+    customer_id: Optional[int] = None
+    location: Optional[str] = ""
+    purpose: Optional[str] = ""
+    start_date: Optional[datetime] = None
+    end_date: Optional[datetime] = None
+    cancelled: Optional[bool] = False
+    remark: Optional[str] = ""
+    sort_order: Optional[int] = 0
+
+
+class BusinessTripCreate(BusinessTripBase):
+    pass
+
+
+class BusinessTripUpdate(BaseModel):
+    version: int
+    user_id: Optional[int] = None
+    customer_id: Optional[int] = None
+    location: Optional[str] = None
+    purpose: Optional[str] = None
+    start_date: Optional[datetime] = None
+    end_date: Optional[datetime] = None
+    cancelled: Optional[bool] = None
+    remark: Optional[str] = None
+    sort_order: Optional[int] = None
+
+
+class BusinessTripOut(BusinessTripBase):
+    id: int
+    user_name: Optional[str] = None       # 由后端解析回填
+    user_group: Optional[str] = None      # 出差人所属 PL 组（展示用）
+    customer_name: Optional[str] = None   # 由后端解析回填
+    status: str = ""                      # 计划中/进行中/已完成/已取消（按日期推导）
+    version: int
+
+    model_config = ConfigDict(from_attributes=True)
+
+
+class TripCustomerStat(BaseModel):
+    customer_name: str
+    current: int = 0     # 当前在差人次
+    planned: int = 0     # 计划中人次
+    total: int = 0       # 累计人次（不含已取消）
+
+
+class BusinessTripDashboardOut(BaseModel):
+    on_trip_now: int = 0     # 当前在差人次
+    planned: int = 0         # 计划中人次
+    this_month: int = 0      # 本月出差人次（与本月有交集）
+    by_customer: List[TripCustomerStat] = []

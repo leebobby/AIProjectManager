@@ -857,3 +857,28 @@ class DomainContent(Base):
     version = Column(Integer, nullable=False, default=0, comment="乐观锁")
     created_at = Column(DateTime, default=datetime.utcnow)
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+
+class BusinessTrip(Base):
+    """成员出差记录：谁、去哪个战场（客户主数据）、哪段时间、什么事由。
+
+    协作编辑域——登录用户均可填，带乐观锁。状态按起止日期实时推导
+    （计划中/进行中/已完成），另有 cancelled 标记。新表由 create_all 自动建。
+    """
+    __tablename__ = "business_trips"
+
+    id = Column(Integer, primary_key=True, index=True)
+    user_id = Column(Integer, ForeignKey("users.id", ondelete="SET NULL"),
+                     nullable=True, index=True, comment="出差人 FK（users）")
+    customer_id = Column(Integer, ForeignKey("customers.id", ondelete="SET NULL"),
+                         nullable=True, index=True, comment="目的地战场 FK（customers）")
+    location = Column(String(128), default="", comment="具体地点 / 非战场补充")
+    purpose = Column(String(256), default="", comment="出差事由")
+    start_date = Column(DateTime, nullable=True, comment="出发日期")
+    end_date = Column(DateTime, nullable=True, comment="返回日期")
+    cancelled = Column(Boolean, nullable=False, default=False, comment="是否取消")
+    remark = Column(Text, default="", comment="备注")
+    sort_order = Column(Integer, default=0)
+    version = Column(Integer, nullable=False, default=0, comment="乐观锁版本号")
+    created_at = Column(DateTime, default=datetime.utcnow)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)

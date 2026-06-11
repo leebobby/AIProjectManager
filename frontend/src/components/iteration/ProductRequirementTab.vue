@@ -63,14 +63,13 @@
 
       <el-table-column label="计划交付版本" width="170">
         <template #default="{ row }">
-          <el-select
-            :model-value="row.planned_version"
-            size="small"
+          <EditSelectCell
+            :value="row.planned_version"
+            :display-text="row.planned_version || ''"
             clearable
             filterable
             allow-create
             placeholder="选择或输入"
-            style="width: 100%"
             @change="(v) => onFieldChange(row, 'planned_version', v)"
           >
             <el-option-group
@@ -88,36 +87,36 @@
                 <span v-if="ver.title" style="color:#909399; margin-left:6px; font-size:12px">{{ ver.title }}</span>
               </el-option>
             </el-option-group>
-          </el-select>
+          </EditSelectCell>
         </template>
       </el-table-column>
 
       <el-table-column label="优先级" width="100" align="center">
         <template #default="{ row }">
-          <el-select
-            :model-value="row.priority"
-            size="small"
+          <EditSelectCell
+            :value="row.priority"
+            :display-text="row.priority || ''"
+            placeholder="—"
             @change="(v) => onFieldChange(row, 'priority', v)"
           >
             <el-option v-for="p in PRIORITIES" :key="p" :label="p" :value="p" />
-          </el-select>
+          </EditSelectCell>
         </template>
       </el-table-column>
 
       <el-table-column label="所属特性" width="150">
         <template #default="{ row }">
-          <el-select
-            :model-value="row.feature"
-            size="small"
+          <EditSelectCell
+            :value="row.feature"
+            :display-text="row.feature || ''"
             clearable
             filterable
             allow-create
             placeholder="选择或输入"
-            style="width: 100%"
             @change="(v) => onFieldChange(row, 'feature', v)"
           >
             <el-option v-for="f in features" :key="f" :label="f" :value="f" />
-          </el-select>
+          </EditSelectCell>
         </template>
       </el-table-column>
 
@@ -128,14 +127,13 @@
         :width="col.width"
       >
         <template #default="{ row }">
-          <el-select
-            :model-value="row[col.fkField] || row[col.field] || null"
-            size="small"
+          <EditSelectCell
+            :value="row[col.fkField] || row[col.field] || null"
+            :display-text="row[col.field] || ''"
             clearable
             filterable
             allow-create
             placeholder="选择或输入"
-            style="width: 100%"
             @change="(v) => onUserColChange(row, col, v)"
           >
             <el-option
@@ -147,7 +145,7 @@
               <span>{{ u.full_name || u.username }}</span>
               <span v-if="u.emp_no" style="color:#909399; margin-left:6px; font-size:12px">{{ u.emp_no }}</span>
             </el-option>
-          </el-select>
+          </EditSelectCell>
         </template>
       </el-table-column>
 
@@ -183,13 +181,15 @@
           align="center"
         >
           <template #default="{ row }">
-            <el-select
-              :model-value="row[col.field]"
-              size="small"
+            <EditSelectCell
+              :value="row[col.field]"
+              :display-text="row[col.field] || ''"
+              :tone="progressTone(row[col.field])"
+              placeholder="—"
               @change="(v) => onFieldChange(row, col.field, v)"
             >
               <el-option v-for="s in PROGRESS_STATUSES" :key="s" :label="s" :value="s" />
-            </el-select>
+            </EditSelectCell>
           </template>
         </el-table-column>
 
@@ -388,6 +388,7 @@ import { ElMessage, ElMessageBox } from 'element-plus'
 import { Delete, Download, Plus, Refresh, Setting, Upload, UploadFilled } from '@element-plus/icons-vue'
 import { configApi, downloadBlob, productRequirementApi, userApi } from '../../api'
 import { auth } from '../../store/auth'
+import EditSelectCell from '../EditSelectCell.vue'
 
 const props = defineProps({
   iterationId: { type: Number, required: true },
@@ -399,6 +400,13 @@ const isAdmin = auth.isAdmin
 // 与后端 enums.PRIORITIES 保持一致（已与领域需求统一为 P0-P3）
 const PRIORITIES = ['P0', 'P1', 'P2', 'P3']
 const PROGRESS_STATUSES = ['未开始', '进行中', '已完成', '已延期', '已变更', '不涉及']
+
+// 进展着色：已完成→绿、已延期→红，其余默认（仅着色单元格本身）
+function progressTone(v) {
+  if (v === '已完成') return 'success'
+  if (v === '已延期') return 'danger'
+  return ''
+}
 
 // 特性角色列（FK 化）：fkField 是后端 FK 字段名
 const USER_COLS = [

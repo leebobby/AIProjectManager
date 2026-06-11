@@ -76,14 +76,13 @@
       </el-table-column>
       <el-table-column label="责任人" width="150">
         <template #default="{ row }">
-          <el-select
-            :model-value="row.owner_user_id || row.owner || null"
-            size="small"
+          <EditSelectCell
+            :value="row.owner_user_id || row.owner || null"
+            :display-text="row.owner || ''"
             clearable
             filterable
             allow-create
             placeholder="选择或输入"
-            style="width: 100%"
             @change="(v) => onOwnerChange(row, v)"
           >
             <el-option
@@ -95,19 +94,18 @@
               <span>{{ u.full_name || u.username }}</span>
               <span v-if="u.emp_no" style="color:#909399; margin-left:6px; font-size:12px">{{ u.emp_no }}</span>
             </el-option>
-          </el-select>
+          </EditSelectCell>
         </template>
       </el-table-column>
       <el-table-column label="PL组" width="170">
         <template #default="{ row }">
-          <el-select
-            :model-value="row.group_id || row.owner_group || null"
-            size="small"
+          <EditSelectCell
+            :value="row.group_id || row.owner_group || null"
+            :display-text="row.owner_group || ''"
             clearable
             filterable
             allow-create
             placeholder="选择或输入"
-            style="width: 100%"
             @change="(v) => onGroupChange(row, v)"
           >
             <el-option
@@ -119,30 +117,30 @@
               <span>{{ g.name }}</span>
               <span v-if="g.parent_name" style="color:#909399; margin-left:6px; font-size:12px">{{ g.parent_name }}</span>
             </el-option>
-          </el-select>
+          </EditSelectCell>
         </template>
       </el-table-column>
       <el-table-column label="优先级" width="100" align="center">
         <template #default="{ row }">
-          <el-select
-            :model-value="row.priority"
-            size="small"
+          <EditSelectCell
+            :value="row.priority"
+            :display-text="row.priority || ''"
+            placeholder="—"
             @change="(v) => onFieldChange(row, 'priority', v)"
           >
             <el-option v-for="p in PRIORITIES" :key="p" :label="p" :value="p" />
-          </el-select>
+          </EditSelectCell>
         </template>
       </el-table-column>
       <el-table-column label="计划交付版本" width="170">
         <template #default="{ row }">
-          <el-select
-            :model-value="row.planned_version"
-            size="small"
+          <EditSelectCell
+            :value="row.planned_version"
+            :display-text="row.planned_version || ''"
             clearable
             filterable
             allow-create
             placeholder="选择或输入版本"
-            style="width: 100%"
             @change="(v) => onFieldChange(row, 'planned_version', v)"
           >
             <el-option-group
@@ -160,7 +158,7 @@
                 <span v-if="ver.title" style="color:#909399; margin-left:6px; font-size:12px">{{ ver.title }}</span>
               </el-option>
             </el-option-group>
-          </el-select>
+          </EditSelectCell>
         </template>
       </el-table-column>
 
@@ -173,9 +171,11 @@
           align="center"
         >
           <template #default="{ row }">
-            <el-select
-              :model-value="row[col.field]"
-              size="small"
+            <EditSelectCell
+              :value="row[col.field]"
+              :display-text="row[col.field] || ''"
+              :tone="progressTone(row[col.field])"
+              placeholder="—"
               @change="(v) => onFieldChange(row, col.field, v)"
             >
               <el-option
@@ -184,7 +184,7 @@
                 :label="s"
                 :value="s"
               />
-            </el-select>
+            </EditSelectCell>
           </template>
         </el-table-column>
       </el-table-column>
@@ -435,6 +435,7 @@ import { computed, onMounted, reactive, ref } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { Download, Plus, Refresh, Upload, UploadFilled } from '@element-plus/icons-vue'
 import { downloadBlob, iterationRequirementApi, resourceGroupApi, userApi } from '../../api'
+import EditSelectCell from '../EditSelectCell.vue'
 
 const props = defineProps({
   iterationId: { type: Number, required: true },
@@ -451,6 +452,13 @@ const PROGRESS_COLS = [
 ]
 const PROGRESS_STATUSES = ['未开始', '进行中', '已完成', '已延期', '已变更', '不涉及']
 const PRIORITIES = ['P0', 'P1', 'P2', 'P3']
+
+// 进展着色：已完成→绿、已延期→红，其余默认（仅着色单元格本身）
+function progressTone(v) {
+  if (v === '已完成') return 'success'
+  if (v === '已延期') return 'danger'
+  return ''
+}
 
 const list = ref([])
 const userOptions = ref([])
@@ -570,6 +578,12 @@ function onFormOwnerChange(v) {
     const u = userOptions.value.find((x) => x.id === v)
     form.owner_user_id = v
     form.owner = u ? (u.full_name || u.username) : ''
+    // 自动带出该用户所属 PL 组（同步 select 显示值 formGroupPick）
+    if (u && u.group_id) {
+      form.group_id = u.group_id
+      form.owner_group = u.group_name || ''
+      formGroupPick.value = u.group_id
+    }
   } else {
     // 手填字符串：清掉 FK，保留字符串
     form.owner_user_id = null
@@ -673,6 +687,11 @@ async function onOwnerChange(row, value) {
     const u = userOptions.value.find((x) => x.id === value)
     payload.owner_user_id = value
     payload.owner = u ? (u.full_name || u.username) : ''
+    // 选中真实用户时自动带出其所属 PL 组（仅当该用户已挂组）
+    if (u && u.group_id) {
+      payload.group_id = u.group_id
+      payload.owner_group = u.group_name || ''
+    }
   } else if (value) {
     payload.owner_user_id = null
     payload.owner = value
@@ -680,7 +699,10 @@ async function onOwnerChange(row, value) {
     payload.owner_user_id = null
     payload.owner = ''
   }
-  const snapshot = { owner: row.owner, owner_user_id: row.owner_user_id }
+  const snapshot = {
+    owner: row.owner, owner_user_id: row.owner_user_id,
+    owner_group: row.owner_group, group_id: row.group_id,
+  }
   Object.assign(row, payload)
   try {
     const { data } = await iterationRequirementApi.update(row.id, payload)

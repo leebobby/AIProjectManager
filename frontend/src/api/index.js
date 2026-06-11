@@ -288,6 +288,7 @@ export const annualIterationApi = {
 
 export const iterationRequirementApi = {
   list: (iteration_id) => http.get('/iteration-requirements', { params: { iteration_id } }),
+  byVersion: (version_id) => http.get('/iteration-requirements/by-version', { params: { version_id } }),
   create: (data) => http.post('/iteration-requirements', data),
   update: (id, data) => http.put(`/iteration-requirements/${id}`, data),
   remove: (id) => http.delete(`/iteration-requirements/${id}`),
@@ -325,8 +326,18 @@ export const debugDemandApi = {
   remove: (id) => http.delete(`/debug-demands/${id}`),
 }
 
+export const businessTripApi = {
+  // params: { user_id?, customer_id? }
+  list: (params) => http.get('/business-trips', { params }),
+  dashboard: () => http.get('/business-trips/dashboard'),
+  create: (data) => http.post('/business-trips', data),
+  update: (id, data) => http.put(`/business-trips/${id}`, data),
+  remove: (id) => http.delete(`/business-trips/${id}`),
+}
+
 export const productRequirementApi = {
   list: (iteration_id) => http.get('/iteration-product-requirements', { params: { iteration_id } }),
+  byVersion: (version_id) => http.get('/iteration-product-requirements/by-version', { params: { version_id } }),
   create: (data) => http.post('/iteration-product-requirements', data),
   update: (id, data) => http.put(`/iteration-product-requirements/${id}`, data),
   remove: (id) => http.delete(`/iteration-product-requirements/${id}`),
