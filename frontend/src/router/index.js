@@ -73,7 +73,7 @@ const routes = [
     path: '/business-trips',
     name: 'BusinessTripManagement',
     component: () => import('../views/BusinessTripManagement.vue'),
-    meta: { title: '出差管理', icon: 'Suitcase', group: '组织管理' },
+    meta: { title: '出差管理', icon: 'Suitcase', group: '客户面管理' },
   },
   {
     path: '/roadmaps',

@@ -16,6 +16,10 @@ backend/cluster_manager.db
 backend/cluster_manager.db-journal
 backend/cluster_manager.log
 backend/*.log
+# SQLite WAL 模式的运行时旁文件（journal_mode=WAL 后自动生成，不入库）
+backend/app.db-wal
+backend/app.db-shm
+backend/app.db-journal
 
 # ── Backend - 用户上传文件 (handbook / specials 全景图) ─────
 backend/uploads/

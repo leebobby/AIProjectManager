@@ -13,12 +13,17 @@ router = APIRouter(prefix="/api/users", tags=["users"])
 
 
 # ─── helpers ────────────────────────────────────────────────────────────────
-def _serialize_user(db: Session, u: models.User) -> dict:
-    """把 User 实例转成包含组/部门派生字段的 dict，供 UserOut 直接消费。"""
-    group = u.group  # 已 relationship；可能为 None
-    dept = None
-    if group and group.parent_id:
-        dept = db.query(models.ResourceGroup).get(group.parent_id)
+def _serialize_user(db: Session, u: models.User, groups: dict = None, depts: dict = None) -> dict:
+    """把 User 实例转成包含组/部门派生字段的 dict，供 UserOut 直接消费。
+
+    传入预取的 groups/depts 映射时走批量路径（不再逐用户查库）；不传则按单用户惰性查。
+    """
+    if groups is None:
+        group = u.group  # relationship 惰性加载；可能为 None
+        dept = db.query(models.ResourceGroup).get(group.parent_id) if (group and group.parent_id) else None
+    else:
+        group = groups.get(u.group_id)
+        dept = depts.get(group.parent_id) if (group and group.parent_id) else None
     return {
         "id": u.id,
         "username": u.username,
@@ -37,6 +42,21 @@ def _serialize_user(db: Session, u: models.User) -> dict:
     }
 
 
+def _serialize_users(db: Session, users: List[models.User]) -> List[dict]:
+    """批量序列化：组、部门各一次性取出，避免逐用户 N+1 查询（用户多时是卡顿来源）。"""
+    group_ids = {u.group_id for u in users if u.group_id}
+    groups = (
+        {g.id: g for g in db.query(models.ResourceGroup).filter(models.ResourceGroup.id.in_(group_ids)).all()}
+        if group_ids else {}
+    )
+    dept_ids = {g.parent_id for g in groups.values() if g.parent_id}
+    depts = (
+        {d.id: d for d in db.query(models.ResourceGroup).filter(models.ResourceGroup.id.in_(dept_ids)).all()}
+        if dept_ids else {}
+    )
+    return [_serialize_user(db, u, groups, depts) for u in users]
+
+
 def _validate_group_id(db: Session, group_id: Optional[int]) -> None:
     if group_id is None:
         return
@@ -52,7 +72,7 @@ def _validate_group_id(db: Session, group_id: Optional[int]) -> None:
 @router.get("", response_model=List[schemas.UserOut], dependencies=[Depends(require_admin)])
 def list_users(db: Session = Depends(get_db)):
     rows = db.query(models.User).order_by(models.User.id.asc()).all()
-    return [_serialize_user(db, u) for u in rows]
+    return _serialize_users(db, rows)
 
 
 @router.get("/options", response_model=List[schemas.UserOut])
@@ -69,7 +89,7 @@ def list_user_options(
     if only_can_login:
         q = q.filter(models.User.can_login.is_(True))
     rows = q.order_by(models.User.full_name, models.User.id).all()
-    return [_serialize_user(db, u) for u in rows]
+    return _serialize_users(db, rows)
 
 
 @router.post("", response_model=schemas.UserOut, dependencies=[Depends(require_admin)])
