@@ -2,7 +2,7 @@
   <div class="dv-panel">
     <!-- ===== 调试版本 ===== -->
     <div class="sec-head">
-      <span class="sec-title">客户面调试版本</span>
+      <span class="sec-title">现场调试版本</span>
       <el-button type="primary" size="small" :icon="Plus" @click="openVer()">新增调试版本</el-button>
       <el-button size="small" :icon="Refresh" @click="load">刷新</el-button>
     </div>
@@ -30,6 +30,11 @@
         <el-table-column prop="merge_offline_analysis" label="离线分析软件" min-width="130" show-overflow-tooltip />
       </el-table-column>
       <el-table-column prop="selfcheck_archive" label="自验证报告归档" min-width="140" show-overflow-tooltip />
+      <el-table-column label="接收人名单" width="110" align="center">
+        <template #default="{ row }">
+          <el-button link type="primary" size="small" :icon="UserFilled" @click="openRecipients(row)">名单</el-button>
+        </template>
+      </el-table-column>
       <el-table-column label="操作" width="120" fixed="right">
         <template #default="{ row }">
           <el-button link type="primary" size="small" @click="openVer(row)">编辑</el-button>
@@ -132,13 +137,52 @@
         <el-button type="primary" :loading="saving" @click="saveDem">保存</el-button>
       </template>
     </el-dialog>
+
+    <!-- 接受版本姓名列表 弹窗 -->
+    <el-dialog v-model="recVisible" :title="`接受版本姓名列表 · ${recVer.version_no || ''}`" width="620px" :close-on-click-modal="false">
+      <div class="rec-head">
+        <el-button type="primary" size="small" :icon="MagicStick" :loading="recLoading" @click="autoMatch">
+          从战场沟通矩阵匹配
+        </el-button>
+        <span v-if="recVer.target_customer_name" class="rec-cust">目标客户：{{ recVer.target_customer_name }}</span>
+        <span class="rec-stat">已接收 {{ receivedCount }} / {{ recipients.length }}</span>
+      </div>
+      <el-table :data="recipients" v-loading="recLoading" border size="small" max-height="400" style="width: 100%">
+        <el-table-column label="已接收" width="70" align="center">
+          <template #default="{ row }">
+            <el-checkbox :model-value="row.received" @change="(v) => setReceived(row, v)" />
+          </template>
+        </el-table-column>
+        <el-table-column label="姓名 / 联系人" min-width="180">
+          <template #default="{ row }">
+            <el-input v-model="row.name" size="small" @change="() => saveRecipient(row)" />
+          </template>
+        </el-table-column>
+        <el-table-column prop="role" label="来源" width="150" show-overflow-tooltip />
+        <el-table-column label="操作" width="70" align="center">
+          <template #default="{ row }">
+            <el-button link type="danger" size="small" @click="delRecipient(row)">删除</el-button>
+          </template>
+        </el-table-column>
+      </el-table>
+      <div v-if="!recLoading && !recipients.length" class="rec-empty">
+        暂无接收人。点「从战场沟通矩阵匹配」按目标客户自动带出，或手工添加。
+      </div>
+      <div class="rec-add">
+        <el-input v-model="newRecipient" size="small" placeholder="手工添加接收人姓名" style="width: 240px" @keyup.enter="addRecipient" />
+        <el-button size="small" :icon="Plus" @click="addRecipient">添加</el-button>
+      </div>
+      <template #footer>
+        <el-button @click="recVisible = false">关闭</el-button>
+      </template>
+    </el-dialog>
   </div>
 </template>
 
 <script setup>
-import { onMounted, reactive, ref } from 'vue'
+import { computed, onMounted, reactive, ref } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
-import { Plus, Refresh } from '@element-plus/icons-vue'
+import { MagicStick, Plus, Refresh, UserFilled } from '@element-plus/icons-vue'
 import { debugVersionApi, debugDemandApi, customerApi } from '../api'
 
 const loading = ref(false)
@@ -252,6 +296,81 @@ async function delDem(row) {
   } catch (e) { ElMessage.error(e.response?.data?.detail || '删除失败') }
 }
 
+// ── 接受版本姓名列表 ──
+const recVisible = ref(false)
+const recLoading = ref(false)
+const recVer = ref({ id: null, version_no: '', target_customer_id: null, target_customer_name: '' })
+const recipients = ref([])
+const newRecipient = ref('')
+const receivedCount = computed(() => recipients.value.filter((r) => r.received).length)
+
+async function openRecipients(row) {
+  recVer.value = {
+    id: row.id, version_no: row.version_no,
+    target_customer_id: row.target_customer_id, target_customer_name: row.target_customer_name,
+  }
+  recipients.value = []
+  recVisible.value = true
+  recLoading.value = true
+  try {
+    const { data } = await debugVersionApi.recipients(row.id)
+    recipients.value = data
+    // 发布即自动匹配：名单为空且指定了目标客户时，自动按战场沟通矩阵带出一次
+    if (!data.length && row.target_customer_id) {
+      const { data: matched } = await debugVersionApi.autoMatchRecipients(row.id)
+      recipients.value = matched
+    }
+  } catch (e) {
+    ElMessage.error(e.response?.data?.detail || '加载接收人失败')
+  } finally {
+    recLoading.value = false
+  }
+}
+
+async function autoMatch() {
+  if (!recVer.value.id) return
+  recLoading.value = true
+  try {
+    const { data } = await debugVersionApi.autoMatchRecipients(recVer.value.id)
+    recipients.value = data
+    ElMessage.success('已按战场沟通矩阵匹配')
+  } catch (e) {
+    ElMessage.error(e.response?.data?.detail || '匹配失败')
+  } finally {
+    recLoading.value = false
+  }
+}
+
+async function setReceived(row, v) {
+  try {
+    await debugVersionApi.updateRecipient(row.id, { received: v })
+    row.received = v
+  } catch (e) { ElMessage.error(e.response?.data?.detail || '保存失败') }
+}
+
+async function saveRecipient(row) {
+  try {
+    await debugVersionApi.updateRecipient(row.id, { name: row.name })
+  } catch (e) { ElMessage.error(e.response?.data?.detail || '保存失败') }
+}
+
+async function addRecipient() {
+  const name = newRecipient.value.trim()
+  if (!name) { ElMessage.warning('请输入姓名'); return }
+  try {
+    const { data } = await debugVersionApi.addRecipient(recVer.value.id, { name, role: '手工添加' })
+    recipients.value.push(data)
+    newRecipient.value = ''
+  } catch (e) { ElMessage.error(e.response?.data?.detail || '添加失败') }
+}
+
+async function delRecipient(row) {
+  try {
+    await debugVersionApi.removeRecipient(row.id)
+    recipients.value = recipients.value.filter((r) => r.id !== row.id)
+  } catch (e) { ElMessage.error(e.response?.data?.detail || '删除失败') }
+}
+
 onMounted(() => { load(); loadCustomers() })
 </script>
 
@@ -260,4 +379,9 @@ onMounted(() => { load(); loadCustomers() })
 .sec-head { display: flex; align-items: center; gap: 8px; margin-bottom: 10px; }
 .sec-title { font-size: 15px; font-weight: 600; color: #303133; margin-right: 4px; }
 .muted { color: #c0c4cc; }
+.rec-head { display: flex; align-items: center; gap: 12px; margin-bottom: 10px; }
+.rec-cust { font-size: 13px; color: #606266; }
+.rec-stat { margin-left: auto; font-size: 13px; color: #67C23A; font-weight: 600; }
+.rec-empty { color: #909399; font-size: 13px; padding: 10px 2px; }
+.rec-add { display: flex; align-items: center; gap: 8px; margin-top: 12px; }
 </style>

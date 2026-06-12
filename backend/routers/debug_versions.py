@@ -1,4 +1,4 @@
-"""客户面调试版本（T 版本）+ 诉求收集 + 现场使用看板。
+"""现场调试版本（T 版本）+ 诉求收集 + 接受版本姓名列表 + 现场使用看板。
 
 权限：协作编辑域（见 CLAUDE.md「Write-permission principle」）——日常记录，
 登录用户均可读写，带乐观锁。新表由 create_all 自动建。
@@ -115,7 +115,7 @@ def create_version(
     db.add(obj)
     db.commit()
     db.refresh(obj)
-    log_op(db, action="新增", target="客户面调试版本", target_id=obj.id,
+    log_op(db, action="新增", target="现场调试版本", target_id=obj.id,
            detail=f"version_no={obj.version_no}", user=current_user, request=request)
     return _version_out(obj, _cust_name_map(db))
 
@@ -140,7 +140,7 @@ def update_version(
     obj.version += 1
     db.commit()
     db.refresh(obj)
-    log_op(db, action="修改", target="客户面调试版本", target_id=obj.id,
+    log_op(db, action="修改", target="现场调试版本", target_id=obj.id,
            detail=f"version_no={obj.version_no}", user=current_user, request=request)
     return _version_out(obj, _cust_name_map(db))
 
@@ -158,7 +158,7 @@ def delete_version(
     vn = obj.version_no
     db.delete(obj)
     db.commit()
-    log_op(db, action="删除", target="客户面调试版本", target_id=vid,
+    log_op(db, action="删除", target="现场调试版本", target_id=vid,
            detail=f"version_no={vn}", user=current_user, request=request)
     return {"ok": True}
 
@@ -236,5 +236,127 @@ def delete_demand(
     db.delete(obj)
     db.commit()
     log_op(db, action="删除", target="调试版本诉求", target_id=did,
+           detail="", user=current_user, request=request)
+    return {"ok": True}
+
+
+# ─── 接受版本姓名列表 ─────────────────────────────────────────────────────────
+def _recipients_of(db: Session, vid: int):
+    return (
+        db.query(models.DebugVersionRecipient)
+        .filter(models.DebugVersionRecipient.debug_version_id == vid)
+        .order_by(models.DebugVersionRecipient.sort_order.asc(),
+                  models.DebugVersionRecipient.id.asc())
+        .all()
+    )
+
+
+@router.get("/debug-versions/{vid}/recipients", response_model=List[schemas.DebugRecipientOut])
+def list_recipients(vid: int, db: Session = Depends(get_db)):
+    return _recipients_of(db, vid)
+
+
+@router.post("/debug-versions/{vid}/recipients/auto-match",
+             response_model=List[schemas.DebugRecipientOut])
+def auto_match_recipients(
+    vid: int,
+    request: Request,
+    db: Session = Depends(get_db),
+    current_user: models.User = Depends(get_current_user),
+):
+    """按调试版本的目标客户，从「战场沟通矩阵」自动带出接收人（补充式，不覆盖已有）。"""
+    ver = db.query(models.DebugVersion).filter(models.DebugVersion.id == vid).first()
+    if not ver:
+        raise HTTPException(404, "调试版本不存在")
+    if not ver.target_customer_id:
+        raise HTTPException(400, "该调试版本未指定目标客户，无法匹配战场干系人")
+
+    existing = {(r.name or "").strip() for r in _recipients_of(db, vid) if (r.name or "").strip()}
+    base_sort = max([r.sort_order or 0 for r in _recipients_of(db, vid)] or [0])
+
+    rows = (
+        db.query(models.StakeholderBattlefield)
+        .filter(models.StakeholderBattlefield.customer_id == ver.target_customer_id)
+        .all()
+    )
+    added = 0
+    for bf in rows:
+        pairs = [
+            (bf.contact1, "服务" + (f"/{bf.service}" if bf.service else "")),
+            (bf.contact2, "APPS" + (f"/{bf.apps}" if bf.apps else "")),
+        ]
+        for raw, role in pairs:
+            for line in str(raw or "").splitlines():
+                name = line.strip()
+                if not name or name in existing:
+                    continue
+                existing.add(name)
+                base_sort += 1
+                db.add(models.DebugVersionRecipient(
+                    debug_version_id=vid, name=name, role=role,
+                    received=False, sort_order=base_sort,
+                ))
+                added += 1
+    db.commit()
+    log_op(db, action="自动匹配", target="版本接收人", target_id=vid,
+           detail=f"customer_id={ver.target_customer_id} added={added}",
+           user=current_user, request=request)
+    return _recipients_of(db, vid)
+
+
+@router.post("/debug-versions/{vid}/recipients", response_model=schemas.DebugRecipientOut)
+def add_recipient(
+    vid: int,
+    payload: schemas.DebugRecipientCreate,
+    request: Request,
+    db: Session = Depends(get_db),
+    current_user: models.User = Depends(get_current_user),
+):
+    ver = db.query(models.DebugVersion).filter(models.DebugVersion.id == vid).first()
+    if not ver:
+        raise HTTPException(404, "调试版本不存在")
+    data = payload.model_dump()
+    if not data.get("sort_order"):
+        data["sort_order"] = max([r.sort_order or 0 for r in _recipients_of(db, vid)] or [0]) + 1
+    obj = models.DebugVersionRecipient(debug_version_id=vid, **data)
+    db.add(obj)
+    db.commit()
+    db.refresh(obj)
+    log_op(db, action="新增", target="版本接收人", target_id=obj.id,
+           detail=f"version={vid} name={obj.name}", user=current_user, request=request)
+    return obj
+
+
+@router.put("/debug-versions/recipients/{rid}", response_model=schemas.DebugRecipientOut)
+def update_recipient(
+    rid: int,
+    payload: schemas.DebugRecipientUpdate,
+    request: Request,
+    db: Session = Depends(get_db),
+    current_user: models.User = Depends(get_current_user),
+):
+    obj = db.query(models.DebugVersionRecipient).filter(models.DebugVersionRecipient.id == rid).first()
+    if not obj:
+        raise HTTPException(404, "Not found")
+    for k, v in payload.model_dump(exclude_unset=True).items():
+        setattr(obj, k, v)
+    db.commit()
+    db.refresh(obj)
+    return obj
+
+
+@router.delete("/debug-versions/recipients/{rid}")
+def delete_recipient(
+    rid: int,
+    request: Request,
+    db: Session = Depends(get_db),
+    current_user: models.User = Depends(get_current_user),
+):
+    obj = db.query(models.DebugVersionRecipient).filter(models.DebugVersionRecipient.id == rid).first()
+    if not obj:
+        raise HTTPException(404, "Not found")
+    db.delete(obj)
+    db.commit()
+    log_op(db, action="删除", target="版本接收人", target_id=rid,
            detail="", user=current_user, request=request)
     return {"ok": True}

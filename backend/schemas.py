@@ -1262,6 +1262,32 @@ class DebugDashboardOut(BaseModel):
     months: List[DebugDashboardMonth] = []
 
 
+# ===== 现场调试版本 · 接受版本姓名列表 =====
+class DebugRecipientBase(BaseModel):
+    name: Optional[str] = ""
+    role: Optional[str] = ""
+    received: Optional[bool] = False
+    sort_order: Optional[int] = 0
+
+
+class DebugRecipientCreate(DebugRecipientBase):
+    pass
+
+
+class DebugRecipientUpdate(BaseModel):
+    name: Optional[str] = None
+    role: Optional[str] = None
+    received: Optional[bool] = None
+    sort_order: Optional[int] = None
+
+
+class DebugRecipientOut(DebugRecipientBase):
+    id: int
+    debug_version_id: int
+
+    model_config = ConfigDict(from_attributes=True)
+
+
 # ===== Business trip（成员出差管理） =====
 class BusinessTripBase(BaseModel):
     user_id: Optional[int] = None

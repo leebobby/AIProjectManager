@@ -4,12 +4,12 @@
     <div class="marquee-viewport" @mouseenter="paused = true" @mouseleave="paused = false">
       <div
         class="marquee-track"
-        :class="{ paused }"
+        :class="{ paused, scroll: shouldScroll }"
         :style="{ animationDuration: duration + 's' }"
       >
-        <!-- 渲染两遍以实现无缝循环 -->
+        <!-- 条目多时复制一遍做无缝滚动；条目少时静止左对齐，避免只剩一小条看不清 -->
         <span
-          v-for="(n, i) in loopItems"
+          v-for="(n, i) in displayItems"
           :key="i"
           class="marquee-item"
           :class="{ unread: !n.is_read }"
@@ -53,10 +53,12 @@ function kindType(k) {
 }
 
 const visibleItems = computed(() => (dismissed.value ? [] : items.value))
-// 复制一遍用于无缝滚动；条目过少时也复制以保证轨道宽度足够
+// 条目较多才滚动；少于 5 条静止展示，避免内容被压成一小条、看不清
+const shouldScroll = computed(() => visibleItems.value.length >= 5)
 const loopItems = computed(() => [...visibleItems.value, ...visibleItems.value])
-// 滚动时长随条目数变化，单条约 6s
-const duration = computed(() => Math.max(20, visibleItems.value.length * 6))
+const displayItems = computed(() => (shouldScroll.value ? loopItems.value : visibleItems.value))
+// 放慢滚动：单条约 8s，最少 30s 跑完一圈
+const duration = computed(() => Math.max(30, visibleItems.value.length * 8))
 
 async function load() {
   if (!auth.isLoggedIn.value || dismissed.value) {
@@ -103,14 +105,14 @@ defineExpose({ reload: load })
 .marquee-bar {
   display: flex;
   align-items: center;
-  gap: 8px;
-  height: 32px;
-  padding: 0 12px;
+  gap: 10px;
+  height: 40px;
+  padding: 0 14px;
   background: #fff7e6;
   border-bottom: 1px solid #ffe7ba;
   overflow: hidden;
 }
-.marquee-icon { color: #e6a23c; flex-shrink: 0; }
+.marquee-icon { color: #e6a23c; flex-shrink: 0; font-size: 17px; }
 .marquee-viewport {
   flex: 1;
   overflow: hidden;
@@ -120,9 +122,10 @@ defineExpose({ reload: load })
   display: inline-flex;
   align-items: center;
   gap: 4px;
-  animation: marquee linear infinite;
   will-change: transform;
 }
+/* 条目多时才滚动；少时静止左对齐 */
+.marquee-track.scroll { animation: marquee linear infinite; }
 .marquee-track.paused { animation-play-state: paused; }
 @keyframes marquee {
   from { transform: translateX(0); }
@@ -131,11 +134,11 @@ defineExpose({ reload: load })
 .marquee-item {
   display: inline-flex;
   align-items: center;
-  gap: 6px;
-  font-size: 13px;
+  gap: 7px;
+  font-size: 14px;
   color: #8c6d3f;
   cursor: pointer;
-  padding: 0 4px;
+  padding: 0 6px;
 }
 .marquee-item.unread { color: #d48806; font-weight: 500; }
 .marquee-item:hover { text-decoration: underline; }

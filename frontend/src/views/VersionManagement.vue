@@ -8,7 +8,7 @@
         :label="proj.name"
         :name="String(proj.id)"
       />
-      <el-tab-pane label="客户面调试版本" name="debug" />
+      <el-tab-pane label="现场调试版本" name="debug" />
     </el-tabs>
 
     <DebugVersionPanel v-if="activeTab === 'debug'" />

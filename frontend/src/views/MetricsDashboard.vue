@@ -213,7 +213,7 @@
         <!-- 调试版本（现场使用看板） -->
         <el-tab-pane label="调试版本" name="debug">
           <div class="bar">
-            <span class="muted">按月统计客户面调试版本数量与目标客户分布（月份口径＝发布时间，缺失用计划发布时间）</span>
+            <span class="muted">按月统计现场调试版本数量与目标客户分布（月份口径＝发布时间，缺失用计划发布时间）</span>
             <el-button :icon="Refresh" style="margin-left: auto" @click="loadDebug">刷新</el-button>
           </div>
 
@@ -242,7 +242,7 @@
             </el-table-column>
           </el-table>
           <div v-if="debugStat && !debugStat.months.length" class="quality-tip">
-            暂无调试版本数据。去「版本管理 → 客户面调试版本」录入后即可统计。
+            暂无调试版本数据。去「版本管理 → 现场调试版本」录入后即可统计。
           </div>
         </el-tab-pane>
       </el-tabs>

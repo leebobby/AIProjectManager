@@ -317,6 +317,12 @@ export const debugVersionApi = {
   update: (id, data) => http.put(`/debug-versions/${id}`, data),
   remove: (id) => http.delete(`/debug-versions/${id}`),
   dashboard: () => http.get('/debug-versions/dashboard'),
+  // 接受版本姓名列表
+  recipients: (vid) => http.get(`/debug-versions/${vid}/recipients`),
+  autoMatchRecipients: (vid) => http.post(`/debug-versions/${vid}/recipients/auto-match`),
+  addRecipient: (vid, data) => http.post(`/debug-versions/${vid}/recipients`, data),
+  updateRecipient: (rid, data) => http.put(`/debug-versions/recipients/${rid}`, data),
+  removeRecipient: (rid) => http.delete(`/debug-versions/recipients/${rid}`),
 }
 
 export const debugDemandApi = {

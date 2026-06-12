@@ -840,6 +840,25 @@ class DebugDemand(Base):
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
 
 
+class DebugVersionRecipient(Base):
+    """现场调试版本的「接受版本姓名列表」。
+
+    发布时按调试版本的目标客户从「战场沟通矩阵」自动带出接收人，可手工增删，
+    逐人勾选是否已接收。一个调试版本多行；调试版本删除则级联清理。
+    """
+    __tablename__ = "debug_version_recipients"
+
+    id = Column(Integer, primary_key=True, index=True)
+    debug_version_id = Column(Integer, ForeignKey("debug_versions.id", ondelete="CASCADE"),
+                              nullable=False, index=True, comment="所属调试版本 FK")
+    name = Column(String(128), default="", comment="接收人姓名 / 联系人")
+    role = Column(String(128), default="", comment="来源 / 角色（如 服务 / APPS / 地域）")
+    received = Column(Boolean, nullable=False, default=False, comment="是否已接收")
+    sort_order = Column(Integer, default=0)
+    created_at = Column(DateTime, default=datetime.utcnow)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+
 class DomainContent(Base):
     """领域管理：每个 PL 组（资源组 kind=pl）一行的手填内容。
 

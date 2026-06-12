@@ -19,11 +19,6 @@ from op_log import log_op
 from notify import dispatch
 from routers._lookups import fill_group_fk, fill_user_fk, fill_version_fk
 
-_PROGRESS_KEYS = {
-    "progress_walkthrough", "progress_reverse", "progress_stc",
-    "progress_coding", "progress_bbit", "progress_clarify",
-}
-
 router = APIRouter(prefix="/api/iteration-requirements", tags=["iteration-requirements"])
 
 
@@ -140,7 +135,6 @@ def update_item(
     fill_version_fk(db, changes, "planned_version", "target_version_id")
 
     old_owner_id = item.owner_user_id
-    progress_changed = bool(set(changes.keys()) & _PROGRESS_KEYS)
 
     for k, v in changes.items():
         setattr(item, k, v)
@@ -151,29 +145,16 @@ def update_item(
            detail=f"title={item.title} fields={','.join(changes.keys()) or '无'}",
            user=current_user, request=request)
 
-    # 通知：owner 变更 + 状态改变
+    # 通知策略（大颗粒）：只在「被指派为负责人」时提醒；逐条进展字段变更不再发通知，
+    # 避免填报 70-80 条需求时跑马灯被刷屏（版本类通知另行保留细颗粒）。
     link = f"/iterations/{item.iteration_id}"
-    recipients: list[int] = []
     if item.owner_user_id and item.owner_user_id != old_owner_id:
-        recipients.append(item.owner_user_id)
         dispatch(
             db, kind="assignment",
             title=f"你被指派为需求负责人：{item.title or ''}",
             body="", link=link,
             source_type="iteration_requirement", source_id=item.id,
             actor=current_user, recipient_ids=[item.owner_user_id], extra_subs=False,
-        )
-    if progress_changed:
-        notify_to: list[int] = []
-        if item.owner_user_id:
-            notify_to.append(item.owner_user_id)
-        dispatch(
-            db, kind="status_change",
-            title=f"需求进展更新：{item.title or ''}",
-            body=f"字段：{','.join(sorted(set(changes.keys()) & _PROGRESS_KEYS))}",
-            link=link,
-            source_type="iteration_requirement", source_id=item.id,
-            actor=current_user, recipient_ids=notify_to, extra_subs=True,
         )
     return item
 
