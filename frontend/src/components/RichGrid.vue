@@ -363,7 +363,8 @@ function removeHeader(hi) {
   overflow: hidden;
 }
 .rg-table th { background: #f5f7fa; font-weight: 700; }
-.rg-table th .rg-input, .rg-table th > span { font-weight: 700; }
+/* 表头加粗并与本页 el-table 表头（16px）一致，避免新增表格表头显得偏细 */
+.rg-table th .rg-input, .rg-table th > span { font-weight: 700; font-size: 16px; }
 .rg-table th.selected, .rg-table td.selected {
   outline: 2px solid #C7000B;
   outline-offset: -2px;
