@@ -1168,6 +1168,7 @@ class DomainRowOut(BaseModel):
     recent_work: str = ""
     risks: List[DomainRiskItem] = []
     version: int = 0
+    hidden: bool = False           # 在领域管理中被移除/不管理
 
 
 class DomainListOut(BaseModel):
@@ -1176,6 +1177,46 @@ class DomainListOut(BaseModel):
     selected_month: Optional[int] = None
     iterations: List[DomainIterationOpt] = []   # 可选月份列表（年度迭代）
     rows: List[DomainRowOut] = []
+
+
+class DomainVisibilityUpdate(BaseModel):
+    hidden: bool                   # True=从领域管理移除（隐藏），False=恢复
+
+
+# ===== 领域 · 事务与风险跟踪 =====
+class DomainTaskBase(BaseModel):
+    seq: Optional[int] = 0
+    content: Optional[str] = ""
+    priority: Optional[str] = "中"          # 高 / 中 / 低
+    progress: Optional[str] = ""
+    domain_id: Optional[int] = None         # 责任领域（PL 组）
+    planned_close_date: Optional[datetime] = None
+    status: Optional[str] = "OPEN"          # OPEN / CLOSED / 挂起
+    sort_order: Optional[int] = 0
+
+
+class DomainTaskCreate(DomainTaskBase):
+    pass
+
+
+class DomainTaskUpdate(BaseModel):
+    version: int
+    seq: Optional[int] = None
+    content: Optional[str] = None
+    priority: Optional[str] = None
+    progress: Optional[str] = None
+    domain_id: Optional[int] = None
+    planned_close_date: Optional[datetime] = None
+    status: Optional[str] = None
+    sort_order: Optional[int] = None
+
+
+class DomainTaskOut(DomainTaskBase):
+    id: int
+    domain_name: Optional[str] = None       # 由后端解析回填
+    version: int
+
+    model_config = ConfigDict(from_attributes=True)
 
 
 # ===== 客户面调试版本（T 版本）+ 诉求收集 =====
@@ -1329,15 +1370,17 @@ class BusinessTripOut(BusinessTripBase):
     model_config = ConfigDict(from_attributes=True)
 
 
-class TripCustomerStat(BaseModel):
-    customer_name: str
-    current: int = 0     # 当前在差人次
-    planned: int = 0     # 计划中人次
-    total: int = 0       # 累计人次（不含已取消）
+class TripDimStat(BaseModel):
+    """看板某一维度（战场/人/领域）的区间统计项。"""
+    name: str
+    count: int = 0       # 区间内支撑人次
 
 
 class BusinessTripDashboardOut(BaseModel):
-    on_trip_now: int = 0     # 当前在差人次
-    planned: int = 0         # 计划中人次
-    this_month: int = 0      # 本月出差人次（与本月有交集）
-    by_customer: List[TripCustomerStat] = []
+    on_trip_now: int = 0     # 当前支撑中人次（now 快照）
+    planned: int = 0         # 计划中人次（now 快照）
+    range_label: str = ""    # 区间口径标签，如 "2026-06-01 ~ 2026-06-30"
+    range_total: int = 0     # 区间内支撑人次合计
+    by_customer: List[TripDimStat] = []   # 区间内按战场
+    by_person: List[TripDimStat] = []     # 区间内按支撑人
+    by_domain: List[TripDimStat] = []     # 区间内按领域（支撑人所属 PL 组）

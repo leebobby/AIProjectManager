@@ -304,11 +304,17 @@ export const iterationRequirementApi = {
 }
 
 export const domainApi = {
-  // params: { year, month }（不传＝当前进行中迭代口径）
+  // params: { year, month, include_hidden }（不传＝当前进行中迭代口径）
   list: (params) => http.get('/domains', { params }),
   requirements: (groupId, params) => http.get(`/domains/${groupId}/requirements`, { params }),
   issues: (groupId) => http.get(`/domains/${groupId}/issues`),
   updateContent: (groupId, data) => http.put(`/domains/${groupId}/content`, data),
+  setVisibility: (groupId, hidden) => http.put(`/domains/${groupId}/visibility`, { hidden }),
+  // 事务与风险跟踪
+  riskList: (params) => http.get('/domains/risks', { params }),
+  riskCreate: (data) => http.post('/domains/risks', data),
+  riskUpdate: (id, data) => http.put(`/domains/risks/${id}`, data),
+  riskRemove: (id) => http.delete(`/domains/risks/${id}`),
 }
 
 export const debugVersionApi = {
@@ -335,7 +341,7 @@ export const debugDemandApi = {
 export const businessTripApi = {
   // params: { user_id?, customer_id? }
   list: (params) => http.get('/business-trips', { params }),
-  dashboard: () => http.get('/business-trips/dashboard'),
+  dashboard: (params) => http.get('/business-trips/dashboard', { params }),
   create: (data) => http.post('/business-trips', data),
   update: (id, data) => http.put(`/business-trips/${id}`, data),
   remove: (id) => http.delete(`/business-trips/${id}`),

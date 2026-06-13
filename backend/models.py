@@ -878,6 +878,41 @@ class DomainContent(Base):
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
 
 
+class DomainHidden(Base):
+    """领域管理里被「移除/不管理」的 PL 组（软删除）：有行＝隐藏，删行＝恢复。
+
+    独立成表，避免给既有 domain_contents 加列（老库 create_all 不补列）。
+    """
+    __tablename__ = "domain_hidden"
+
+    id = Column(Integer, primary_key=True, index=True)
+    group_id = Column(Integer, ForeignKey("resource_groups.id", ondelete="CASCADE"),
+                      unique=True, nullable=False, index=True, comment="被隐藏的 PL 组 FK")
+    created_at = Column(DateTime, default=datetime.utcnow)
+
+
+class DomainRisk(Base):
+    """领域管理 · 事务与风险跟踪。类专项的「风险和问题」，但跨领域、带责任领域列。
+
+    协作编辑域，带乐观锁。状态 OPEN/CLOSED/挂起；新表由 create_all 自动建。
+    """
+    __tablename__ = "domain_risks"
+
+    id = Column(Integer, primary_key=True, index=True)
+    seq = Column(Integer, default=0, comment="序号")
+    content = Column(Text, default="", comment="风险和事务")
+    priority = Column(String(16), default="中", comment="优先级 高/中/低")
+    progress = Column(Text, default="", comment="当前进展")
+    domain_id = Column(Integer, ForeignKey("resource_groups.id", ondelete="SET NULL"),
+                       nullable=True, index=True, comment="责任领域（PL 组 FK）")
+    planned_close_date = Column(DateTime, nullable=True, comment="计划闭环时间")
+    status = Column(String(16), default="OPEN", comment="OPEN / CLOSED / 挂起")
+    sort_order = Column(Integer, default=0)
+    version = Column(Integer, nullable=False, default=0, comment="乐观锁")
+    created_at = Column(DateTime, default=datetime.utcnow)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+
 class BusinessTrip(Base):
     """成员出差记录：谁、去哪个战场（客户主数据）、哪段时间、什么事由。
 

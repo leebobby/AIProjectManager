@@ -4,7 +4,7 @@
 推导（计划中/进行中/已完成/已取消），不入库。登录用户均可读写，带乐观锁。
 新表由 create_all 自动建。
 """
-from datetime import date
+from datetime import date, datetime
 from typing import List, Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
@@ -84,48 +84,74 @@ def list_trips(
     return [_trip_out(r, umap, cmap) for r in rows]
 
 
+def _parse_day(s: Optional[str]) -> Optional[date]:
+    if not s:
+        return None
+    try:
+        return datetime.strptime(s[:10], "%Y-%m-%d").date()
+    except (ValueError, TypeError):
+        return None
+
+
 @router.get("/dashboard", response_model=schemas.BusinessTripDashboardOut)
-def dashboard(db: Session = Depends(get_db)):
-    """统一看板：当前在差 / 计划中 / 本月人次 + 各战场分布。"""
+def dashboard(
+    start: Optional[str] = Query(None, description="区间开始 YYYY-MM-DD，默认当月 1 号"),
+    end: Optional[str] = Query(None, description="区间结束 YYYY-MM-DD，默认今天"),
+    db: Session = Depends(get_db),
+):
+    """客户面支撑看板：当前支撑中/计划中（now 快照）+ 区间内按 战场/人/领域 统计人次。
+
+    领域口径＝支撑人所属 PL 组。区间默认＝当月。
+    """
+    today = date.today()
+    rs = _parse_day(start) or date(today.year, today.month, 1)
+    re_ = _parse_day(end) or today
+    if re_ < rs:
+        rs, re_ = re_, rs
+
     rows = db.query(models.BusinessTrip).all()
     umap, cmap = _user_map(db), _cust_map(db)
 
-    today = date.today()
-    on_now = planned = this_month = 0
-    by_cust: dict = {}  # name -> {current, planned, total}
+    on_now = planned = range_total = 0
+    by_cust: dict = {}
+    by_person: dict = {}
+    by_domain: dict = {}
 
     for r in rows:
         if r.cancelled:
             continue
         st = _status(r)
-        cname = cmap.get(r.customer_id) or "未指定"
-        slot = by_cust.setdefault(cname, {"current": 0, "planned": 0, "total": 0})
-        slot["total"] += 1
         if st == "进行中":
             on_now += 1
-            slot["current"] += 1
         elif st == "计划中":
             planned += 1
-            slot["planned"] += 1
-        # 本月人次：与当月有交集
+        # 区间统计：与 [rs, re_] 有交集
         s = r.start_date.date() if r.start_date else None
         e = r.end_date.date() if r.end_date else None
-        if s or e:
-            ms = date(today.year, today.month, 1)
-            me = date(today.year + (today.month // 12), (today.month % 12) + 1, 1)  # 下月 1 号
-            lo = s or e
-            hi = e or s
-            if lo < me and hi >= ms:
-                this_month += 1
+        lo = s or e
+        hi = e or s
+        if lo is None or not (lo <= re_ and hi >= rs):
+            continue
+        range_total += 1
+        cname = cmap.get(r.customer_id) or "未指定"
+        pname, gname = umap.get(r.user_id, ("未指定", ""))
+        pname = pname or "未指定"
+        gname = gname or "未指定领域"
+        by_cust[cname] = by_cust.get(cname, 0) + 1
+        by_person[pname] = by_person.get(pname, 0) + 1
+        by_domain[gname] = by_domain.get(gname, 0) + 1
 
-    stats = [
-        schemas.TripCustomerStat(customer_name=k, current=v["current"],
-                                 planned=v["planned"], total=v["total"])
-        for k, v in by_cust.items()
-    ]
-    stats.sort(key=lambda x: (-x.current, -x.total, x.customer_name))
+    def _mk(d: dict) -> List[schemas.TripDimStat]:
+        return [
+            schemas.TripDimStat(name=k, count=v)
+            for k, v in sorted(d.items(), key=lambda kv: (-kv[1], kv[0]))
+        ]
+
     return schemas.BusinessTripDashboardOut(
-        on_trip_now=on_now, planned=planned, this_month=this_month, by_customer=stats,
+        on_trip_now=on_now, planned=planned,
+        range_label=f"{rs.isoformat()} ~ {re_.isoformat()}",
+        range_total=range_total,
+        by_customer=_mk(by_cust), by_person=_mk(by_person), by_domain=_mk(by_domain),
     )
 
 

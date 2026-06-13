@@ -1,44 +1,58 @@
 <template>
   <div class="trip-page">
-    <!-- ===== 看板：概览卡片 + 各战场当前在差 ===== -->
+    <!-- ===== 看板 ===== -->
     <div class="board">
+      <div class="board-head">
+        <span class="board-title">客户面支撑看板</span>
+        <el-date-picker
+          v-model="dashRange"
+          type="daterange"
+          range-separator="至"
+          start-placeholder="开始"
+          end-placeholder="结束"
+          value-format="YYYY-MM-DD"
+          size="small"
+          :clearable="false"
+          style="width: 260px"
+          @change="loadDash"
+        />
+        <span class="muted">口径：{{ dash.range_label || '—' }}</span>
+      </div>
+
       <div class="stat-cards">
         <div class="stat-card now">
           <div class="stat-num">{{ dash.on_trip_now }}</div>
-          <div class="stat-label">当前在差（人次）</div>
+          <div class="stat-label">当前支撑中（人次）</div>
         </div>
         <div class="stat-card plan">
           <div class="stat-num">{{ dash.planned }}</div>
           <div class="stat-label">计划中</div>
         </div>
         <div class="stat-card month">
-          <div class="stat-num">{{ dash.this_month }}</div>
-          <div class="stat-label">本月出差（人次）</div>
+          <div class="stat-num">{{ dash.range_total }}</div>
+          <div class="stat-label">区间支撑（人次）</div>
         </div>
       </div>
 
-      <el-card shadow="never" class="battlefield-card">
-        <div class="bf-title">各战场当前在差</div>
-        <div v-if="!dash.by_customer.length" class="bf-empty">暂无数据</div>
-        <div v-else class="bf-list">
-          <div v-for="c in dash.by_customer" :key="c.customer_name" class="bf-row">
-            <span class="bf-name" :title="c.customer_name">{{ c.customer_name }}</span>
-            <div class="bf-bar-wrap">
-              <div class="bf-bar" :style="{ width: barWidth(c.current) }"></div>
+      <div class="dim-cards">
+        <el-card v-for="dim in dimCards" :key="dim.title" shadow="never" class="dim-card">
+          <div class="dim-title">{{ dim.title }}</div>
+          <div v-if="!dim.items.length" class="muted">暂无数据</div>
+          <div v-else class="dim-list">
+            <div v-for="it in dim.items" :key="it.name" class="dim-row">
+              <span class="dim-name" :title="it.name">{{ it.name }}</span>
+              <div class="dim-bar-wrap"><div class="dim-bar" :style="{ width: dimWidth(it.count, dim.items) }"></div></div>
+              <span class="dim-count">{{ it.count }}</span>
             </div>
-            <span class="bf-counts">
-              在差 <b>{{ c.current }}</b>
-              <span class="bf-sub">· 计划 {{ c.planned }} · 累计 {{ c.total }}</span>
-            </span>
           </div>
-        </div>
-      </el-card>
+        </el-card>
+      </div>
     </div>
 
     <!-- ===== 工具栏 ===== -->
     <el-card shadow="never" class="main-card">
       <div class="toolbar">
-        <el-button type="primary" :icon="Plus" @click="openCreate">登记出差</el-button>
+        <el-button type="primary" :icon="Plus" @click="openCreate">登记支撑</el-button>
         <el-button :icon="Refresh" @click="loadAll">刷新</el-button>
         <el-select v-model="filterUserId" placeholder="按成员" clearable filterable size="small" style="width: 150px">
           <el-option v-for="u in users" :key="u.id" :value="u.id" :label="userLabel(u)" />
@@ -61,12 +75,11 @@
         <el-button :icon="ArrowLeft" size="small" circle @click="shiftMonth(-1)" />
         <span class="gantt-month">{{ monthLabel }}</span>
         <el-button :icon="ArrowRight" size="small" circle @click="shiftMonth(1)" />
-        <span class="gantt-tip">横条为出差区间，点击可编辑</span>
+        <span class="gantt-tip">横条为支撑区间，点击可编辑</span>
       </div>
 
       <div class="gantt" v-loading="loading">
         <div class="gantt-scroll">
-          <!-- 日期刻度 -->
           <div class="gantt-axis">
             <div class="axis-label"></div>
             <div class="axis-days">
@@ -78,8 +91,7 @@
               >{{ d }}</div>
             </div>
           </div>
-          <!-- 人员行 -->
-          <div v-if="!timelineRows.length" class="gantt-empty">本月暂无出差安排</div>
+          <div v-if="!timelineRows.length" class="gantt-empty">本月暂无支撑安排</div>
           <div v-for="row in timelineRows" :key="row.key" class="gantt-row">
             <div class="row-label">
               <span class="row-name" :title="row.name">{{ row.name }}</span>
@@ -112,7 +124,7 @@
       </div>
 
       <!-- ===== 明细表 ===== -->
-      <div class="table-title">出差明细（共 {{ filteredTrips.length }} 条）</div>
+      <div class="table-title">支撑明细（共 {{ filteredTrips.length }} 条）</div>
       <el-table :data="filteredTrips" v-loading="loading" border stripe size="small" style="width: 100%">
         <el-table-column label="成员" width="120">
           <template #default="{ row }">
@@ -120,7 +132,7 @@
             <div v-if="row.user_group" class="cell-sub">{{ row.user_group }}</div>
           </template>
         </el-table-column>
-        <el-table-column label="目的地战场" width="140">
+        <el-table-column label="支撑战场" width="140">
           <template #default="{ row }">
             <el-tag v-if="row.customer_name" size="small" effect="plain">{{ row.customer_name }}</el-tag>
             <span v-else class="muted">—</span>
@@ -128,7 +140,7 @@
           </template>
         </el-table-column>
         <el-table-column prop="purpose" label="事由" min-width="160" show-overflow-tooltip />
-        <el-table-column label="出差区间" width="200">
+        <el-table-column label="支撑时间" width="200">
           <template #default="{ row }">
             <span v-if="row.start_date || row.end_date">
               {{ fmt(row.start_date) }} ~ {{ fmt(row.end_date) }}
@@ -152,14 +164,14 @@
     </el-card>
 
     <!-- ===== 登记/编辑弹窗 ===== -->
-    <el-dialog v-model="dialogVisible" :title="form.id ? '编辑出差' : '登记出差'" width="560px" :close-on-click-modal="false">
+    <el-dialog v-model="dialogVisible" :title="form.id ? '编辑支撑' : '登记支撑'" width="560px" :close-on-click-modal="false">
       <el-form :model="form" label-width="100px">
         <el-form-item label="成员" required>
-          <el-select v-model="form.user_id" filterable placeholder="选择出差人" style="width: 100%">
+          <el-select v-model="form.user_id" filterable placeholder="选择支撑人" style="width: 100%">
             <el-option v-for="u in users" :key="u.id" :value="u.id" :label="userLabel(u)" />
           </el-select>
         </el-form-item>
-        <el-form-item label="目的地战场" required>
+        <el-form-item label="支撑战场" required>
           <el-select v-model="form.customer_id" filterable clearable placeholder="选择客户/战场" style="width: 100%">
             <el-option v-for="c in customers" :key="c.id" :value="c.id" :label="custLabel(c)" />
           </el-select>
@@ -170,13 +182,13 @@
         <el-form-item label="事由">
           <el-input v-model="form.purpose" placeholder="如 现场交付 / 调试支持 / 客户会议" />
         </el-form-item>
-        <el-form-item label="出差区间" required>
+        <el-form-item label="支撑时间" required>
           <el-date-picker
             v-model="form.dateRange"
             type="daterange"
             range-separator="至"
-            start-placeholder="出发"
-            end-placeholder="返回"
+            start-placeholder="开始"
+            end-placeholder="结束"
             value-format="YYYY-MM-DDTHH:mm:ss"
             style="width: 100%"
           />
@@ -209,7 +221,7 @@ const saving = ref(false)
 const trips = ref([])
 const users = ref([])
 const customers = ref([])
-const dash = ref({ on_trip_now: 0, planned: 0, this_month: 0, by_customer: [] })
+const dash = ref({ on_trip_now: 0, planned: 0, range_label: '', range_total: 0, by_customer: [], by_person: [], by_domain: [] })
 
 const filterUserId = ref(null)
 const filterCustomerId = ref(null)
@@ -245,6 +257,21 @@ const todayPct = computed(() => {
   return ((today.getDate() - 0.5) / daysInMonth.value) * 100
 })
 
+// ── 看板区间 ──
+function ymd(d) {
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
+}
+const dashRange = ref([ymd(new Date(today.getFullYear(), today.getMonth(), 1)), ymd(today)])
+const dimCards = computed(() => [
+  { title: '按领域', items: dash.value.by_domain || [] },
+  { title: '按人', items: dash.value.by_person || [] },
+  { title: '按战场', items: dash.value.by_customer || [] },
+])
+function dimWidth(count, items) {
+  const max = Math.max(1, ...items.map((i) => i.count))
+  return `${Math.round((count / max) * 100)}%`
+}
+
 // ── 展示辅助 ──
 function fmt(d) {
   if (!d) return ''
@@ -262,10 +289,6 @@ function statusTagType(s) {
 }
 function statusClass(s) {
   return { 进行中: 'bar-now', 计划中: 'bar-plan', 已完成: 'bar-done' }[s] || 'bar-done'
-}
-const maxCurrent = computed(() => Math.max(1, ...dash.value.by_customer.map((c) => c.current)))
-function barWidth(n) {
-  return `${Math.round((n / maxCurrent.value) * 100)}%`
 }
 
 // ── 过滤 + 时间轴 ──
@@ -301,7 +324,7 @@ const timelineRows = computed(() => {
       leftPct: ((startDay - 1) / daysInMonth.value) * 100,
       widthPct: (spanDays / daysInMonth.value) * 100,
       statusClass: statusClass(t.status),
-      label: t.customer_name || t.location || '出差',
+      label: t.customer_name || t.location || '支撑',
       trip: t,
     })
   }
@@ -310,7 +333,7 @@ const timelineRows = computed(() => {
 
 function barTip(bar) {
   const t = bar.trip
-  return `${t.customer_name || t.location || '出差'}｜${fmt(t.start_date)} ~ ${fmt(t.end_date)}｜${t.status}${t.purpose ? '｜' + t.purpose : ''}`
+  return `${t.customer_name || t.location || '支撑'}｜${fmt(t.start_date)} ~ ${fmt(t.end_date)}｜${t.status}${t.purpose ? '｜' + t.purpose : ''}`
 }
 
 // ── 数据加载 ──
@@ -327,7 +350,8 @@ async function loadTrips() {
 }
 async function loadDash() {
   try {
-    const { data } = await businessTripApi.dashboard()
+    const [start, end] = dashRange.value || []
+    const { data } = await businessTripApi.dashboard({ start, end })
     dash.value = data
   } catch { /* 看板失败不阻塞 */ }
 }
@@ -368,9 +392,9 @@ function openEdit(row) {
   dialogVisible.value = true
 }
 async function onSubmit() {
-  if (!form.user_id) { ElMessage.warning('请选择出差成员'); return }
-  if (!form.customer_id) { ElMessage.warning('请选择目的地战场'); return }
-  if (!form.dateRange || !form.dateRange[0]) { ElMessage.warning('请选择出差区间'); return }
+  if (!form.user_id) { ElMessage.warning('请选择支撑成员'); return }
+  if (!form.customer_id) { ElMessage.warning('请选择支撑战场'); return }
+  if (!form.dateRange || !form.dateRange[0]) { ElMessage.warning('请选择支撑时间'); return }
   const payload = {
     user_id: form.user_id, customer_id: form.customer_id,
     location: form.location, purpose: form.purpose,
@@ -392,7 +416,7 @@ async function onSubmit() {
   }
 }
 async function onDelete(row) {
-  await ElMessageBox.confirm(`确认删除「${row.user_name || ''} · ${row.customer_name || ''}」的出差记录吗？`, '提示', { type: 'warning' })
+  await ElMessageBox.confirm(`确认删除「${row.user_name || ''} · ${row.customer_name || ''}」的支撑记录吗？`, '提示', { type: 'warning' })
   try {
     await businessTripApi.remove(row.id)
     ElMessage.success('已删除')
@@ -407,31 +431,32 @@ onMounted(() => { loadAll(); loadOptions() })
 .trip-page { padding: 2px; }
 
 /* 看板 */
-.board { display: flex; gap: 12px; margin-bottom: 12px; align-items: stretch; }
-.stat-cards { display: flex; flex-direction: column; gap: 12px; flex: 0 0 200px; }
+.board { margin-bottom: 12px; }
+.board-head { display: flex; align-items: center; gap: 12px; margin-bottom: 10px; }
+.board-title { font-size: 15px; font-weight: 600; }
+.stat-cards { display: flex; gap: 12px; margin-bottom: 12px; }
 .stat-card {
   flex: 1; border-radius: 8px; padding: 14px 18px; color: #fff;
   display: flex; flex-direction: column; justify-content: center;
 }
 .stat-card.now { background: linear-gradient(135deg, #67C23A, #4e9e2c); }
 .stat-card.plan { background: linear-gradient(135deg, #409EFF, #2a7fd4); }
-.stat-card.month { background: linear-gradient(135deg, #909399, #73767a); }
+.stat-card.month { background: linear-gradient(135deg, #E6A23C, #c8842a); }
 .stat-num { font-size: 26px; font-weight: 700; line-height: 1.1; }
 .stat-label { font-size: 13px; opacity: 0.92; margin-top: 4px; }
 
-.battlefield-card { flex: 1 1 auto; }
-.bf-title { font-weight: 600; margin-bottom: 10px; }
-.bf-empty { color: #909399; font-size: 13px; }
-.bf-list { display: flex; flex-direction: column; gap: 7px; max-height: 150px; overflow-y: auto; }
-.bf-row { display: flex; align-items: center; gap: 10px; }
-.bf-name { flex: 0 0 110px; font-size: 13px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.bf-bar-wrap { flex: 1 1 auto; background: #f0f2f5; border-radius: 4px; height: 14px; overflow: hidden; }
-.bf-bar { height: 100%; background: #67C23A; border-radius: 4px; min-width: 2px; transition: width 0.3s; }
-.bf-counts { flex: 0 0 auto; font-size: 12px; color: #1f2329; }
-.bf-sub { color: #909399; }
+.dim-cards { display: flex; gap: 12px; }
+.dim-card { flex: 1; }
+.dim-title { font-weight: 600; margin-bottom: 10px; }
+.dim-list { display: flex; flex-direction: column; gap: 7px; max-height: 200px; overflow-y: auto; }
+.dim-row { display: flex; align-items: center; gap: 10px; }
+.dim-name { flex: 0 0 96px; font-size: 13px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.dim-bar-wrap { flex: 1 1 auto; background: #f0f2f5; border-radius: 4px; height: 14px; overflow: hidden; }
+.dim-bar { height: 100%; background: #409EFF; border-radius: 4px; min-width: 2px; transition: width 0.3s; }
+.dim-count { flex: 0 0 auto; font-size: 13px; color: #1f2329; font-weight: 600; min-width: 22px; text-align: right; }
+.muted { color: #909399; font-size: 13px; }
 
 /* 工具栏 */
-.main-card { }
 .toolbar { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; margin-bottom: 12px; }
 .legend { margin-left: auto; display: flex; gap: 10px; font-size: 12px; }
 .lg { display: inline-flex; align-items: center; }
@@ -475,10 +500,9 @@ onMounted(() => { loadAll(); loadOptions() })
 .gantt-bar.bar-plan { background: #409EFF; }
 .gantt-bar.bar-done { background: #b4bcc8; }
 .gantt-bar:hover { filter: brightness(1.06); }
-.gantt-empty, .gantt-row .gantt-empty { padding: 22px; text-align: center; color: #909399; font-size: 13px; }
+.gantt-empty { padding: 22px; text-align: center; color: #909399; font-size: 13px; }
 
 /* 明细表 */
 .table-title { font-weight: 600; margin: 4px 0 10px; }
 .cell-sub { font-size: 11px; color: #909399; }
-.muted { color: #c0c4cc; }
 </style>

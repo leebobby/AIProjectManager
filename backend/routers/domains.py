@@ -14,6 +14,7 @@ from datetime import datetime
 from typing import List, Optional, Tuple
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
+from sqlalchemy import func
 from sqlalchemy.orm import Session
 
 import models
@@ -208,6 +209,7 @@ def _leader_name(db: Session, g: models.ResourceGroup) -> Optional[str]:
 def list_domains(
     year: Optional[int] = Query(None, description="按年度迭代月份取需求口径；与 month 同时给"),
     month: Optional[int] = Query(None, ge=1, le=12),
+    include_hidden: bool = Query(False, description="是否一并返回已隐藏（不管理）的领域"),
     db: Session = Depends(get_db),
 ):
     groups = (
@@ -216,6 +218,9 @@ def list_domains(
         .order_by(models.ResourceGroup.sort_order, models.ResourceGroup.id)
         .all()
     )
+    hidden_ids = {h.group_id for h in db.query(models.DomainHidden).all()}
+    if not include_hidden:
+        groups = [g for g in groups if g.id not in hidden_ids]
     its = _scope_iterations(db, year, month)
     iteration_ids = [it.id for it in its]
     raw, mtime, note = _load_issue_raw()
@@ -242,6 +247,7 @@ def list_domains(
             recent_work=(content.recent_work if content else "") or "",
             risks=_parse_risks(content.risks_json if content else "[]"),
             version=content.version if content else 0,
+            hidden=(g.id in hidden_ids),
         ))
     return schemas.DomainListOut(
         iteration_label=_iteration_label(its),
@@ -361,3 +367,118 @@ def update_domain_content(
         risks=_parse_risks(content.risks_json),
         version=content.version,
     )
+
+
+# ─── 领域显隐（软删除 / 恢复）─────────────────────────────────────────────────
+@router.put("/{group_id}/visibility")
+def set_domain_visibility(
+    group_id: int,
+    payload: schemas.DomainVisibilityUpdate,
+    request: Request,
+    db: Session = Depends(get_db),
+    current_user: models.User = Depends(get_current_user),
+):
+    """从领域管理移除（隐藏）或恢复某个领域；不影响组织架构里的 PL 组主数据。"""
+    g = _require_pl_group(db, group_id)
+    existing = db.query(models.DomainHidden).filter(models.DomainHidden.group_id == group_id).first()
+    if payload.hidden and not existing:
+        db.add(models.DomainHidden(group_id=group_id))
+    elif not payload.hidden and existing:
+        db.delete(existing)
+    db.commit()
+    log_op(db, action="隐藏" if payload.hidden else "恢复", target="领域", target_id=group_id,
+           detail=f"group={g.name}", user=current_user, request=request)
+    return {"ok": True, "hidden": payload.hidden}
+
+
+# ─── 事务与风险跟踪 ───────────────────────────────────────────────────────────
+_DOMAIN_RISK_STATUSES = {"OPEN", "CLOSED", "挂起"}
+
+
+def _domain_name_map(db: Session) -> dict:
+    rows = db.query(models.ResourceGroup.id, models.ResourceGroup.name).all()
+    return {r.id: r.name for r in rows}
+
+
+def _task_out(obj: models.DomainRisk, name_map: dict) -> schemas.DomainTaskOut:
+    out = schemas.DomainTaskOut.model_validate(obj)
+    out.domain_name = name_map.get(obj.domain_id)
+    return out
+
+
+@router.get("/risks", response_model=List[schemas.DomainTaskOut])
+def list_domain_risks(
+    include_done: bool = Query(True, description="是否包含 CLOSED / 挂起"),
+    db: Session = Depends(get_db),
+):
+    q = db.query(models.DomainRisk)
+    if not include_done:
+        q = q.filter(models.DomainRisk.status == "OPEN")
+    rows = q.order_by(
+        models.DomainRisk.sort_order.asc(),
+        models.DomainRisk.seq.asc(),
+        models.DomainRisk.id.asc(),
+    ).all()
+    name_map = _domain_name_map(db)
+    return [_task_out(r, name_map) for r in rows]
+
+
+@router.post("/risks", response_model=schemas.DomainTaskOut)
+def create_domain_risk(
+    payload: schemas.DomainTaskCreate,
+    request: Request,
+    db: Session = Depends(get_db),
+    current_user: models.User = Depends(get_current_user),
+):
+    data = payload.model_dump()
+    if not data.get("seq"):
+        data["seq"] = (db.query(func.coalesce(func.max(models.DomainRisk.seq), 0)).scalar() or 0) + 1
+    obj = models.DomainRisk(**data)
+    db.add(obj)
+    db.commit()
+    db.refresh(obj)
+    log_op(db, action="新增", target="领域事务/风险", target_id=obj.id,
+           detail=(obj.content or "")[:40], user=current_user, request=request)
+    return _task_out(obj, _domain_name_map(db))
+
+
+@router.put("/risks/{rid}", response_model=schemas.DomainTaskOut)
+def update_domain_risk(
+    rid: int,
+    payload: schemas.DomainTaskUpdate,
+    request: Request,
+    db: Session = Depends(get_db),
+    current_user: models.User = Depends(get_current_user),
+):
+    obj = db.query(models.DomainRisk).filter(models.DomainRisk.id == rid).first()
+    if not obj:
+        raise HTTPException(404, "Not found")
+    if obj.version != payload.version:
+        raise HTTPException(409, "数据已被他人修改，请刷新后重试")
+    changes = payload.model_dump(exclude_unset=True)
+    changes.pop("version", None)
+    for k, v in changes.items():
+        setattr(obj, k, v)
+    obj.version += 1
+    db.commit()
+    db.refresh(obj)
+    log_op(db, action="修改", target="领域事务/风险", target_id=obj.id,
+           detail=(obj.content or "")[:40], user=current_user, request=request)
+    return _task_out(obj, _domain_name_map(db))
+
+
+@router.delete("/risks/{rid}")
+def delete_domain_risk(
+    rid: int,
+    request: Request,
+    db: Session = Depends(get_db),
+    current_user: models.User = Depends(get_current_user),
+):
+    obj = db.query(models.DomainRisk).filter(models.DomainRisk.id == rid).first()
+    if not obj:
+        raise HTTPException(404, "Not found")
+    db.delete(obj)
+    db.commit()
+    log_op(db, action="删除", target="领域事务/风险", target_id=rid,
+           detail="", user=current_user, request=request)
+    return {"ok": True}
