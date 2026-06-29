@@ -177,6 +177,7 @@ export const issueApi = {
   scriptStatus: ()     => http.get('/issues/run-script/status'),
   runScript:    ()     => http.post('/issues/run-script'),
   exportPptx:   (date) => http.get('/issues/export.pptx', { responseType: 'blob', ...(date ? { params: { date } } : {}) }),
+  apiData:      (project) => http.get('/issues/api-data', { params: { project } }),
 }
 
 export const customerApi = {

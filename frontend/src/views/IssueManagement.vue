@@ -1,5 +1,7 @@
 <template>
   <div class="issue-page">
+    <el-tabs v-model="topTab" class="issue-top-tabs">
+      <el-tab-pane label="本地报表" name="local">
 
     <!-- ── 管理员配置区 ─────────────────────────────── -->
     <el-card v-if="isAdmin" shadow="never" class="config-card">
@@ -11,6 +13,10 @@
         <el-form-item label="刷新脚本" style="margin-left:16px">
           <el-input v-model="cfg.scriptPath" placeholder="脚本路径（.py / .bat / .exe）" style="width:280px" clearable />
           <el-button style="margin-left:6px" @click="saveCfg('scriptPath')">保存</el-button>
+        </el-form-item>
+        <el-form-item label="API脚本" style="margin-left:16px">
+          <el-input v-model="cfg.apiScriptPath" placeholder="按项目调接口拉取问题单的脚本（.py），供 YLS 各 tab 使用" style="width:320px" clearable />
+          <el-button style="margin-left:6px" @click="saveCfg('apiScriptPath')">保存</el-button>
         </el-form-item>
       </el-form>
     </el-card>
@@ -252,6 +258,13 @@
       <div class="drill-meta">共 {{ drillRows.length }} 条</div>
       <IssueTable :data="drillRows" max-height="calc(100vh - 120px)" />
     </el-drawer>
+      </el-tab-pane>
+
+      <!-- 各项目：通过 API 拉取（懒加载，切到该 tab 才请求） -->
+      <el-tab-pane v-for="proj in API_PROJECTS" :key="proj" :label="proj" :name="proj">
+        <IssueApiPanel v-if="topTab === proj" :project="proj" />
+      </el-tab-pane>
+    </el-tabs>
 
   </div>
 </template>
@@ -264,8 +277,13 @@ import { DataLine, Document, Download, Search, TrendCharts, VideoPlay } from '@e
 import * as echarts from 'echarts'
 import { configApi, downloadBlob, issueApi } from '../api'
 import { auth } from '../store/auth'
+import IssueApiPanel from '../components/IssueApiPanel.vue'
 
 const isAdmin = auth.isAdmin
+
+// 顶层 tab：local=本地报表（默认），其余＝各项目（走 API）
+const topTab = ref('local')
+const API_PROJECTS = ['YLS3000', 'YLS5000', 'YLS8000']
 
 // 暂时关闭「特性 × 小组」展示（Excel 暂未提供该字段），代码保留待恢复
 const SHOW_FEATURE = false
@@ -325,16 +343,17 @@ const IssueTable = defineComponent({
 })
 
 // ── 配置 ─────────────────────────────────────────────
-const cfg = ref({ reportPath: '', scriptPath: '' })
+const cfg = ref({ reportPath: '', scriptPath: '', apiScriptPath: '' })
 async function loadCfg() {
   try {
     const { data } = await configApi.get()
     cfg.value.reportPath = data.issue_report_path || ''
     cfg.value.scriptPath = data.issue_script_path || ''
+    cfg.value.apiScriptPath = data.issue_api_script_path || ''
   } catch { /* 忽略 */ }
 }
 async function saveCfg(key) {
-  const map = { reportPath: 'issue_report_path', scriptPath: 'issue_script_path' }
+  const map = { reportPath: 'issue_report_path', scriptPath: 'issue_script_path', apiScriptPath: 'issue_api_script_path' }
   try {
     await configApi.save({ [map[key]]: cfg.value[key] })
     ElMessage.success('已保存')

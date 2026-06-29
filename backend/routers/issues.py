@@ -12,6 +12,7 @@
   issue_script_path  —— 刷新脚本路径（.py / .bat / .exe）
 """
 import io
+import json
 import pathlib
 import re
 import subprocess
@@ -463,6 +464,78 @@ def get_trend(_: models.User = Depends(get_current_user)):
         "daily":          daily,
         "all_groups":     sorted(all_groups),
         "all_severities": sorted(all_severities, key=lambda s: sev_order.index(s) if s in sev_order else 99),
+    }
+
+
+# ─── 通过脚本调用外部 API 拉取问题单（按项目）──────────────────────────────────
+def _normalize_issue_row(r: dict) -> Dict[str, str]:
+    """把脚本返回的一条问题单规整成「原始数据」表同款字段（缺的留空）。"""
+    return {col: (str(r.get(col)).strip() if r.get(col) is not None else "") for col in _RAW_COLS}
+
+
+def _run_issue_api_script(project: str) -> List[Dict]:
+    """以 `python <issue_api_script_path> <project>` 调用脚本，期望 stdout 为 JSON 数组。"""
+    cfg = _load_config()
+    script = (cfg.get("issue_api_script_path") or "").strip()
+    if not script:
+        raise HTTPException(400, "未配置 API 脚本（issue_api_script_path）")
+    sp = pathlib.Path(script)
+    if not sp.exists():
+        raise HTTPException(404, f"脚本不存在：{script}")
+
+    cmd = [sys.executable, str(sp), project] if sp.suffix.lower() == ".py" else [str(sp), project]
+    try:
+        result = subprocess.run(
+            cmd, capture_output=True, encoding="utf-8", errors="replace",
+            timeout=120, cwd=str(sp.parent),
+        )
+    except subprocess.TimeoutExpired:
+        raise HTTPException(504, "脚本执行超时（>2 分钟）")
+    except Exception as exc:
+        raise HTTPException(500, f"脚本启动失败：{exc}")
+
+    if result.returncode != 0:
+        raise HTTPException(500, f"脚本退出码 {result.returncode}：{(result.stderr or '')[-500:]}")
+    out = (result.stdout or "").strip()
+    if not out:
+        raise HTTPException(500, "脚本无输出（应向 stdout 打印 JSON 数组）")
+    try:
+        data = json.loads(out)
+    except json.JSONDecodeError as exc:
+        raise HTTPException(500, f"脚本输出不是合法 JSON：{exc}")
+    if not isinstance(data, list):
+        raise HTTPException(500, "脚本输出应为问题单数组（JSON list）")
+    return [_normalize_issue_row(r) for r in data if isinstance(r, dict)]
+
+
+@router.get("/api-data")
+def get_api_data(project: str, _: models.User = Depends(get_current_user)):
+    """按项目（YLS3000 / YLS5000 / YLS8000）通过脚本调用外部 API 拉取问题单。
+
+    脚本契约：后端以 `python <issue_api_script_path> <project>` 调用，脚本把问题单
+    列表以 JSON 数组打印到 stdout（字段同「原始数据」表：version/issue_id/title/owner/
+    group/progress/severity/…）。失败时以 200 + error 字段返回，便于前端友好提示。
+    """
+    cfg = _load_config()
+    if not (cfg.get("issue_api_script_path") or "").strip():
+        return {"configured": False, "project": project}
+    try:
+        raw = _run_issue_api_script(project)
+    except HTTPException as exc:
+        return {
+            "configured": True, "project": project, "error": str(exc.detail),
+            "count": 0, "raw": [], "by_severity": {}, "by_group": {}, "by_customer": {},
+        }
+    return {
+        "configured": True,
+        "project": project,
+        "fetched_at": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+        "count": len(raw),
+        "raw": raw,
+        "by_severity": _count_by(raw, "severity"),
+        "by_group": _count_by(raw, "group"),
+        "by_customer": _count_by(raw, "category"),
+        "error": None,
     }
 
 
