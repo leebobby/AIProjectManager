@@ -40,6 +40,7 @@ FIELD_MAPPING = {
     "solution": "解决措施",
     "progress_record": "进展记录",
     "estimated_close": "预计闭环时间",
+    "customer": "客户面",           # 趋势「按客户面」维度；按实际接口字段改左边
 }
 
 # 关键词 → 分类（同 config.yaml 的 categories）；未命中归入 DEFAULT_CATEGORY
@@ -56,7 +57,7 @@ CN_TO_EN = {
     "当前责任人": "owner", "当前责任人所属小组": "group", "进展": "progress",
     "严重程度": "severity", "严重程度DI值": "severity_di", "根因": "root_cause",
     "解决措施": "solution", "进展记录": "progress_record",
-    "预计闭环时间": "estimated_close", "优先级": "priority",
+    "预计闭环时间": "estimated_close", "优先级": "priority", "客户面": "customer",
 }
 
 
@@ -129,17 +130,24 @@ def _process(records: list) -> list:
 
 
 def _sample(project: str) -> list:
-    """示例数据：SDTS 编号 + 含关键词标题，便于看到日期提取/分类生效。"""
+    """示例数据：SDTS 编号 + 含关键词标题 + 客户面，便于看到分组/客户面/趋势生效。
+
+    数量随「当天」小幅波动（按日期取模），这样连续几天采集能看到趋势折线有变化。
+    """
+    import datetime as _dt
     sev = ["严重", "一般", "提示"]
     teams = ["AFK", "SE", "TFO"]
+    customers = ["华东-A厂", "华南-B厂", "华北-C厂"]
     titles = ["[示例]PXW 830 偶发停机", "[示例]RBPS 流程异常",
               "[示例]出厂测试 用例失败", "[示例]在线分析卡顿"]
+    n = 15 + (_dt.date.today().day % 6)   # 15~20 条，随日变化
     out = []
-    for i in range(1, 16):
+    for i in range(1, n + 1):
         did = f"SDTS2026{((i % 6) + 1):02d}{((i % 27) + 1):02d}{i:03d}"
         out.append({
             "版本信息": project, "缺陷业务编号": did, "标题": titles[i % len(titles)],
             "当前责任人": "张三", "当前责任人所属小组": teams[i % 3],
+            "客户面": customers[i % len(customers)],
             "进展": "处理中", "严重程度": sev[i % 3],
         })
     return out

@@ -936,3 +936,38 @@ class BusinessTrip(Base):
     version = Column(Integer, nullable=False, default=0, comment="乐观锁版本号")
     created_at = Column(DateTime, default=datetime.utcnow)
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+
+class IssueSnapshot(Base):
+    """问题单每日快照（按项目/版本）：库里只存"数字"，明细表格落本地文件。
+
+    每个项目每天最多一条（project+snapshot_date 唯一，重复采集覆盖）。
+    - 库：total 总数 + 各维度聚合在 issue_snapshot_stats（趋势数据源，看趋势只读数字）；
+    - 文件：完整明细行以 JSON 落到快照根目录（data_file 为相对路径），看某次快照才加载。
+    新表由 create_all 自动建。
+    """
+    __tablename__ = "issue_snapshots"
+
+    id = Column(Integer, primary_key=True, index=True)
+    project = Column(String(64), nullable=False, index=True, comment="项目/版本，如 YLS3000")
+    snapshot_date = Column(String(10), nullable=False, index=True, comment="采集日 YYYY-MM-DD")
+    total = Column(Integer, nullable=False, default=0, comment="问题单总数")
+    data_file = Column(String(300), default="", comment="明细 JSON 相对路径（相对快照根目录）")
+    source = Column(String(16), default="api", comment="来源：api（定时）/ manual（手动）")
+    created_at = Column(DateTime, default=datetime.utcnow)
+
+    __table_args__ = (
+        UniqueConstraint("project", "snapshot_date", name="uq_issue_snapshot_project_date"),
+    )
+
+
+class IssueSnapshotStat(Base):
+    """快照的维度聚合数字（趋势数据源）：dimension ∈ group / customer / severity。"""
+    __tablename__ = "issue_snapshot_stats"
+
+    id = Column(Integer, primary_key=True, index=True)
+    snapshot_id = Column(Integer, ForeignKey("issue_snapshots.id", ondelete="CASCADE"),
+                         nullable=False, index=True)
+    dimension = Column(String(16), nullable=False, index=True, comment="group / customer / severity")
+    dim_key = Column(String(128), nullable=False, default="", comment="维度取值，如小组名/客户面名/严重程度")
+    count = Column(Integer, nullable=False, default=0)

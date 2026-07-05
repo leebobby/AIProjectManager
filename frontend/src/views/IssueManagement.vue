@@ -3,24 +3,6 @@
     <el-tabs v-model="topTab" class="issue-top-tabs">
       <el-tab-pane label="本地报表" name="local">
 
-    <!-- ── 管理员配置区 ─────────────────────────────── -->
-    <el-card v-if="isAdmin" shadow="never" class="config-card">
-      <el-form :inline="true" size="small" label-position="left">
-        <el-form-item label="报表目录">
-          <el-input v-model="cfg.reportPath" placeholder="填目录路径（按 _YYYYMMDD 取最新）或具体 xlsx 路径" style="width:380px" clearable />
-          <el-button style="margin-left:6px" @click="saveCfg('reportPath')">保存</el-button>
-        </el-form-item>
-        <el-form-item label="刷新脚本" style="margin-left:16px">
-          <el-input v-model="cfg.scriptPath" placeholder="脚本路径（.py / .bat / .exe）" style="width:280px" clearable />
-          <el-button style="margin-left:6px" @click="saveCfg('scriptPath')">保存</el-button>
-        </el-form-item>
-        <el-form-item label="API脚本" style="margin-left:16px">
-          <el-input v-model="cfg.apiScriptPath" placeholder="按项目调接口拉取问题单的脚本（.py），供 YLS 各 tab 使用" style="width:320px" clearable />
-          <el-button style="margin-left:6px" @click="saveCfg('apiScriptPath')">保存</el-button>
-        </el-form-item>
-      </el-form>
-    </el-card>
-
     <!-- ── 模式切换栏 ────────────────────────────────── -->
     <div class="mode-bar">
       <el-button-group>
@@ -260,9 +242,75 @@
     </el-drawer>
       </el-tab-pane>
 
-      <!-- 各项目：通过 API 拉取（懒加载，切到该 tab 才请求） -->
-      <el-tab-pane v-for="proj in API_PROJECTS" :key="proj" :label="proj" :name="proj">
+      <!-- 各项目：通过 API 拉取（懒加载，切到该 tab 才请求；顺序由管理员配置） -->
+      <el-tab-pane v-for="proj in apiProjects" :key="proj" :label="proj" :name="proj">
         <IssueApiPanel v-if="topTab === proj" :project="proj" />
+      </el-tab-pane>
+
+      <!-- ── 管理员配置（数据源 + 项目 Tab） ──────────────── -->
+      <el-tab-pane v-if="isAdmin" name="config">
+        <template #label><el-icon><Setting /></el-icon> 配置</template>
+        <div class="config-pane">
+          <el-alert type="info" :closable="false" show-icon
+            title="问题单管理配置（仅管理员可见）"
+            description="在此维护数据源路径与项目 Tab；各项修改后点对应「保存」。API 各项目每天 07:30 自动采集快照。" />
+
+          <el-card shadow="never" class="cfg-card">
+            <template #header><span class="cfg-title">数据源路径</span></template>
+            <el-form label-width="130px" label-position="right">
+              <el-form-item label="本地报表目录">
+                <div class="cfg-row">
+                  <el-input v-model="cfg.reportPath" placeholder="目录（按 _YYYYMMDD 取最新）或具体 xlsx 路径" clearable />
+                  <el-button type="primary" @click="saveCfg('reportPath')">保存</el-button>
+                </div>
+                <div class="cfg-hint">「本地报表」tab 读取的 Excel 目录 / 文件。</div>
+              </el-form-item>
+              <el-form-item label="刷新脚本">
+                <div class="cfg-row">
+                  <el-input v-model="cfg.scriptPath" placeholder="脚本路径（.py / .bat / .exe）" clearable />
+                  <el-button type="primary" @click="saveCfg('scriptPath')">保存</el-button>
+                </div>
+                <div class="cfg-hint">刷新本地报表数据的外部脚本。</div>
+              </el-form-item>
+              <el-form-item label="API 脚本">
+                <div class="cfg-row">
+                  <el-input v-model="cfg.apiScriptPath" placeholder="按项目调接口拉取问题单的脚本（.py）" clearable />
+                  <el-button type="primary" @click="saveCfg('apiScriptPath')">保存</el-button>
+                </div>
+                <div class="cfg-hint">各项目 tab 的数据源，也是每日快照采集使用的脚本。</div>
+              </el-form-item>
+              <el-form-item label="快照存储目录">
+                <div class="cfg-row">
+                  <el-input v-model="cfg.snapshotDir" placeholder="留空则用 backend/data/issue_snapshots" clearable />
+                  <el-button type="primary" @click="saveCfg('snapshotDir')">保存</el-button>
+                </div>
+                <div class="cfg-hint">每日快照的明细文件落盘目录（趋势数字存库，不占此目录）。</div>
+              </el-form-item>
+            </el-form>
+          </el-card>
+
+          <el-card shadow="never" class="cfg-card">
+            <template #header>
+              <span class="cfg-title">项目 Tab</span>
+              <span class="cfg-sub">顺序即页面从左到右的展示顺序（第 1 个＝第一页）</span>
+            </template>
+            <div class="proj-list">
+              <div v-for="(p, i) in cfg.apiProjects" :key="p" class="proj-item">
+                <span class="proj-idx">{{ i + 1 }}</span>
+                <span class="proj-name">{{ p }}</span>
+                <el-button link :icon="ArrowUp" :disabled="i === 0" title="上移" @click="moveProject(i, -1)" />
+                <el-button link :icon="ArrowDown" :disabled="i === cfg.apiProjects.length - 1" title="下移" @click="moveProject(i, 1)" />
+                <el-button link type="danger" :icon="Delete" title="删除" @click="removeProject(i)" />
+              </div>
+              <div v-if="!cfg.apiProjects.length" class="proj-empty">暂无项目，请在下方新增</div>
+            </div>
+            <div class="proj-add">
+              <el-input v-model="newProject" placeholder="新增项目名，如 YLS9000" style="width:220px" @keyup.enter="addProject" />
+              <el-button :icon="Plus" @click="addProject">新增项目</el-button>
+              <el-button type="primary" @click="saveProjects">保存顺序</el-button>
+            </div>
+          </el-card>
+        </div>
       </el-tab-pane>
     </el-tabs>
 
@@ -272,7 +320,7 @@
 <script setup>
 import { computed, defineComponent, h, nextTick, onMounted, onUnmounted, ref, watch } from 'vue'
 import { ElMessage, ElTable, ElTableColumn, ElTag } from 'element-plus'
-import { DataLine, Document, Download, Search, TrendCharts, VideoPlay } from '@element-plus/icons-vue'
+import { ArrowDown, ArrowUp, DataLine, Delete, Document, Download, Plus, Search, Setting, TrendCharts, VideoPlay } from '@element-plus/icons-vue'
 // VideoPlay kept for script mode template (mode still accessible but button removed)
 import * as echarts from 'echarts'
 import { configApi, downloadBlob, issueApi } from '../api'
@@ -283,7 +331,10 @@ const isAdmin = auth.isAdmin
 
 // 顶层 tab：local=本地报表（默认），其余＝各项目（走 API）
 const topTab = ref('local')
-const API_PROJECTS = ['YLS3000', 'YLS5000', 'YLS8000']
+// 项目 Tab 列表 + 顺序由管理员配置（config.issue_api_projects）；无配置时回退默认
+const DEFAULT_PROJECTS = ['YLS3000', 'YLS5000', 'YLS8000']
+const apiProjects = computed(() => cfg.value.apiProjects)
+const newProject = ref('')
 
 // 暂时关闭「特性 × 小组」展示（Excel 暂未提供该字段），代码保留待恢复
 const SHOW_FEATURE = false
@@ -343,20 +394,60 @@ const IssueTable = defineComponent({
 })
 
 // ── 配置 ─────────────────────────────────────────────
-const cfg = ref({ reportPath: '', scriptPath: '', apiScriptPath: '' })
+const cfg = ref({ reportPath: '', scriptPath: '', apiScriptPath: '', snapshotDir: '', apiProjects: [] })
 async function loadCfg() {
   try {
     const { data } = await configApi.get()
     cfg.value.reportPath = data.issue_report_path || ''
     cfg.value.scriptPath = data.issue_script_path || ''
     cfg.value.apiScriptPath = data.issue_api_script_path || ''
+    cfg.value.snapshotDir = data.issue_snapshot_dir || ''
+    cfg.value.apiProjects = Array.isArray(data.issue_api_projects) && data.issue_api_projects.length
+      ? data.issue_api_projects.slice()
+      : DEFAULT_PROJECTS.slice()
   } catch { /* 忽略 */ }
 }
 async function saveCfg(key) {
-  const map = { reportPath: 'issue_report_path', scriptPath: 'issue_script_path', apiScriptPath: 'issue_api_script_path' }
+  const map = {
+    reportPath: 'issue_report_path', scriptPath: 'issue_script_path',
+    apiScriptPath: 'issue_api_script_path', snapshotDir: 'issue_snapshot_dir',
+  }
   try {
     await configApi.save({ [map[key]]: cfg.value[key] })
     ElMessage.success('已保存')
+  } catch (e) {
+    ElMessage.error(e.response?.data?.detail || '保存失败')
+  }
+}
+
+// ── 项目 Tab 编辑（管理员）────────────────────────────
+function addProject() {
+  const name = newProject.value.trim()
+  if (!name) return
+  if (cfg.value.apiProjects.includes(name)) {
+    ElMessage.warning('该项目已存在')
+    return
+  }
+  cfg.value.apiProjects.push(name)
+  newProject.value = ''
+}
+function removeProject(i) {
+  cfg.value.apiProjects.splice(i, 1)
+}
+function moveProject(i, dir) {
+  const arr = cfg.value.apiProjects
+  const j = i + dir
+  if (j < 0 || j >= arr.length) return
+  ;[arr[i], arr[j]] = [arr[j], arr[i]]
+}
+async function saveProjects() {
+  try {
+    await configApi.save({ issue_api_projects: cfg.value.apiProjects.slice() })
+    ElMessage.success('项目顺序已保存')
+    // 若当前正停在某个被删掉的项目 tab 上，回到本地报表，避免空白（config/local 不动）
+    if (!['local', 'config'].includes(topTab.value) && !cfg.value.apiProjects.includes(topTab.value)) {
+      topTab.value = 'local'
+    }
   } catch (e) {
     ElMessage.error(e.response?.data?.detail || '保存失败')
   }
@@ -703,9 +794,28 @@ onUnmounted(() => {
 <style scoped>
 .issue-page { display: flex; flex-direction: column; gap: 14px; }
 
-/* 配置卡 */
-.config-card :deep(.el-card__body) { padding: 10px 16px; }
-.config-card :deep(.el-form-item) { margin-bottom: 0; }
+/* 管理员配置页 */
+.config-pane { display: flex; flex-direction: column; gap: 14px; max-width: 880px; }
+.cfg-card :deep(.el-card__header) { padding: 12px 16px; }
+.cfg-title { font-size: 14px; font-weight: 600; color: #1f2329; }
+.cfg-sub { font-size: 12px; color: #909399; margin-left: 10px; }
+.cfg-row { display: flex; align-items: center; gap: 8px; width: 100%; }
+.cfg-row .el-input { flex: 1 1 auto; }
+.cfg-hint { font-size: 12px; color: #909399; margin-top: 2px; }
+.config-pane :deep(.el-form-item) { margin-bottom: 16px; }
+
+.proj-list { display: flex; flex-direction: column; gap: 6px; margin-bottom: 12px; }
+.proj-item {
+  display: flex; align-items: center; gap: 8px;
+  background: #f7f9fc; border: 1px solid #e6ebf2; border-radius: 6px; padding: 6px 12px;
+}
+.proj-idx {
+  flex: 0 0 22px; height: 22px; line-height: 22px; text-align: center;
+  background: #4073ba; color: #fff; border-radius: 50%; font-size: 12px; font-weight: 600;
+}
+.proj-name { flex: 1 1 auto; font-size: 14px; color: #1f2329; font-weight: 600; }
+.proj-empty { color: #909399; font-size: 13px; padding: 6px 0; }
+.proj-add { display: flex; align-items: center; gap: 8px; }
 
 /* 模式栏 */
 .mode-bar {

@@ -178,6 +178,11 @@ export const issueApi = {
   runScript:    ()     => http.post('/issues/run-script'),
   exportPptx:   (date) => http.get('/issues/export.pptx', { responseType: 'blob', ...(date ? { params: { date } } : {}) }),
   apiData:      (project) => http.get('/issues/api-data', { params: { project } }),
+  // 每日快照：库存数字（趋势）+ 文件存明细（某次统计）
+  snapshotList:    (project)            => http.get('/issues/snapshots', { params: { project } }),
+  snapshotDetail:  (project, date)      => http.get('/issues/snapshot-detail', { params: date ? { project, date } : { project } }),
+  snapshotTrend:   (project, dimension) => http.get('/issues/snapshot-trend', { params: { project, dimension } }),
+  snapshotCollect: (project)            => http.post('/issues/snapshot-collect', null, { params: project ? { project } : {} }),
 }
 
 export const customerApi = {

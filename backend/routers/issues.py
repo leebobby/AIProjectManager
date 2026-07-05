@@ -57,6 +57,7 @@ _RAW_COLS = [
     "date",             # Q 日期
     "year_month",       # R 年月（钻取按月度过滤的关键字段）
     "category",         # S 标题分类（钻取按客户/分类过滤的关键字段）
+    "customer",         # T 客户面（API 快照聚合的关键维度；Excel 无此列时留空）
 ]
 
 _DATE_PAT      = re.compile(r"_(\d{8})\.",           re.IGNORECASE)
@@ -537,6 +538,183 @@ def get_api_data(project: str, _: models.User = Depends(get_current_user)):
         "by_customer": _count_by(raw, "category"),
         "error": None,
     }
+
+
+# ─── 每日快照：库存"数字"（趋势）+ 文件存明细（钻取）──────────────────────────
+_BACKEND_DIR = pathlib.Path(__file__).resolve().parent.parent
+_SEV_ORDER = {"严重": 0, "一般": 1, "提示": 2}
+
+
+def _snapshot_root() -> pathlib.Path:
+    """快照明细文件根目录：优先 config.issue_snapshot_dir，否则 backend/data/issue_snapshots。"""
+    cfg = _load_config()
+    d = (cfg.get("issue_snapshot_dir") or "").strip()
+    root = pathlib.Path(d) if d else (_BACKEND_DIR / "data" / "issue_snapshots")
+    root.mkdir(parents=True, exist_ok=True)
+    return root
+
+
+def _safe_slug(s: str) -> str:
+    return re.sub(r"[^\w\-]", "_", s or "") or "_"
+
+
+def _take_snapshot(db: Session, project: str, source: str = "api") -> models.IssueSnapshot:
+    """拉取该项目问题单 → 明细写文件、聚合数字写库（同项目同日覆盖）。
+
+    可能抛 HTTPException（脚本未配置 / 执行失败）——调用方按需捕获。
+    """
+    raw = _run_issue_api_script(project)
+    today = datetime.now().strftime("%Y-%m-%d")
+
+    # 明细落文件（<项目>/<日期>.json）
+    root = _snapshot_root()
+    rel = f"{_safe_slug(project)}/{today}.json"
+    fp = root / rel
+    fp.parent.mkdir(parents=True, exist_ok=True)
+    fp.write_text(json.dumps(raw, ensure_ascii=False), encoding="utf-8")
+
+    # upsert 快照元数据
+    snap = (
+        db.query(models.IssueSnapshot)
+        .filter(models.IssueSnapshot.project == project,
+                models.IssueSnapshot.snapshot_date == today)
+        .first()
+    )
+    if snap is None:
+        snap = models.IssueSnapshot(project=project, snapshot_date=today)
+        db.add(snap)
+    snap.total = len(raw)
+    snap.data_file = rel
+    snap.source = source
+    snap.created_at = datetime.utcnow()
+    db.flush()  # 拿到 snap.id
+
+    # 重建维度聚合数字（group / customer / severity）
+    db.query(models.IssueSnapshotStat).filter(
+        models.IssueSnapshotStat.snapshot_id == snap.id
+    ).delete(synchronize_session=False)
+    for dim in ("group", "customer", "severity"):
+        for key, cnt in _count_by(raw, dim).items():
+            db.add(models.IssueSnapshotStat(
+                snapshot_id=snap.id, dimension=dim, dim_key=key, count=cnt,
+            ))
+    db.commit()
+    db.refresh(snap)
+    return snap
+
+
+@router.post("/snapshot-collect")
+def snapshot_collect(
+    request: Request,
+    project: Optional[str] = None,
+    db: Session = Depends(get_db),
+    current_user: models.User = Depends(require_admin),
+):
+    """立即采集一次快照（仅管理员）。project 省略则采集 config.issue_api_projects 全部。"""
+    cfg = _load_config()
+    projects = [project] if project else (cfg.get("issue_api_projects") or [])
+    if not projects:
+        raise HTTPException(400, "没有可采集的项目（未配置 issue_api_projects）")
+
+    results = []
+    for p in projects:
+        try:
+            snap = _take_snapshot(db, p, source="manual")
+            results.append({"project": p, "ok": True, "date": snap.snapshot_date, "total": snap.total})
+        except HTTPException as exc:
+            results.append({"project": p, "ok": False, "error": str(exc.detail)})
+    ok = sum(1 for r in results if r["ok"])
+    log_op(db, action="issue_snapshot", target="issue_snapshot", target_id=None,
+           detail=f"手动采集 {ok}/{len(projects)} 个项目", user=current_user, request=request)
+    return {"results": results}
+
+
+@router.get("/snapshots")
+def list_snapshots(project: str, db: Session = Depends(get_db),
+                   _: models.User = Depends(get_current_user)):
+    """某项目的快照列表（新→旧），只含元数据数字。"""
+    rows = (
+        db.query(models.IssueSnapshot)
+        .filter(models.IssueSnapshot.project == project)
+        .order_by(models.IssueSnapshot.snapshot_date.desc())
+        .all()
+    )
+    return [
+        {"id": r.id, "date": r.snapshot_date, "total": r.total, "source": r.source,
+         "created_at": r.created_at.strftime("%Y-%m-%d %H:%M:%S") if r.created_at else ""}
+        for r in rows
+    ]
+
+
+@router.get("/snapshot-detail")
+def snapshot_detail(project: str, date: Optional[str] = None,
+                    db: Session = Depends(get_db),
+                    _: models.User = Depends(get_current_user)):
+    """某次快照的明细（从文件加载完整行）；date 省略取最新。"""
+    q = db.query(models.IssueSnapshot).filter(models.IssueSnapshot.project == project)
+    snap = (q.filter(models.IssueSnapshot.snapshot_date == date).first() if date
+            else q.order_by(models.IssueSnapshot.snapshot_date.desc()).first())
+    if snap is None:
+        return {"exists": False, "project": project}
+    raw: List[Dict] = []
+    try:
+        fp = _snapshot_root() / snap.data_file
+        if fp.exists():
+            raw = json.loads(fp.read_text(encoding="utf-8"))
+    except Exception:
+        raw = []
+    return {
+        "exists": True, "project": project, "date": snap.snapshot_date,
+        "created_at": snap.created_at.strftime("%Y-%m-%d %H:%M:%S") if snap.created_at else "",
+        "total": snap.total, "count": len(raw), "raw": raw,
+        "by_severity": _count_by(raw, "severity"),
+        "by_group": _count_by(raw, "group"),
+        "by_customer": _count_by(raw, "customer"),
+    }
+
+
+@router.get("/snapshot-trend")
+def snapshot_trend(project: str, dimension: str = "group",
+                   db: Session = Depends(get_db),
+                   _: models.User = Depends(get_current_user)):
+    """趋势：只从库里读维度聚合数字（不碰明细文件）。dimension ∈ group/customer/severity。"""
+    if dimension not in ("group", "customer", "severity"):
+        dimension = "group"
+    snaps = (
+        db.query(models.IssueSnapshot)
+        .filter(models.IssueSnapshot.project == project)
+        .order_by(models.IssueSnapshot.snapshot_date.asc())
+        .all()
+    )
+    if not snaps:
+        return {"project": project, "dimension": dimension, "dates": [], "total": [], "series": []}
+
+    dates = [s.snapshot_date for s in snaps]
+    total = [s.total for s in snaps]
+    id_to_idx = {s.id: i for i, s in enumerate(snaps)}
+    stats = (
+        db.query(models.IssueSnapshotStat)
+        .filter(models.IssueSnapshotStat.dimension == dimension,
+                models.IssueSnapshotStat.snapshot_id.in_([s.id for s in snaps]))
+        .all()
+    )
+    matrix: Dict[str, List[int]] = {}
+    order: List[str] = []
+    for st in stats:
+        idx = id_to_idx.get(st.snapshot_id)
+        if idx is None:
+            continue
+        if st.dim_key not in matrix:
+            matrix[st.dim_key] = [0] * len(dates)
+            order.append(st.dim_key)
+        matrix[st.dim_key][idx] = st.count
+    if dimension == "severity":
+        order.sort(key=lambda k: _SEV_ORDER.get(k, 99))
+    else:
+        order.sort()
+    series = [{"name": k, "data": matrix[k]} for k in order]
+    return {"project": project, "dimension": dimension, "dates": dates,
+            "total": total, "series": series}
 
 
 @router.get("/run-script/status")
