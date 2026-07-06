@@ -31,8 +31,25 @@
         </div>
       </div>
 
-      <!-- 1. 目标 -->
-      <div class="sec">
+      <!-- 分段顺序调整（编辑态；顺序仅本专项独立生效） -->
+      <div v-if="canEdit" class="sec order-panel">
+        <div class="sec-head">
+          <span>分段顺序</span>
+          <span class="muted-hint">上下移动可调整各分段显示顺序（仅本{{ label }}生效）</span>
+        </div>
+        <div class="sec-body order-list">
+          <div v-for="(k, si) in orderedKeys" :key="k" class="order-item">
+            <span class="order-idx">{{ si + 1 }}</span>
+            <span class="order-name">{{ sectionLabel(k) }}</span>
+            <el-button size="small" text :disabled="si === 0" @click="moveSection(si, -1)">上移</el-button>
+            <el-button size="small" text :disabled="si === orderedKeys.length - 1" @click="moveSection(si, 1)">下移</el-button>
+          </div>
+        </div>
+      </div>
+
+      <template v-for="key in orderedKeys" :key="key">
+      <!-- 目标 -->
+      <div v-if="key === 'goal'" class="sec">
         <div class="sec-head">{{ label }}目标</div>
         <div class="sec-body">
           <EditableText
@@ -45,8 +62,8 @@
         </div>
       </div>
 
-      <!-- 2. 计划 -->
-      <div class="sec">
+      <!-- 计划 -->
+      <div v-else-if="key === 'plan'" class="sec">
         <div class="sec-head">
           <span>{{ label }}计划</span>
           <el-button v-if="canEdit" size="small" :icon="Plus" @click="openMilestoneDialog(null)">新增里程碑</el-button>
@@ -61,8 +78,8 @@
         </div>
       </div>
 
-      <!-- 3. 整体进展 -->
-      <div class="sec">
+      <!-- 整体进展 -->
+      <div v-else-if="key === 'progress'" class="sec">
         <div class="sec-head">整体进展</div>
         <div class="sec-body">
           <EditableText
@@ -75,8 +92,8 @@
         </div>
       </div>
 
-      <!-- 4. 求助 -->
-      <div class="sec">
+      <!-- 求助 -->
+      <div v-else-if="key === 'help'" class="sec">
         <div class="sec-head">求助</div>
         <div class="sec-body">
           <EditableText
@@ -89,8 +106,8 @@
         </div>
       </div>
 
-      <!-- 4. 全景图 -->
-      <div class="sec">
+      <!-- 全景图 -->
+      <div v-else-if="key === 'panorama'" class="sec">
         <div class="sec-head">
           <span>{{ label }}全景图</span>
           <span class="muted-hint">{{ isAssault ? '建议使用思维导图（支持 SVG）' : '建议使用逻辑框图（支持 SVG）' }}</span>
@@ -110,8 +127,8 @@
         </div>
       </div>
 
-      <!-- 5. 风险和问题（调整到事务之前） -->
-      <div class="sec">
+      <!-- 风险和问题 -->
+      <div v-else-if="key === 'risks'" class="sec">
         <div class="sec-head">
           <span>风险和问题</span>
           <el-button v-if="canEdit" size="small" :icon="Plus" @click="openItemDialog('risk', null)">新增风险</el-button>
@@ -147,8 +164,8 @@
         </el-table>
       </div>
 
-      <!-- 6. 事务 -->
-      <div class="sec">
+      <!-- 事务 -->
+      <div v-else-if="key === 'tasks'" class="sec">
         <div class="sec-head">
           <span>{{ label }}事务</span>
           <el-button v-if="canEdit" size="small" :icon="Plus" @click="openItemDialog('task', null)">新增事务</el-button>
@@ -184,28 +201,28 @@
           </el-table-column>
         </el-table>
 
-        <!-- 附加自由表格（每个专项独立，按 _uid 作为稳定 key 避免切换专项串台） -->
-        <div v-for="(grid, gi) in extraGrids" :key="grid._uid" class="extra-grid">
-          <div class="extra-grid-head">
-            <input
-              v-if="canEdit"
-              v-model="grid.title"
-              class="extra-grid-title-input"
-              placeholder="表格标题（点击编辑）"
-            />
-            <span v-else>{{ grid.title || '附加表格' }}</span>
-            <div class="spacer" />
-            <el-button v-if="canEdit" size="small" type="danger" @click="removeExtraGrid(gi)">删除整表</el-button>
-          </div>
-          <RichGrid v-model="extraGrids[gi]" :editable="canEdit" />
+      </div>
+
+      <!-- 附加自由表格：每个提升为与「专项事务」并列的独立分段 -->
+      <div v-else-if="key.startsWith('grid:')" class="sec extra-grid-sec">
+        <div class="sec-head">
+          <input
+            v-if="canEdit"
+            v-model="extraGrids[gridIndexOf(key)].title"
+            class="extra-grid-title-input"
+            placeholder="表格标题（点击编辑）"
+          />
+          <span v-else>{{ extraGrids[gridIndexOf(key)].title || '附加表格' }}</span>
+          <el-button v-if="canEdit" size="small" type="primary" :loading="extraSaving" @click="saveExtraGrids">保存表格</el-button>
+          <el-button v-if="canEdit" size="small" type="danger" @click="removeExtraGrid(gridIndexOf(key))">删除整表</el-button>
         </div>
-        <div v-if="canEdit && extraGrids.length > 0" class="save-extra">
-          <el-button size="small" type="primary" :loading="extraSaving" @click="saveExtraGrids">保存附加表格</el-button>
+        <div class="sec-body">
+          <RichGrid v-model="extraGrids[gridIndexOf(key)]" :editable="canEdit" />
         </div>
       </div>
 
-      <!-- 7. 阵型 -->
-      <div class="sec">
+      <!-- 阵型 -->
+      <div v-else-if="key === 'formation'" class="sec">
         <div class="sec-head">
           <span>{{ label }}阵型</span>
           <template v-if="canEdit">
@@ -219,6 +236,7 @@
           <div v-else class="muted">点击 +列 / +行 开始填写阵型</div>
         </div>
       </div>
+      </template>
     </div>
 
     <!-- 里程碑对话框 -->
@@ -343,6 +361,7 @@ const content = ref({
   milestones_json: '[]',
   formation_json: '{"headers":[],"rows":[]}',
   extra_grids_json: '[]',
+  section_order_json: '[]',
   version: 0,
 })
 const tasks = ref([])
@@ -505,6 +524,7 @@ async function load() {
     parseMilestones()
     parseFormation()
     parseExtraGrids()
+    parseSectionOrder()
     await loadPanorama()
     if (myToken !== loadToken) return
     await refreshLock()
@@ -533,6 +553,11 @@ function parseFormation() {
 }
 
 let _gridUid = 0
+let _gidSeq = 0
+// 稳定 gid：作为分段 key（grid:<gid>）与顺序持久化；随附加表格一起存盘后跨刷新稳定
+function nextGid() {
+  return `${Date.now().toString(36)}${(_gidSeq++).toString(36)}`
+}
 
 function normHeader(h) {
   if (h && typeof h === 'object') {
@@ -555,12 +580,29 @@ function normGrid(g) {
   let widths = Array.isArray(g.colWidths) ? g.colWidths.map(w => Number(w) || DEFAULT_COL_W) : []
   if (widths.length < bodyCols) widths = widths.concat(Array(bodyCols - widths.length).fill(DEFAULT_COL_W))
   else if (widths.length > bodyCols) widths = widths.slice(0, bodyCols)
+  // 列格式（文本/下拉/日期）+ 下拉候选项，长度对齐正文列数；旧数据缺省为 text / []
+  let types = Array.isArray(g.colTypes)
+    ? g.colTypes.map(t => (['text', 'select', 'date'].includes(t) ? t : 'text'))
+    : []
+  if (types.length < bodyCols) types = types.concat(Array(bodyCols - types.length).fill('text'))
+  else if (types.length > bodyCols) types = types.slice(0, bodyCols)
+  let options = Array.isArray(g.colOptions)
+    ? g.colOptions.map(o => (Array.isArray(o) ? o.map(String) : []))
+    : []
+  if (options.length < bodyCols) {
+    options = options.concat(Array.from({ length: bodyCols - options.length }, () => []))
+  } else if (options.length > bodyCols) {
+    options = options.slice(0, bodyCols)
+  }
   return {
     _uid: `g${++_gridUid}`,
+    gid: g.gid || nextGid(),
     title: String(g.title || ''),
     headers,
     rows,
     colWidths: widths,
+    colTypes: types,
+    colOptions: options,
   }
 }
 
@@ -569,6 +611,80 @@ function parseExtraGrids() {
     const arr = JSON.parse(content.value.extra_grids_json || '[]')
     extraGrids.value = Array.isArray(arr) ? arr.map(normGrid) : []
   } catch { extraGrids.value = [] }
+}
+
+// —— 分段顺序（本专项独立，编辑者可调）——
+// 固定分段的默认顺序；附加表格以 grid:<gid> 追加在后
+const FIXED_KEYS = ['goal', 'plan', 'progress', 'help', 'panorama', 'risks', 'tasks', 'formation']
+const FIXED_LABELS = {
+  goal: () => `${label.value}目标`,
+  plan: () => `${label.value}计划`,
+  progress: () => '整体进展',
+  help: () => '求助',
+  panorama: () => `${label.value}全景图`,
+  risks: () => '风险和问题',
+  tasks: () => `${label.value}事务`,
+  formation: () => `${label.value}阵型`,
+}
+const sectionOrder = ref([])        // 持久化的原始顺序（可能含已删表格的旧 key）
+const allKeys = computed(() => [
+  ...FIXED_KEYS,
+  ...extraGrids.value.map(g => `grid:${g.gid}`),
+])
+// 用已存顺序对齐当前实际存在的分段：保留仍存在的、把新增的按默认序补到末尾
+function reconcileOrder(saved, all) {
+  const allSet = new Set(all)
+  const kept = saved.filter(k => allSet.has(k))
+  const keptSet = new Set(kept)
+  return [...kept, ...all.filter(k => !keptSet.has(k))]
+}
+const orderedKeys = computed(() => reconcileOrder(sectionOrder.value, allKeys.value))
+
+function parseSectionOrder() {
+  try {
+    const arr = JSON.parse(content.value.section_order_json || '[]')
+    sectionOrder.value = Array.isArray(arr) ? arr.filter(k => typeof k === 'string') : []
+  } catch { sectionOrder.value = [] }
+}
+
+function gridIndexOf(key) {
+  const gid = key.slice(5) // 去掉 "grid:"
+  return extraGrids.value.findIndex(g => String(g.gid) === gid)
+}
+function sectionLabel(key) {
+  if (key.startsWith('grid:')) {
+    const g = extraGrids.value[gridIndexOf(key)]
+    return (g && g.title) || '附加表格'
+  }
+  const f = FIXED_LABELS[key]
+  return f ? f() : key
+}
+
+async function moveSection(si, dir) {
+  const keys = orderedKeys.value.slice()
+  const j = si + dir
+  if (j < 0 || j >= keys.length) return
+  ;[keys[si], keys[j]] = [keys[j], keys[si]]
+  sectionOrder.value = keys // 立即反映到界面
+  await persistSectionOrder(keys)
+}
+
+// 保存分段顺序时一并存盘附加表格：借此把新分配的 gid 固化下来，跨刷新保持顺序稳定
+async function persistSectionOrder(keys) {
+  if (!special.value) return
+  try {
+    const gridsPayload = extraGrids.value.map(({ _uid, ...g }) => g)
+    const { data } = await specialApi.updateContent(special.value.id, {
+      version: content.value.version,
+      section_order_json: JSON.stringify(keys),
+      extra_grids_json: JSON.stringify(gridsPayload),
+    })
+    content.value = data
+    parseExtraGrids()
+    parseSectionOrder()
+  } catch (e) {
+    ElMessage.error(e.response?.data?.detail || '保存顺序失败')
+  }
 }
 
 async function loadPanorama() {
@@ -767,15 +883,17 @@ function removeExtraGrid(gi) {
 }
 async function saveExtraGrids(silent = false) {
   extraSaving.value = true
-  // 去掉前端内部的 _uid 再持久化
+  // 去掉前端内部的 _uid 再持久化；同时存分段顺序，确保 gid 与顺序一致落库
   const payload = extraGrids.value.map(({ _uid, ...g }) => g)
   try {
     const { data } = await specialApi.updateContent(special.value.id, {
       version: content.value.version,
       extra_grids_json: JSON.stringify(payload),
+      section_order_json: JSON.stringify(orderedKeys.value),
     })
     content.value = data
     parseExtraGrids()
+    parseSectionOrder()
     if (silent !== true) ElMessage.success('附加表格已保存')
   } catch (e) {
     ElMessage.error(e.response?.data?.detail || '保存失败')
@@ -973,32 +1091,45 @@ onBeforeUnmount(() => {
 .rich-cell :deep(div) { display: inline; }
 .muted { color: #909399; padding: 12px 16px; }
 
-/* 附加表格 */
-.extra-grid {
-  margin-top: 12px;
+/* 分段顺序调整面板 */
+.order-panel .sec-body { padding: 10px 16px; }
+.order-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+.order-item {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 4px 8px;
   border: 1px solid #ebeef5;
   border-radius: 4px;
-}
-.extra-grid-head {
   background: #fafbfc;
-  padding: 6px 10px;
-  display: flex;
-  gap: 8px;
-  align-items: center;
-  border-bottom: 1px solid #ebeef5;
 }
-.extra-grid-head .spacer { flex: 1; }
+.order-idx {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 20px;
+  height: 20px;
+  border-radius: 50%;
+  background: #ecf2fb;
+  color: #4073ba;
+  font-size: 12px;
+}
+.order-name { font-size: 14px; color: #1f2329; }
+
+/* 附加表格：作为独立分段，标题即分段标题 */
+.extra-grid-sec .sec-body { overflow-x: auto; }
 .extra-grid-title-input {
   border: none;
   outline: none;
   background: transparent;
   font-weight: 600;
-  font-size: 14px;
+  font-size: 18px;
+  color: #303133;
   min-width: 200px;
-}
-.save-extra {
-  padding: 8px 12px 4px;
-  text-align: right;
 }
 .formation-wrap {
   padding: 12px 16px;

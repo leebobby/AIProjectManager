@@ -20,6 +20,25 @@
       </el-button-group>
       <el-button size="small" :disabled="!isHeaderSel" @click="mergeHeader">合并表头→</el-button>
       <el-button size="small" :disabled="!canSplit" @click="splitHeader">拆分表头</el-button>
+      <span class="rg-fmt">
+        <span class="rg-tip">列格式</span>
+        <el-select
+          v-model="selColType"
+          size="small"
+          :disabled="!isBodySel"
+          class="rg-typesel"
+          placeholder="选列"
+        >
+          <el-option v-for="t in COL_TYPES" :key="t.value" :label="t.label" :value="t.value" />
+        </el-select>
+        <el-input
+          v-if="isBodySel && selColType === 'select'"
+          v-model="selColOptionsText"
+          size="small"
+          class="rg-optinput"
+          placeholder="下拉选项，逗号分隔"
+        />
+      </span>
       <div class="spacer" />
       <el-button-group>
         <el-button size="small" @click="insertRow('above')">↑插入行</el-button>
@@ -83,13 +102,34 @@
             :style="{ textAlign: cell.align || 'left', color: cell.color || '#303133' }"
             @click="editable && selectCell('body', ri, ci)"
           >
-            <input
-              v-if="editable"
-              v-model="cell.text"
-              class="rg-input"
-              :style="{ textAlign: cell.align || 'left', color: cell.color || '#303133' }"
-              @input="emitUpdate"
-            />
+            <template v-if="editable">
+              <el-select
+                v-if="colTypeAt(ci) === 'select'"
+                v-model="cell.text"
+                size="small"
+                clearable
+                class="rg-field"
+                @change="emitUpdate"
+              >
+                <el-option v-for="opt in colOptionsAt(ci)" :key="opt" :label="opt" :value="opt" />
+              </el-select>
+              <el-date-picker
+                v-else-if="colTypeAt(ci) === 'date'"
+                v-model="cell.text"
+                type="date"
+                value-format="YYYY-MM-DD"
+                size="small"
+                class="rg-field"
+                @change="emitUpdate"
+              />
+              <input
+                v-else
+                v-model="cell.text"
+                class="rg-input"
+                :style="{ textAlign: cell.align || 'left', color: cell.color || '#303133' }"
+                @input="emitUpdate"
+              />
+            </template>
             <span v-else>{{ cell.text }}</span>
             <button
               v-if="editable && ci === row.length - 1 && model.rows.length > 1"
@@ -117,9 +157,13 @@
  *   {
  *     title: string,
  *     headers: [{ text, colspan, align }],   // sum(colspan) === 正文列数
- *     rows: [ [{ text, align, color }, ...], ... ]
+ *     rows: [ [{ text, align, color }, ...], ... ],
+ *     colWidths:  [number, ...],             // 长度 = 正文列数
+ *     colTypes:   ['text'|'select'|'date', ...],  // 每个物理列的输入格式
+ *     colOptions: [ [string, ...], ... ],    // 下拉列的候选项（其余列为 []）
  *   }
- * 兼容旧格式：headers 为 string[]、rows 为 string[][]（由父级 normalize）。
+ * 兼容旧格式：headers 为 string[]、rows 为 string[][]（由父级 normalize）；
+ * 旧数据无 colTypes/colOptions 时按 'text' / [] 补齐。
  */
 import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
 
@@ -142,8 +186,56 @@ const canSplit = computed(
   () => isHeaderSel.value && (model.value.headers[sel.value.c]?.colspan || 1) > 1,
 )
 const selDesc = computed(() => {
-  if (!sel.value) return '点击单元格后可设置对齐 / 颜色 / 合并表头'
+  if (!sel.value) return '点击单元格后可设置对齐 / 颜色 / 合并表头 / 列格式'
   return sel.value.type === 'header' ? '已选中表头' : '已选中正文单元格'
+})
+
+// —— 列格式：每个物理列可设 文本 / 下拉 / 日期 ——
+// colTypes[i]、colOptions[i] 与 colWidths 一样，长度 = 正文列数
+const COL_TYPES = [
+  { value: 'text', label: '文本' },
+  { value: 'select', label: '下拉' },
+  { value: 'date', label: '日期' },
+]
+function colTypeAt(ci) {
+  const t = model.value.colTypes
+  return (Array.isArray(t) && t[ci]) || 'text'
+}
+function colOptionsAt(ci) {
+  const o = model.value.colOptions
+  return Array.isArray(o) && Array.isArray(o[ci]) ? o[ci] : []
+}
+function ensureColMeta() {
+  const n = bodyColCount()
+  if (!Array.isArray(model.value.colTypes)) model.value.colTypes = []
+  if (!Array.isArray(model.value.colOptions)) model.value.colOptions = []
+  const t = model.value.colTypes
+  const o = model.value.colOptions
+  while (t.length < n) t.push('text')
+  if (t.length > n) t.length = n
+  while (o.length < n) o.push([])
+  if (o.length > n) o.length = n
+}
+// 列格式作用于当前选中的正文单元格所在物理列
+const selPhysCol = computed(() => (sel.value?.type === 'body' ? sel.value.c : -1))
+const selColType = computed({
+  get: () => (selPhysCol.value >= 0 ? colTypeAt(selPhysCol.value) : 'text'),
+  set: (v) => {
+    if (selPhysCol.value < 0) return
+    ensureColMeta()
+    model.value.colTypes[selPhysCol.value] = v
+    emitUpdate()
+  },
+})
+const selColOptionsText = computed({
+  get: () => (selPhysCol.value >= 0 ? colOptionsAt(selPhysCol.value).join('，') : ''),
+  set: (v) => {
+    if (selPhysCol.value < 0) return
+    ensureColMeta()
+    model.value.colOptions[selPhysCol.value] =
+      String(v).split(/[，,]/).map((s) => s.trim()).filter(Boolean)
+    emitUpdate()
+  },
 })
 
 function emitUpdate() {
@@ -200,7 +292,7 @@ function stopResize() {
     emitUpdate()
   }
 }
-onMounted(ensureWidths)
+onMounted(() => { ensureWidths(); ensureColMeta() })
 onBeforeUnmount(stopResize)
 
 function setAlign(align) {
@@ -305,6 +397,9 @@ function insertCol(side) {
   model.value.rows.forEach(r => r.splice(bodyAt, 0, newCell()))
   ensureWidths()
   model.value.colWidths.splice(bodyAt, 0, DEFAULT_W)
+  ensureColMeta()
+  model.value.colTypes.splice(bodyAt, 0, 'text')
+  model.value.colOptions.splice(bodyAt, 0, [])
   emitUpdate()
 }
 function deleteSelCol() {
@@ -320,6 +415,9 @@ function removeHeader(hi) {
   model.value.rows.forEach(r => r.splice(offset, span))
   ensureWidths()
   model.value.colWidths.splice(offset, span)
+  ensureColMeta()
+  model.value.colTypes.splice(offset, span)
+  model.value.colOptions.splice(offset, span)
   sel.value = null
   emitUpdate()
 }
@@ -339,6 +437,13 @@ function removeHeader(hi) {
 }
 .rg-toolbar .spacer { flex: 1; }
 .rg-tip { font-size: 12px; color: #909399; }
+.rg-fmt { display: inline-flex; align-items: center; gap: 6px; }
+.rg-typesel { width: 92px; }
+.rg-optinput { width: 200px; }
+/* 单元格内的下拉 / 日期控件铺满列宽 */
+.rg-table td :deep(.rg-field) { width: 100%; }
+.rg-table td :deep(.el-input__wrapper) { padding: 0 6px; box-shadow: none; }
+.rg-table td :deep(.el-select__wrapper) { min-height: 26px; }
 .swatch {
   display: inline-block;
   width: 10px;

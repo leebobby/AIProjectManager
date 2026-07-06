@@ -1002,6 +1002,7 @@ class SpecialContentUpdate(BaseModel):
     milestones_json: Optional[str] = None
     formation_json: Optional[str] = None
     extra_grids_json: Optional[str] = None
+    section_order_json: Optional[str] = None
 
 
 class SpecialContentOut(BaseModel):
@@ -1015,6 +1016,7 @@ class SpecialContentOut(BaseModel):
     milestones_json: str = "[]"
     formation_json: str = '{"headers":[],"rows":[]}'
     extra_grids_json: str = "[]"
+    section_order_json: str = "[]"
     version: int = 0
     updated_at: Optional[datetime] = None
 

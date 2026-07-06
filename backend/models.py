@@ -653,8 +653,10 @@ class SpecialContent(Base):
     milestones_json = Column(Text, default="[]")
     # 阵型：{"headers":[...], "rows":[[cell, cell, ...], ...]}
     formation_json = Column(Text, default='{"headers":[],"rows":[]}')
-    # 事务区域附加的若干"自由表格"：[{title, headers, rows}, ...]
+    # 附加的若干"自由表格"（已提升为独立分段）：[{title, gid, headers, rows, colTypes, colOptions}, ...]
     extra_grids_json = Column(Text, default="[]")
+    # 分段显示顺序：["goal","plan",...,"grid:<gid>"]（空数组=按默认顺序）
+    section_order_json = Column(Text, default="[]")
     version = Column(Integer, nullable=False, default=0, comment="乐观锁")
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
 
