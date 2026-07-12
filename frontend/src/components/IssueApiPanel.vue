@@ -10,6 +10,13 @@
         :loading="collecting"
         @click="collectNow"
       >{{ collecting ? '采集中…' : '立即采集' }}</el-button>
+      <el-button
+        v-if="snapshots.length"
+        size="small"
+        :icon="Download"
+        :loading="exporting"
+        @click="doExport"
+      >导出 Excel</el-button>
       <span class="muted" style="margin-left: auto">共 {{ snapshots.length }} 个历史快照</span>
     </div>
 
@@ -79,6 +86,17 @@
                     <div ref="customerBarEl" class="chart-sm" :class="{ 'chart-wide': statsView === 'chart' }" />
                   </el-col>
                 </el-row>
+
+                <div class="section-title" style="margin-top: 20px">按年月 × 严重程度</div>
+                <el-row :gutter="16">
+                  <el-col v-show="statsView !== 'chart'" :span="statsView === 'both' ? 14 : 24">
+                    <StatsTable head="年月" :columns="yearMonthBySev.columns" :rows="yearMonthBySev.rows"
+                      @cell-click="(r, c, v) => onCellClick('year_month', r, c, v)" />
+                  </el-col>
+                  <el-col v-show="statsView !== 'table'" :span="statsView === 'both' ? 10 : 24">
+                    <div ref="yearMonthBarEl" class="chart-sm" :class="{ 'chart-wide': statsView === 'chart' }" />
+                  </el-col>
+                </el-row>
               </el-tab-pane>
 
               <el-tab-pane label="原始数据" name="raw">
@@ -122,9 +140,9 @@
 <script setup>
 import { computed, defineComponent, h, nextTick, onMounted, onUnmounted, ref, watch } from 'vue'
 import { ElMessage, ElTable, ElTableColumn, ElTag } from 'element-plus'
-import { Refresh, Search } from '@element-plus/icons-vue'
+import { Download, Refresh, Search } from '@element-plus/icons-vue'
 import * as echarts from 'echarts'
-import { issueApi } from '../api'
+import { downloadBlob, issueApi } from '../api'
 import { auth } from '../store/auth'
 
 const props = defineProps({
@@ -133,6 +151,7 @@ const props = defineProps({
 
 const isAdmin = auth.isAdmin
 const collecting = ref(false)
+const exporting = ref(false)
 
 const PAL = ['#4073ba', '#67C23A', '#E6A23C', '#F56C6C', '#909399', '#8E7AD8', '#26C9C3', '#F9A825']
 const SEV_CLR = { 严重: '#F56C6C', 一般: '#E6A23C', 提示: '#909399' }
@@ -207,7 +226,7 @@ function sevCount(s) { return detail.value?.by_severity?.[s] || 0 }
 
 // ── 交叉表构建（行维度 × 严重程度）────────────────
 function buildCross(rows, rowField, colField) {
-  const rowFallback = rowField === 'group' ? '未分组' : rowField === 'customer' ? '未标注' : '未知'
+  const rowFallback = rowField === 'group' ? '未分组' : '未标注'
   const colFallback = '未标注'
   const map = {}
   const colTotals = {}
@@ -242,10 +261,12 @@ function buildCross(rows, rowField, colField) {
 
 const groupBySev = computed(() => buildCross(raw.value, 'group', 'severity'))
 const customerBySev = computed(() => buildCross(raw.value, 'customer', 'severity'))
+const yearMonthBySev = computed(() => buildCross(raw.value, 'year_month', 'severity'))
 
 // ── ECharts ──────────────────────────────────────
 const groupBarEl = ref(null)
 const customerBarEl = ref(null)
+const yearMonthBarEl = ref(null)
 const trendEl = ref(null)
 const inst = {}
 function setChart(key, el, option) {
@@ -296,6 +317,7 @@ function trendLineOption(t) {
 function renderSnapshotCharts() {
   if (groupBarEl.value) setChart('group', groupBarEl.value, crossBarOption(groupBySev.value))
   if (customerBarEl.value) setChart('customer', customerBarEl.value, crossBarOption(customerBySev.value))
+  if (yearMonthBarEl.value) setChart('yearMonth', yearMonthBarEl.value, crossBarOption(yearMonthBySev.value))
 }
 function renderTrendChart() {
   if (trendEl.value && trend.value?.dates?.length) setChart('trend', trendEl.value, trendLineOption(trend.value))
@@ -332,6 +354,7 @@ function openDrill(filters, title = '问题单明细') {
   if (filters.severity) rows = rows.filter((r) => r.severity === filters.severity)
   if (filters.group) rows = rows.filter((r) => (r.group || '未分组') === filters.group)
   if (filters.customer) rows = rows.filter((r) => (r.customer || '未标注') === filters.customer)
+  if (filters.year_month) rows = rows.filter((r) => (r.year_month || '未标注') === filters.year_month)
   drillRows.value = rows
   drillTitle.value = title
   drillVisible.value = true
@@ -363,6 +386,25 @@ async function collectNow() {
     ElMessage.error(e.response?.data?.detail || '采集失败')
   } finally {
     collecting.value = false
+  }
+}
+
+// ── 导出 Excel（原始数据 + 统计分析 两张表）──
+async function doExport() {
+  exporting.value = true
+  try {
+    const resp = await issueApi.snapshotExport(props.project, selDate.value || undefined)
+    downloadBlob(resp.data, `问题单_${props.project}_${selDate.value || 'latest'}.xlsx`)
+    ElMessage.success('已导出')
+  } catch (e) {
+    let msg = '导出失败'
+    try {
+      if (e.response?.data instanceof Blob) msg = JSON.parse(await e.response.data.text()).detail || msg
+      else msg = e.response?.data?.detail || msg
+    } catch { /* ignore */ }
+    ElMessage.error(msg)
+  } finally {
+    exporting.value = false
   }
 }
 

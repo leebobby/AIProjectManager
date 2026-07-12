@@ -652,7 +652,10 @@ def _enrich_rows(db: Session, rows: List[Dict]) -> List[Dict]:
             if not any(d in dept for d in depts):
                 continue
         if groups:
-            r["group"] = _match_group(r.get("owner", ""), groups) or "未分组"
+            g = _match_group(r.get("owner", ""), groups)
+            if not g:
+                continue   # 责任人不在任何小组名单 → 不纳入统计/表格（未分组不保留）
+            r["group"] = g
         if matchers and not (r.get("customer") or "").strip():
             r["customer"] = _match_customer(r.get("title", ""), matchers)
         out.append(r)
@@ -817,6 +820,138 @@ def snapshot_trend(project: str, dimension: str = "group",
     series = [{"name": k, "data": matrix[k]} for k in order]
     return {"project": project, "dimension": dimension, "dates": dates,
             "total": total, "series": series}
+
+
+# ─── 快照导出 Excel：原始数据 + 统计分析 两张表 ────────────────────────────────
+def _cross_table(rows: List[Dict], row_field: str, col_field: str,
+                 col_order: Optional[List[str]] = None,
+                 row_fallback: str = "未标注") -> Dict[str, Any]:
+    """行维度 × 列维度 交叉计数 → {columns:[...,'合计'], rows:[{label,...}], total_row}。"""
+    matrix: Dict[str, Dict[str, int]] = {}
+    col_totals: Dict[str, int] = {}
+    col_seen: List[str] = []
+    grand = 0
+    for r in rows:
+        rv = (r.get(row_field) or "").strip() or row_fallback
+        cv = (r.get(col_field) or "").strip() or "未标注"
+        if cv not in col_totals:
+            col_totals[cv] = 0
+            col_seen.append(cv)
+        matrix.setdefault(rv, {})
+        matrix[rv][cv] = matrix[rv].get(cv, 0) + 1
+        col_totals[cv] += 1
+        grand += 1
+    if col_order:
+        cols = [c for c in col_order if c in col_totals] + sorted(c for c in col_seen if c not in col_order)
+    else:
+        cols = sorted(col_seen)
+    columns = cols + ["合计"]
+    out_rows = []
+    for rv in sorted(matrix.keys()):
+        rec: Dict[str, Any] = {"label": rv}
+        t = 0
+        for c in cols:
+            rec[c] = matrix[rv].get(c, 0)
+            t += rec[c]
+        rec["合计"] = t
+        out_rows.append(rec)
+    total_row = {"label": "合计", **{c: col_totals.get(c, 0) for c in cols}, "合计": grand}
+    return {"columns": columns, "rows": out_rows, "total_row": total_row}
+
+
+@router.get("/snapshot-export")
+def snapshot_export(request: Request, project: str, date: Optional[str] = None,
+                    db: Session = Depends(get_db),
+                    current_user: models.User = Depends(get_current_user)):
+    """把某次快照导出为 Excel：Sheet1「原始数据」+ Sheet2「统计分析」（按小组/客户面/年月 × 严重程度）。"""
+    import openpyxl
+    from openpyxl.styles import Alignment, Font, PatternFill
+
+    q = db.query(models.IssueSnapshot).filter(models.IssueSnapshot.project == project)
+    snap = (q.filter(models.IssueSnapshot.snapshot_date == date).first() if date
+            else q.order_by(models.IssueSnapshot.snapshot_date.desc()).first())
+    if snap is None:
+        raise HTTPException(404, "该项目暂无快照可导出")
+    raw: List[Dict] = []
+    try:
+        fp = _snapshot_root() / snap.data_file
+        if fp.exists():
+            raw = json.loads(fp.read_text(encoding="utf-8"))
+    except Exception:
+        raw = []
+
+    wb = openpyxl.Workbook()
+    head_font = Font(bold=True, color="FFFFFF")
+    head_fill = PatternFill("solid", fgColor="4073BA")
+    title_font = Font(bold=True, size=12, color="4073BA")
+    total_font = Font(bold=True)
+    center = Alignment(horizontal="center", vertical="center")
+
+    # ── Sheet1：原始数据 ──
+    ws1 = wb.active
+    ws1.title = "原始数据"
+    cols = [
+        ("issue_id", "缺陷业务编号", 20), ("title", "标题", 42), ("owner", "当前责任人", 12),
+        ("group", "所属小组", 14), ("department", "责任人部门", 20), ("customer", "客户面", 14),
+        ("feature", "特性", 14), ("subsystem", "子系统", 14), ("module", "模块", 14),
+        ("progress", "进展", 12), ("severity", "严重程度", 10), ("year_month", "年月", 10),
+        ("version", "版本信息", 22),
+    ]
+    ws1.append([h for _, h, _ in cols])
+    for c_idx, (_, _, w) in enumerate(cols, start=1):
+        cell = ws1.cell(1, c_idx)
+        cell.font = head_font
+        cell.fill = head_fill
+        cell.alignment = center
+        ws1.column_dimensions[cell.column_letter].width = w
+    for r in raw:
+        ws1.append([r.get(k, "") for k, _, _ in cols])
+    ws1.freeze_panes = "A2"
+
+    # ── Sheet2：统计分析（三张交叉表）──
+    ws2 = wb.create_sheet("统计分析")
+    ws2.column_dimensions["A"].width = 18
+    SEV = ["严重", "一般", "提示"]
+    row_ptr = [1]   # 显式维护当前写入行，避免依赖 max_row
+
+    def _write_cross(row_label: str, title: str, cross: Dict[str, Any]):
+        r = row_ptr[0]
+        ws2.cell(r, 1, title).font = title_font
+        r += 1
+        for c_idx, val in enumerate([row_label] + cross["columns"], start=1):
+            cell = ws2.cell(r, c_idx, val)
+            cell.font = head_font
+            cell.fill = head_fill
+            cell.alignment = center
+        for row in cross["rows"]:
+            r += 1
+            ws2.cell(r, 1, row["label"])
+            for c_idx, col in enumerate(cross["columns"], start=2):
+                ws2.cell(r, c_idx, row.get(col, 0)).alignment = center
+        r += 1
+        ws2.cell(r, 1, cross["total_row"]["label"]).font = total_font
+        for c_idx, col in enumerate(cross["columns"], start=2):
+            cell = ws2.cell(r, c_idx, cross["total_row"].get(col, 0))
+            cell.font = total_font
+            cell.alignment = center
+        row_ptr[0] = r + 2   # 空一行再写下一张表
+
+    _write_cross("小组", "按小组 × 严重程度", _cross_table(raw, "group", "severity", SEV, "未分组"))
+    _write_cross("客户面", "按客户面 × 严重程度", _cross_table(raw, "customer", "severity", SEV, "未标注"))
+    _write_cross("年月", "按年月 × 严重程度", _cross_table(raw, "year_month", "severity", SEV, "未标注"))
+
+    buf = io.BytesIO()
+    wb.save(buf)
+    buf.seek(0)
+    filename = f"issues_{_safe_slug(project)}_{snap.snapshot_date}.xlsx"
+    log_op(db, action="导出Excel", target="问题单", target_id=snap.id,
+           detail=f"project={project} date={snap.snapshot_date} rows={len(raw)}",
+           user=current_user, request=request)
+    return StreamingResponse(
+        buf,
+        media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+    )
 
 
 @router.get("/run-script/status")
