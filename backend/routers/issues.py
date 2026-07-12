@@ -678,6 +678,9 @@ def _take_snapshot(db: Session, project: str, source: str = "api") -> models.Iss
     fp.parent.mkdir(parents=True, exist_ok=True)
     fp.write_text(json.dumps(raw, ensure_ascii=False), encoding="utf-8")
 
+    # 自动落盘 Excel 备份：原始表 + 分析表（同日多次用时间戳不覆盖）
+    _export_snapshot_excel(project, raw, today)
+
     # upsert 快照元数据
     snap = (
         db.query(models.IssueSnapshot)
@@ -859,13 +862,116 @@ def _cross_table(rows: List[Dict], row_field: str, col_field: str,
     return {"columns": columns, "rows": out_rows, "total_row": total_row}
 
 
+_RAW_XLSX_COLS = [
+    ("issue_id", "缺陷业务编号", 20), ("title", "标题", 42), ("owner", "当前责任人", 12),
+    ("group", "所属小组", 14), ("department", "责任人部门", 20), ("customer", "客户面", 14),
+    ("feature", "特性", 14), ("subsystem", "子系统", 14), ("module", "模块", 14),
+    ("progress", "进展", 12), ("severity", "严重程度", 10), ("year_month", "年月", 10),
+    ("version", "版本信息", 22),
+]
+
+
+def _fill_raw_sheet(ws, raw: List[Dict]) -> None:
+    """原始数据表：问题单明细，一行一条。"""
+    from openpyxl.styles import Alignment, Font, PatternFill
+    head_font = Font(bold=True, color="FFFFFF")
+    head_fill = PatternFill("solid", fgColor="4073BA")
+    center = Alignment(horizontal="center", vertical="center")
+    ws.title = "原始数据"
+    ws.append([h for _, h, _ in _RAW_XLSX_COLS])
+    for c_idx, (_, _, w) in enumerate(_RAW_XLSX_COLS, start=1):
+        cell = ws.cell(1, c_idx)
+        cell.font = head_font
+        cell.fill = head_fill
+        cell.alignment = center
+        ws.column_dimensions[cell.column_letter].width = w
+    for r in raw:
+        ws.append([r.get(k, "") for k, _, _ in _RAW_XLSX_COLS])
+    ws.freeze_panes = "A2"
+
+
+def _fill_analysis_sheet(ws, raw: List[Dict]) -> None:
+    """统计分析表：按小组 / 客户面 / 年月 × 严重程度 三张交叉表纵向排布。"""
+    from openpyxl.styles import Alignment, Font, PatternFill
+    head_font = Font(bold=True, color="FFFFFF")
+    head_fill = PatternFill("solid", fgColor="4073BA")
+    title_font = Font(bold=True, size=12, color="4073BA")
+    total_font = Font(bold=True)
+    center = Alignment(horizontal="center", vertical="center")
+    ws.title = "统计分析"
+    ws.column_dimensions["A"].width = 18
+    SEV = ["严重", "一般", "提示"]
+    row_ptr = [1]   # 显式维护当前写入行，避免依赖 max_row
+
+    def _write_cross(row_label: str, title: str, cross: Dict[str, Any]):
+        r = row_ptr[0]
+        ws.cell(r, 1, title).font = title_font
+        r += 1
+        for c_idx, val in enumerate([row_label] + cross["columns"], start=1):
+            cell = ws.cell(r, c_idx, val)
+            cell.font = head_font
+            cell.fill = head_fill
+            cell.alignment = center
+        for row in cross["rows"]:
+            r += 1
+            ws.cell(r, 1, row["label"])
+            for c_idx, col in enumerate(cross["columns"], start=2):
+                ws.cell(r, c_idx, row.get(col, 0)).alignment = center
+        r += 1
+        ws.cell(r, 1, cross["total_row"]["label"]).font = total_font
+        for c_idx, col in enumerate(cross["columns"], start=2):
+            cell = ws.cell(r, c_idx, cross["total_row"].get(col, 0))
+            cell.font = total_font
+            cell.alignment = center
+        row_ptr[0] = r + 2   # 空一行再写下一张表
+
+    _write_cross("小组", "按小组 × 严重程度", _cross_table(raw, "group", "severity", SEV, "未分组"))
+    _write_cross("客户面", "按客户面 × 严重程度", _cross_table(raw, "customer", "severity", SEV, "未标注"))
+    _write_cross("年月", "按年月 × 严重程度", _cross_table(raw, "year_month", "severity", SEV, "未标注"))
+
+
+def _excel_dir(which: str) -> pathlib.Path:
+    """自动导出目录：which=raw（原始表）/ analysis（分析表），各自可配置，
+    默认 backend/data/issue_excel/<which>。"""
+    cfg = _load_config()
+    key = "issue_excel_raw_dir" if which == "raw" else "issue_excel_analysis_dir"
+    d = (cfg.get(key) or "").strip()
+    root = pathlib.Path(d) if d else (_BACKEND_DIR / "data" / "issue_excel" / which)
+    root.mkdir(parents=True, exist_ok=True)
+    return root
+
+
+def _export_snapshot_excel(project: str, raw: List[Dict], date_str: str) -> None:
+    """采集后自动落盘：原始表 + 分析表 各存一份到备份目录（同日多次用时间戳，不覆盖）。
+
+    失败只吞掉不影响采集主流程。
+    """
+    try:
+        import openpyxl
+        slug = _safe_slug(project)
+        stem = f"{date_str}_{datetime.now().strftime('%H%M%S')}"
+
+        raw_wb = openpyxl.Workbook()
+        _fill_raw_sheet(raw_wb.active, raw)
+        raw_dir = _excel_dir("raw") / slug
+        raw_dir.mkdir(parents=True, exist_ok=True)
+        raw_wb.save(str(raw_dir / f"{slug}_原始_{stem}.xlsx"))
+
+        ana_wb = openpyxl.Workbook()
+        _fill_analysis_sheet(ana_wb.active, raw)
+        ana_dir = _excel_dir("analysis") / slug
+        ana_dir.mkdir(parents=True, exist_ok=True)
+        ana_wb.save(str(ana_dir / f"{slug}_分析_{stem}.xlsx"))
+    except Exception:
+        pass
+
+
 @router.get("/snapshot-export")
 def snapshot_export(request: Request, project: str, date: Optional[str] = None,
                     db: Session = Depends(get_db),
                     current_user: models.User = Depends(get_current_user)):
     """把某次快照导出为 Excel：Sheet1「原始数据」+ Sheet2「统计分析」（按小组/客户面/年月 × 严重程度）。"""
     import openpyxl
-    from openpyxl.styles import Alignment, Font, PatternFill
 
     q = db.query(models.IssueSnapshot).filter(models.IssueSnapshot.project == project)
     snap = (q.filter(models.IssueSnapshot.snapshot_date == date).first() if date
@@ -881,64 +987,8 @@ def snapshot_export(request: Request, project: str, date: Optional[str] = None,
         raw = []
 
     wb = openpyxl.Workbook()
-    head_font = Font(bold=True, color="FFFFFF")
-    head_fill = PatternFill("solid", fgColor="4073BA")
-    title_font = Font(bold=True, size=12, color="4073BA")
-    total_font = Font(bold=True)
-    center = Alignment(horizontal="center", vertical="center")
-
-    # ── Sheet1：原始数据 ──
-    ws1 = wb.active
-    ws1.title = "原始数据"
-    cols = [
-        ("issue_id", "缺陷业务编号", 20), ("title", "标题", 42), ("owner", "当前责任人", 12),
-        ("group", "所属小组", 14), ("department", "责任人部门", 20), ("customer", "客户面", 14),
-        ("feature", "特性", 14), ("subsystem", "子系统", 14), ("module", "模块", 14),
-        ("progress", "进展", 12), ("severity", "严重程度", 10), ("year_month", "年月", 10),
-        ("version", "版本信息", 22),
-    ]
-    ws1.append([h for _, h, _ in cols])
-    for c_idx, (_, _, w) in enumerate(cols, start=1):
-        cell = ws1.cell(1, c_idx)
-        cell.font = head_font
-        cell.fill = head_fill
-        cell.alignment = center
-        ws1.column_dimensions[cell.column_letter].width = w
-    for r in raw:
-        ws1.append([r.get(k, "") for k, _, _ in cols])
-    ws1.freeze_panes = "A2"
-
-    # ── Sheet2：统计分析（三张交叉表）──
-    ws2 = wb.create_sheet("统计分析")
-    ws2.column_dimensions["A"].width = 18
-    SEV = ["严重", "一般", "提示"]
-    row_ptr = [1]   # 显式维护当前写入行，避免依赖 max_row
-
-    def _write_cross(row_label: str, title: str, cross: Dict[str, Any]):
-        r = row_ptr[0]
-        ws2.cell(r, 1, title).font = title_font
-        r += 1
-        for c_idx, val in enumerate([row_label] + cross["columns"], start=1):
-            cell = ws2.cell(r, c_idx, val)
-            cell.font = head_font
-            cell.fill = head_fill
-            cell.alignment = center
-        for row in cross["rows"]:
-            r += 1
-            ws2.cell(r, 1, row["label"])
-            for c_idx, col in enumerate(cross["columns"], start=2):
-                ws2.cell(r, c_idx, row.get(col, 0)).alignment = center
-        r += 1
-        ws2.cell(r, 1, cross["total_row"]["label"]).font = total_font
-        for c_idx, col in enumerate(cross["columns"], start=2):
-            cell = ws2.cell(r, c_idx, cross["total_row"].get(col, 0))
-            cell.font = total_font
-            cell.alignment = center
-        row_ptr[0] = r + 2   # 空一行再写下一张表
-
-    _write_cross("小组", "按小组 × 严重程度", _cross_table(raw, "group", "severity", SEV, "未分组"))
-    _write_cross("客户面", "按客户面 × 严重程度", _cross_table(raw, "customer", "severity", SEV, "未标注"))
-    _write_cross("年月", "按年月 × 严重程度", _cross_table(raw, "year_month", "severity", SEV, "未标注"))
+    _fill_raw_sheet(wb.active, raw)
+    _fill_analysis_sheet(wb.create_sheet(), raw)
 
     buf = io.BytesIO()
     wb.save(buf)

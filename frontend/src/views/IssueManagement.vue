@@ -286,6 +286,20 @@
                 </div>
                 <div class="cfg-hint">每日快照的明细文件落盘目录（趋势数字存库，不占此目录）。</div>
               </el-form-item>
+              <el-form-item label="Excel 原始表目录">
+                <div class="cfg-row">
+                  <el-input v-model="cfg.rawExcelDir" placeholder="留空则用 backend/data/issue_excel/raw" clearable />
+                  <el-button type="primary" @click="saveCfg('rawExcelDir')">保存</el-button>
+                </div>
+                <div class="cfg-hint">采集时自动导出「原始数据」Excel 的备份目录；同日多次采集按时间戳保存、不覆盖。</div>
+              </el-form-item>
+              <el-form-item label="Excel 分析表目录">
+                <div class="cfg-row">
+                  <el-input v-model="cfg.analysisExcelDir" placeholder="留空则用 backend/data/issue_excel/analysis" clearable />
+                  <el-button type="primary" @click="saveCfg('analysisExcelDir')">保存</el-button>
+                </div>
+                <div class="cfg-hint">采集时自动导出「统计分析」Excel 的备份目录。</div>
+              </el-form-item>
             </el-form>
           </el-card>
 
@@ -432,6 +446,7 @@ const IssueTable = defineComponent({
 // ── 配置 ─────────────────────────────────────────────
 const cfg = ref({
   reportPath: '', scriptPath: '', apiScriptPath: '', snapshotDir: '',
+  rawExcelDir: '', analysisExcelDir: '',
   apiProjects: [], statDepartments: '', issueGroups: [],
 })
 async function loadCfg() {
@@ -441,6 +456,8 @@ async function loadCfg() {
     cfg.value.scriptPath = data.issue_script_path || ''
     cfg.value.apiScriptPath = data.issue_api_script_path || ''
     cfg.value.snapshotDir = data.issue_snapshot_dir || ''
+    cfg.value.rawExcelDir = data.issue_excel_raw_dir || ''
+    cfg.value.analysisExcelDir = data.issue_excel_analysis_dir || ''
     cfg.value.apiProjects = Array.isArray(data.issue_api_projects) && data.issue_api_projects.length
       ? data.issue_api_projects.slice()
       : DEFAULT_PROJECTS.slice()
@@ -457,6 +474,7 @@ async function saveCfg(key) {
   const map = {
     reportPath: 'issue_report_path', scriptPath: 'issue_script_path',
     apiScriptPath: 'issue_api_script_path', snapshotDir: 'issue_snapshot_dir',
+    rawExcelDir: 'issue_excel_raw_dir', analysisExcelDir: 'issue_excel_analysis_dir',
   }
   try {
     await configApi.save({ [map[key]]: cfg.value[key] })
