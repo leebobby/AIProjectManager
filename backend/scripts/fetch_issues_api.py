@@ -7,73 +7,109 @@
   3) 把结果以 **JSON 数组** 打印到 stdout，字段＝后端「原始数据」表（英文键）。
 
 ────────────────────────────────────────────────────────────────────────────
-接入只有三步（其余全部标准化，不用动）：
+DTS(queryList) 接口已接好（POST，pbiName 走 query，分页走 body，自动翻页）。你通常只需两件事：
 
-  第 1 步：把你的 API 调用写进下面的 `fetch_from_api()`（返回 list[dict]，每个
-           dict = 平台一条缺陷原始记录）。地址/鉴权/参数就在它上方几行常量里。
-  第 2 步：改 `FIELD_MAPPING` 左边的键，对齐你接口返回的**原始字段名**（右边不用动）。
-           —— 若你的接口字段名恰好已是中文标准名或英文标准键，这步可跳过（脚本会自动识别）。
-  第 3 步：把顶部 `USE_SAMPLE` 改成 False。
+  ① 更新凭证：顶部 API_HEADERS 里的 Cookie（会话会过期）/ X-HW-APPKEY。
+     建议设环境变量 ISSUE_API_COOKIE / ISSUE_API_APPKEY / ISSUE_API_HWID，就不必改代码。
+  ② 对齐字段：先跑 `python fetch_issues_api.py YLS3000 --peek` 看 DTS 真实字段名，
+     再把 FIELD_MAPPING 左边的键改成对应字段名。
+     （若 DTS 字段名本身已是中文标准名/英文标准键，会被自动识别，这步可跳过。）
 
-改完用 `python fetch_issues_api.py YLS3000` 跑一下，stdout 出现 JSON 数组即接通。
+自测：`python fetch_issues_api.py YLS3000` —— stdout 打出 JSON 数组即接通。
+想先用示例数据跑通页面链路，把顶部 USE_SAMPLE 改回 True。
 ────────────────────────────────────────────────────────────────────────────
 """
 import json
 import os
 import sys
 
-# True：返回示例数据（先把页面/链路跑通）；接入真实 API 后改为 False
-USE_SAMPLE = True
+# 已接入真实 DTS API。若想先用示例数据跑通页面/链路，把这里改回 True
+USE_SAMPLE = False
 
 
 # ════════════════════════════════════════════════════════════════════════════
-#  ★★★  你只需要改这一段：把已调通的 API 调用写进 fetch_from_api  ★★★
+#  ★★★  API 接入配置（已按 DTS queryList 接口接好）：改地址/凭证/参数即可  ★★★
 # ════════════════════════════════════════════════════════════════════════════
 
-# 接口地址 & 鉴权：直接写死，或用环境变量（token 建议走环境变量，别提交到库）
-API_URL = os.environ.get("ISSUE_API_URL", "https://你的缺陷平台/api/defects")   # TODO 换成真实地址
-API_TOKEN = os.environ.get("ISSUE_API_TOKEN", "")                              # TODO 或设环境变量
+# 接口地址（POST）；pbiName 走 query，分页 pageSize/pageNo 走 body
+API_URL = os.environ.get(
+    "ISSUE_API_URL",
+    "https://apig.sicarrier.com/api/dtsService/apig/dts/queryList",
+)
 
-# 每个项目对应的查询参数（产品/版本/baseline 等，按你的接口填）
+# ⚠️ 认证头是**明文凭证，仅供调试**：切勿提交到库；Cookie(会话)会过期，失效后更新；
+#    上线请改为从环境变量读（下方已留 env 回退，设了环境变量就不用改代码）。
+API_HEADERS = {
+    "X-HW-ID":      os.environ.get("ISSUE_API_HWID",   "acc90a5778b04aad90a1509c66220042"),
+    "X-HW-APPKEY":  os.environ.get("ISSUE_API_APPKEY", "yLF1HruQhOqFoBtmuwAWfw=="),
+    "x-app-id":     os.environ.get("ISSUE_API_HWID",   "acc90a5778b04aad90a1509c66220042"),
+    "Content-Type": "application/json",
+    "Cookie":       os.environ.get("ISSUE_API_COOKIE", "prod_J_SESSION_ID=3bf42a272adba85f3f09f85aa17911bda5b678ddd5a3500e"),
+}
+
+PAGE_SIZE = 200   # 每页条数；超过一页自动翻页拉全
+
+# 每个项目 → pbiName（产品基线名）。新增项目照葫芦画瓢加一行
 PROJECT_PARAMS = {
-    "YLS3000": {"product": "YLS3000 V100R001C00"},   # TODO 换成真实参数
-    "YLS5000": {"product": "YLS5000 V100R001C00"},   # TODO
-    "YLS8000": {"product": "YLS8000 V100R001C00"},   # TODO
+    "YLS3000": {"pbiName": "YLS3000 V100R001C00"},
+    "YLS5000": {"pbiName": "YLS5000 V100R001C00"},
+    "YLS8000": {"pbiName": "YLS8000 V100R001C00"},
 }
 
 
-def fetch_from_api(project: str) -> list:
-    """★ 在这里写你的 API 调用，返回 list[dict]（每个 dict = 平台一条缺陷原始记录）。
-
-    只要返回的 dict 的键能在下方 FIELD_MAPPING 左边找到对应（或本身已是中文标准名 /
-    英文标准键），剩下的清洗、去重、分类、编码、输出都由本脚本标准化完成。
-
-    下面是一个 requests 版模板——把 3 个 TODO 换成你的接口即可。若你已有调通的代码，
-    直接整段替换本函数体、最后 `return 记录数组` 就行；用别的库（httpx/urllib）也没问题。
+def _extract_records(body) -> list:
+    """从返回体里稳妥地取出「记录数组」，兼容多种常见分页结构。
+    若 DTS 的返回结构这里没兜住，跑 `python fetch_issues_api.py YLS3000 --peek` 看结构后改本函数。
     """
+    if isinstance(body, list):
+        return body
+    if not isinstance(body, dict):
+        return []
+    for path in (("data", "list"), ("data", "records"), ("data", "rows"), ("data", "result"),
+                 ("result", "records"), ("result", "list"), ("result", "data"), ("result", "rows"),
+                 ("data",), ("rows",), ("list",), ("records",), ("result",)):
+        cur = body
+        for k in path:
+            cur = cur.get(k) if isinstance(cur, dict) else None
+            if cur is None:
+                break
+        if isinstance(cur, list):
+            return cur
+    return []
+
+
+def fetch_from_api(project: str) -> list:
+    """调 DTS queryList 拉该项目全部缺陷（自动翻页），返回 list[dict]（平台原始记录）。"""
     try:
         import requests  # 若报「No module named requests」：pip install requests
     except ImportError:
-        raise RuntimeError("缺少 requests，请先 `pip install requests`（或改用 urllib/httpx）")
+        raise RuntimeError("缺少 requests，请先 `pip install requests`")
 
-    params = dict(PROJECT_PARAMS.get(project, {}))
-    headers = {"Authorization": f"Bearer {API_TOKEN}"} if API_TOKEN else {}   # TODO 换成你的鉴权方式
+    pbi = PROJECT_PARAMS.get(project, {}).get("pbiName") or f"{project} V100R001C00"
+    all_rows, page_no = [], 1
+    while True:
+        resp = requests.post(
+            API_URL,
+            params={"pbiName": pbi},
+            headers=API_HEADERS,
+            data=json.dumps({"pageSize": str(PAGE_SIZE), "pageNo": str(page_no)}),
+            timeout=60,
+            # 若报 SSL 证书错误（内网自签），临时加上：verify=False
+        )
+        resp.raise_for_status()
+        rows = _extract_records(resp.json())
+        if not rows:
+            break
+        all_rows.extend(rows)
+        if len(rows) < PAGE_SIZE or page_no >= 100:   # 末页 or 安全上限（防死循环）
+            break
+        page_no += 1
+    return all_rows
 
-    resp = requests.get(API_URL, headers=headers, params=params, timeout=60)  # TODO 换成你的请求
-    resp.raise_for_status()
-    body = resp.json()
 
-    # 从返回体里取「记录数组」。按你的返回结构改这一行，常见几种：
-    #   records = body                       # 顶层就是数组
-    #   records = body["data"]               # 包在 data 里
-    #   records = body["result"]["records"]  # 更深的嵌套
-    records = body.get("data", body) if isinstance(body, dict) else body
-    if not isinstance(records, list):
-        raise ValueError(f"未取到记录数组，请检查返回结构（当前为 {type(records).__name__}）")
-    return records
-
-
-# 平台原始字段名 → 中文标准字段名（★ 第 2 步在这里对齐：改**左边**的键为你接口的字段名）
+# 平台原始字段名 → 中文标准字段名（★ 用 `--peek` 看到 DTS 真实字段名后，改**左边**的键对齐）
+#   例：若接口返回的编号字段叫 "problemNumber"，就把下面 "defect_id" 改成 "problemNumber"。
+#   —— 若接口字段名本身已是中文标准名/英文标准键，会被自动识别，无需改。
 FIELD_MAPPING = {
     "version": "版本信息",
     "defect_id": "缺陷业务编号",
@@ -193,12 +229,29 @@ def _sample(project: str) -> list:
     return out
 
 
-def main():
-    project = sys.argv[1] if len(sys.argv) > 1 else ""
-    records = _sample(project) if USE_SAMPLE else fetch_from_api(project)
-    rows = _process(records)
+def _write(obj, indent=None):
     # 直接写 UTF-8 字节，避免 Windows 控制台/管道按 GBK 编码导致后端读到乱码
-    sys.stdout.buffer.write(json.dumps(rows, ensure_ascii=False).encode("utf-8"))
+    sys.stdout.buffer.write(json.dumps(obj, ensure_ascii=False, indent=indent).encode("utf-8"))
+
+
+def main():
+    args = sys.argv[1:]
+    peek = "--peek" in args
+    positional = [a for a in args if not a.startswith("--")]
+    project = positional[0] if positional else ""
+
+    records = _sample(project) if USE_SAMPLE else fetch_from_api(project)
+
+    # 调试用：`python fetch_issues_api.py YLS3000 --peek` 打印拉到的条数 + 第一条原始记录，
+    # 用它看清 DTS 真实字段名，再回填 FIELD_MAPPING 左边的键。
+    if peek:
+        first = records[0] if records else {}
+        _write({"project": project, "fetched": len(records),
+                "first_record_keys": sorted(first.keys()) if isinstance(first, dict) else None,
+                "first_record": first}, indent=2)
+        return
+
+    _write(_process(records))
 
 
 if __name__ == "__main__":
