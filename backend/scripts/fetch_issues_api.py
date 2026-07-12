@@ -2,21 +2,19 @@
 """按项目拉取问题单（YLS3000 / YLS5000 / YLS8000）+ 数据梳理。
 
 供「问题单管理」的 API 方式调用。后端以 `python fetch_issues_api.py <PROJECT>` 运行，本脚本：
-  1) 通过 API 拉取该项目的缺陷原始记录；
-  2) 清洗去重、从「缺陷业务编号」提取年/月/日/年月、按「标题」关键词分类；
+  1) 调 DTS(queryList) 拉该项目全部缺陷（自动翻页）；
+  2) 清洗去重、把嵌套对象字段拍平、从「缺陷业务编号」提取年/月/日、按「标题」关键词分类；
   3) 把结果以 **JSON 数组** 打印到 stdout，字段＝后端「原始数据」表（英文键）。
 
 ────────────────────────────────────────────────────────────────────────────
-DTS(queryList) 接口已接好（POST，pbiName 走 query，分页走 body，自动翻页）。你通常只需两件事：
+已按你调通的脚本接好 DTS(queryList)：POST，pbiName 走 URL，返回体 data.data 是记录、
+data.total 是总数，自动翻页；字段值里的嵌套对象会自动拍平（取 cnName/codeName/realName…）。
 
-  ① 更新凭证：顶部 API_HEADERS 里的 Cookie（会话会过期）/ X-HW-APPKEY。
-     建议设环境变量 ISSUE_API_COOKIE / ISSUE_API_APPKEY / ISSUE_API_HWID，就不必改代码。
-  ② 对齐字段：先跑 `python fetch_issues_api.py YLS3000 --peek` 看 DTS 真实字段名，
-     再把 FIELD_MAPPING 左边的键改成对应字段名。
-     （若 DTS 字段名本身已是中文标准名/英文标准键，会被自动识别，这步可跳过。）
+日常你通常只需更新**凭证**：顶部 API_HEADERS 里的 Cookie（会话会过期）/ X-HW-APPKEY，
+建议设环境变量 ISSUE_API_COOKIE / ISSUE_API_APPKEY / ISSUE_API_HWID，就不必改代码。
 
-自测：`python fetch_issues_api.py YLS3000` —— stdout 打出 JSON 数组即接通。
-想先用示例数据跑通页面链路，把顶部 USE_SAMPLE 改回 True。
+排障：`python fetch_issues_api.py YLS3000 --peek` —— 打印 HTTP 状态 / 总数 / 首条记录字段名 / 原文片段。
+若某项目报「You do not have the permission…」= 你的账号对该产品没查询权限（换有权限的项目）。
 ────────────────────────────────────────────────────────────────────────────
 """
 import json
@@ -28,17 +26,16 @@ USE_SAMPLE = False
 
 
 # ════════════════════════════════════════════════════════════════════════════
-#  ★★★  API 接入配置（已按 DTS queryList 接口接好）：改地址/凭证/参数即可  ★★★
+#  ★★★  API 接入配置（已按 DTS queryList 接好）：日常只需更新凭证  ★★★
 # ════════════════════════════════════════════════════════════════════════════
 
-# 接口地址（POST）；pbiName 走 query，分页 pageSize/pageNo 走 body
+# 接口地址（POST）；pbiName 拼在 URL 上（与你调通的脚本一致）
 API_URL = os.environ.get(
     "ISSUE_API_URL",
     "https://apig.sicarrier.com/api/dtsService/apig/dts/queryList",
 )
 
-# ⚠️ 认证头是**明文凭证，仅供调试**：切勿提交到库；Cookie(会话)会过期，失效后更新；
-#    上线请改为从环境变量读（下方已留 env 回退，设了环境变量就不用改代码）。
+# ⚠️ 认证头是**明文凭证**：Cookie(会话)会过期，失效后更新；上线建议改环境变量（已留 env 回退）。
 API_HEADERS = {
     "X-HW-ID":      os.environ.get("ISSUE_API_HWID",   "acc90a5778b04aad90a1509c66220042"),
     "X-HW-APPKEY":  os.environ.get("ISSUE_API_APPKEY", "yLF1HruQhOqFoBtmuwAWfw=="),
@@ -47,35 +44,14 @@ API_HEADERS = {
     "Cookie":       os.environ.get("ISSUE_API_COOKIE", "prod_J_SESSION_ID=3bf42a272adba85f3f09f85aa17911bda5b678ddd5a3500e"),
 }
 
-PAGE_SIZE = 200   # 每页条数；超过一页自动翻页拉全
+PAGE_SIZE = 200   # 每页条数；按 data.total 自动翻页拉全
 
-# 每个项目 → pbiName（产品基线名）。新增项目照葫芦画瓢加一行
+# 每个项目 → pbiName（产品基线名）。注意：账号对哪些产品有权限由后端授权决定
 PROJECT_PARAMS = {
     "YLS3000": {"pbiName": "YLS3000 V100R001C00"},
     "YLS5000": {"pbiName": "YLS5000 V100R001C00"},
     "YLS8000": {"pbiName": "YLS8000 V100R001C00"},
 }
-
-
-def _extract_records(body) -> list:
-    """从返回体里稳妥地取出「记录数组」，兼容多种常见分页结构。
-    若 DTS 的返回结构这里没兜住，跑 `python fetch_issues_api.py YLS3000 --peek` 看结构后改本函数。
-    """
-    if isinstance(body, list):
-        return body
-    if not isinstance(body, dict):
-        return []
-    for path in (("data", "list"), ("data", "records"), ("data", "rows"), ("data", "result"),
-                 ("result", "records"), ("result", "list"), ("result", "data"), ("result", "rows"),
-                 ("data",), ("rows",), ("list",), ("records",), ("result",)):
-        cur = body
-        for k in path:
-            cur = cur.get(k) if isinstance(cur, dict) else None
-            if cur is None:
-                break
-        if isinstance(cur, list):
-            return cur
-    return []
 
 
 def fetch_from_api(project: str) -> list:
@@ -86,50 +62,96 @@ def fetch_from_api(project: str) -> list:
         raise RuntimeError("缺少 requests，请先 `pip install requests`")
 
     pbi = PROJECT_PARAMS.get(project, {}).get("pbiName") or f"{project} V100R001C00"
-    all_rows, page_no = [], 1
-    while True:
+    full_url = f"{API_URL}?pbiName={pbi}"
+
+    def _page(page_no: int) -> dict:
         resp = requests.post(
-            API_URL,
-            params={"pbiName": pbi},
+            full_url,
             headers=API_HEADERS,
             data=json.dumps({"pageSize": str(PAGE_SIZE), "pageNo": str(page_no)}),
             timeout=60,
             # 若报 SSL 证书错误（内网自签），临时加上：verify=False
         )
         resp.raise_for_status()
-        rows = _extract_records(resp.json())
-        if not rows:
-            break
-        all_rows.extend(rows)
-        if len(rows) < PAGE_SIZE or page_no >= 100:   # 末页 or 安全上限（防死循环）
-            break
-        page_no += 1
-    return all_rows
+        return resp.json()
+
+    body = _page(1)
+    data = body.get("data") if isinstance(body, dict) else None
+    if not isinstance(data, dict):
+        # data=null 一般是无权限/无数据；把服务端 message 抛出来，便于页面看到原因
+        msg = body.get("message") if isinstance(body, dict) else str(body)[:200]
+        raise RuntimeError(f"DTS 接口未返回数据（{msg or '结构异常'}）")
+
+    total = int(data.get("total") or 0)
+    rows = list(data.get("data") or [])
+    total_pages = (total + PAGE_SIZE - 1) // PAGE_SIZE if total else 1
+    for page in range(2, total_pages + 1):
+        d = (_page(page).get("data") or {})
+        rows.extend(d.get("data") or [])
+
+    # pbiName 即版本信息：给每条补上「版本信息」字段（DTS 原本没有独立 version 时兜底）
+    for r in rows:
+        if isinstance(r, dict):
+            r.setdefault("版本信息", pbi)
+    return rows
 
 
-# 平台原始字段名 → 中文标准字段名（★ 用 `--peek` 看到 DTS 真实字段名后，改**左边**的键对齐）
-#   例：若接口返回的编号字段叫 "problemNumber"，就把下面 "defect_id" 改成 "problemNumber"。
-#   —— 若接口字段名本身已是中文标准名/英文标准键，会被自动识别，无需改。
+# 平台原始字段名 → 中文标准字段名（★ 已按你调通脚本的 DTS 字段名对齐）
+#   customer(客户面) DTS 字段名未知——用 --peek 看到后把左边补上，"按客户面"维度即生效。
 FIELD_MAPPING = {
-    "version": "版本信息",
-    "defect_id": "缺陷业务编号",
-    "title": "标题",
-    "assignee": "当前责任人",
-    "team": "当前责任人所属小组",
-    "progress": "进展",
-    "severity": "严重程度",
-    "severity_di": "严重程度DI值",
-    "priority": "优先级",
-    "root_cause": "根因",
-    "solution": "解决措施",
-    "progress_record": "进展记录",
-    "estimated_close": "预计闭环时间",
-    "customer": "客户面",           # 趋势「按客户面」维度
+    "businessNo":            "缺陷业务编号",
+    "title":                 "标题",
+    "responsibleUser":       "当前责任人",
+    "responsibleDepartment": "当前责任人所属小组",   # 用责任人部门作「小组」维度；如需更细可换 responsibleLevelFourDepartment
+    "progress":              "进展",
+    "severity":              "严重程度",
+    # 下面几个 DTS 里若有对应字段，把左边键名补上即可（没有就留空，不影响主流程）：
+    # "xxxCustomer": "客户面", "priority": "优先级", "xxxDi": "严重程度DI值",
+    # "rootCause": "根因", "solution": "解决措施", "progressRecord": "进展记录",
+    # "planCloseTime": "预计闭环时间",
 }
 
 # ════════════════════════════════════════════════════════════════════════════
 #  ↓↓↓  以下为标准化处理，通常无需改动  ↓↓↓
 # ════════════════════════════════════════════════════════════════════════════
+
+# DTS 字段值常是嵌套对象，按优先级从中取「显示名」（移植自你调通脚本的 DISPLAY_KEYS）
+_DISPLAY_KEYS = ["codeName", "cnName", "realName", "displayName", "name", "userName",
+                 "lastName", "employeeName", "desc", "label", "value", "text", "cName"]
+
+
+def _extract_value(val):
+    """把 DTS 字段值（可能是对象/数组/标量）拍平成可读文本。"""
+    if val is None:
+        return ""
+    if isinstance(val, bool):
+        return "是" if val else "否"
+    if isinstance(val, (int, float)):
+        return val
+    if isinstance(val, dict):
+        for k in _DISPLAY_KEYS:
+            if k in val and val[k] not in (None, ""):
+                return str(val[k])
+        return json.dumps(val, ensure_ascii=False)
+    if isinstance(val, list):
+        parts = [str(_extract_value(x)) for x in val]
+        return ", ".join(p for p in parts if p)
+    return val
+
+
+def _clean_text(val):
+    import re
+    if isinstance(val, str):
+        val = re.sub(r"<[^>]+>", "", val)
+        val = val.replace("\xa0", " ").replace("\n", " ").replace("\r", " ").replace("\t", " ")
+        val = re.sub(r"\s+", " ", val).strip()
+    return val
+
+
+def _flat(val):
+    """字段值拍平 + 清洗，得到干净文本（数字保持数字）。"""
+    return _clean_text(_extract_value(val))
+
 
 # 关键词 → 分类；未命中归入 DEFAULT_CATEGORY
 CATEGORIES = {
@@ -150,7 +172,7 @@ CN_TO_EN = {
 
 
 def _to_standard(rec: dict) -> dict:
-    """把一条记录规整成「中文标准字段」，兼容三种来源键：
+    """把一条记录规整成「中文标准字段」（值统一拍平），兼容三种来源键：
       ① 平台原始字段名（走 FIELD_MAPPING 映射）
       ② 记录本身已是中文标准名
       ③ 记录本身已是英文标准键（version/issue_id/...）
@@ -158,13 +180,13 @@ def _to_standard(rec: dict) -> dict:
     std = {}
     for raw_key, cn in FIELD_MAPPING.items():
         if raw_key in rec and rec[raw_key] is not None:
-            std[cn] = rec[raw_key]
+            std[cn] = _flat(rec[raw_key])
     for cn in CN_TO_EN:
         if cn in rec and rec[cn] is not None and cn not in std:
-            std[cn] = rec[cn]
+            std[cn] = _flat(rec[cn])
     for cn, en in CN_TO_EN.items():
         if en in rec and rec[en] is not None and cn not in std:
-            std[cn] = rec[en]
+            std[cn] = _flat(rec[en])
     return std
 
 
@@ -234,23 +256,45 @@ def _write(obj, indent=None):
     sys.stdout.buffer.write(json.dumps(obj, ensure_ascii=False, indent=indent).encode("utf-8"))
 
 
+def _peek(project: str):
+    """排障：单页 raw 请求，打印 HTTP 状态 / 顶层结构 / 总数 / 首条字段名 / 原文片段。"""
+    if USE_SAMPLE:
+        recs = _sample(project)
+        _write({"mode": "sample", "fetched": len(recs), "first_record": recs[0] if recs else {}}, indent=2)
+        return
+    import requests
+    pbi = PROJECT_PARAMS.get(project, {}).get("pbiName") or f"{project} V100R001C00"
+    resp = requests.post(f"{API_URL}?pbiName={pbi}", headers=API_HEADERS,
+                         data=json.dumps({"pageSize": "5", "pageNo": "1"}), timeout=60)
+    try:
+        body = resp.json()
+    except Exception:
+        body = None
+    data = body.get("data") if isinstance(body, dict) else None
+    rows = data.get("data") if isinstance(data, dict) else (data if isinstance(data, list) else [])
+    first = rows[0] if rows else {}
+    _write({
+        "project": project, "pbiName": pbi, "http_status": resp.status_code,
+        "response_top_keys": sorted(body.keys()) if isinstance(body, dict) else None,
+        "message": body.get("message") if isinstance(body, dict) else None,
+        "total": data.get("total") if isinstance(data, dict) else None,
+        "first_record_keys": sorted(first.keys()) if isinstance(first, dict) else [],
+        "first_record": first,
+        "raw_head": resp.text[:2000],
+    }, indent=2)
+
+
 def main():
     args = sys.argv[1:]
     peek = "--peek" in args
     positional = [a for a in args if not a.startswith("--")]
     project = positional[0] if positional else ""
 
-    records = _sample(project) if USE_SAMPLE else fetch_from_api(project)
-
-    # 调试用：`python fetch_issues_api.py YLS3000 --peek` 打印拉到的条数 + 第一条原始记录，
-    # 用它看清 DTS 真实字段名，再回填 FIELD_MAPPING 左边的键。
     if peek:
-        first = records[0] if records else {}
-        _write({"project": project, "fetched": len(records),
-                "first_record_keys": sorted(first.keys()) if isinstance(first, dict) else None,
-                "first_record": first}, indent=2)
+        _peek(project)
         return
 
+    records = _sample(project) if USE_SAMPLE else fetch_from_api(project)
     _write(_process(records))
 
 
