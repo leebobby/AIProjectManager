@@ -58,10 +58,11 @@ _RAW_COLS = [
     "year_month",       # R 年月（钻取按月度过滤的关键字段）
     "category",         # S 标题分类（钻取按客户/分类过滤的关键字段）
     "customer",         # T 客户面（API 快照聚合的关键维度；由后端从标题匹配客户主数据得到）
-    "department",       # U 责任人部门（部门过滤的关键字段）
+    "department",       # U 责任人部门（展示用：责任人所在的直属部门）
     "feature",          # V 特性
     "subsystem",        # W 子系统
     "module",           # X 模块
+    "dept_path",        # Y 责任人部门全路径（各级部门拼接，仅用于部门过滤匹配，不展示）
 ]
 
 _DATE_PAT      = re.compile(r"_(\d{8})\.",           re.IGNORECASE)
@@ -636,26 +637,35 @@ def _enrich_rows(db: Session, rows: List[Dict]) -> List[Dict]:
     """对采集到的问题单做：① 部门过滤 ② 按责任人归组 ③ 从标题提取客户面。
 
     配置项（config.json，问题单管理「配置」tab 维护）：
-      issue_stat_departments —— 只统计这些部门（子串匹配责任人部门；留空＝全部）
+      issue_exclude_statuses —— 直接剔除的状态（默认 关闭/撤销；子串匹配进展/状态）
+      issue_stat_departments —— 只统计这些部门（子串匹配责任人部门全路径；留空＝全部）
       issue_groups           —— [{name, members}]，成员分号分隔，按责任人归组
     客户面来自客户主数据（客户面管理），用 code/全称/别名 在标题里做包含匹配。
     """
     cfg = _load_config()
+    exclude = _as_str_list(cfg.get("issue_exclude_statuses")) or ["关闭", "撤销"]
     depts = _as_str_list(cfg.get("issue_stat_departments"))
     groups = _load_issue_groups(cfg)
     matchers = _load_customer_matchers(db)
 
     out: List[Dict] = []
     for r in rows:
+        # ① 先剔除已关闭 / 已撤销 的单（任何地方都不出现）
+        prog = r.get("progress", "") or ""
+        if any(s and s in prog for s in exclude):
+            continue
+        # ② 部门过滤：匹配责任人部门全路径（兼容部门落在上级字段的情况），回退直属部门
         if depts:
-            dept = r.get("department", "") or ""
+            dept = (r.get("dept_path") or "") or (r.get("department") or "")
             if not any(d in dept for d in depts):
                 continue
+        # ③ 按责任人归组（不在任何小组名单的不保留）
         if groups:
             g = _match_group(r.get("owner", ""), groups)
             if not g:
-                continue   # 责任人不在任何小组名单 → 不纳入统计/表格（未分组不保留）
+                continue
             r["group"] = g
+        # ④ 从标题提取客户面
         if matchers and not (r.get("customer") or "").strip():
             r["customer"] = _match_customer(r.get("title", ""), matchers)
         out.append(r)

@@ -194,6 +194,14 @@ def _to_standard(rec: dict) -> dict:
     return std
 
 
+# 责任人部门可能落在不同层级字段里，全部拼进 dept_path 供后端部门过滤匹配（移植自你调通脚本）
+_DEPT_FIELDS = [
+    "responsibleDepartment", "responsibleHigherlevelDepartment",
+    "responsibleLevelOneDepartment", "responsibleLevelTwoDepartment",
+    "responsibleLevelThreeDepartment", "responsibleLevelFourDepartment",
+]
+
+
 def _classify(title: str) -> str:
     t = (title or "").lower()
     for cat, kws in CATEGORIES.items():
@@ -227,6 +235,9 @@ def _process(records: list) -> list:
         row["date"] = day
         row["year_month"] = f"{year}-{month}" if is_sdts else ""
         row["category"] = _classify(row.get("title", ""))
+        # 部门全路径（各级部门去重拼接）——供后端「按部门统计」匹配，兼容部门落在上级字段
+        parts = [str(_flat(rec.get(f))).strip() for f in _DEPT_FIELDS if rec.get(f)]
+        row["dept_path"] = " / ".join(dict.fromkeys(p for p in parts if p))
         out.append(row)
     return out
 
