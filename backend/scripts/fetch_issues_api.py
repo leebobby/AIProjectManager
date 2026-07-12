@@ -2,30 +2,78 @@
 """按项目拉取问题单（YLS3000 / YLS5000 / YLS8000）+ 数据梳理。
 
 供「问题单管理」的 API 方式调用。后端以 `python fetch_issues_api.py <PROJECT>` 运行，本脚本：
-  1) 通过 API 拉取该项目的缺陷原始记录（你已调通的接口 —— 填到 fetch_from_api 即可）；
-  2) 复用原 defect_auto_report/processor.py 的处理方式：清洗去重、从「缺陷业务编号」提取
-     年/月/日/年月、按「标题」关键词分类；
+  1) 通过 API 拉取该项目的缺陷原始记录；
+  2) 清洗去重、从「缺陷业务编号」提取年/月/日/年月、按「标题」关键词分类；
   3) 把结果以 **JSON 数组** 打印到 stdout，字段＝后端「原始数据」表（英文键）。
 
-接入步骤：
-  1) 把已调通的 API 访问代码粘到 fetch_from_api()，返回 list[dict]（键＝平台原始字段名）；
-  2) 按你的接口改 PROJECT_PARAMS / FIELD_MAPPING / CATEGORIES；
-  3) 把 USE_SAMPLE 改为 False。
+────────────────────────────────────────────────────────────────────────────
+接入只有三步（其余全部标准化，不用动）：
+
+  第 1 步：把你的 API 调用写进下面的 `fetch_from_api()`（返回 list[dict]，每个
+           dict = 平台一条缺陷原始记录）。地址/鉴权/参数就在它上方几行常量里。
+  第 2 步：改 `FIELD_MAPPING` 左边的键，对齐你接口返回的**原始字段名**（右边不用动）。
+           —— 若你的接口字段名恰好已是中文标准名或英文标准键，这步可跳过（脚本会自动识别）。
+  第 3 步：把顶部 `USE_SAMPLE` 改成 False。
+
+改完用 `python fetch_issues_api.py YLS3000` 跑一下，stdout 出现 JSON 数组即接通。
+────────────────────────────────────────────────────────────────────────────
 """
 import json
+import os
 import sys
 
 # True：返回示例数据（先把页面/链路跑通）；接入真实 API 后改为 False
 USE_SAMPLE = True
 
-# 每个项目对应的 API 参数（按你的接口填，例如产品/版本/baseline）
+
+# ════════════════════════════════════════════════════════════════════════════
+#  ★★★  你只需要改这一段：把已调通的 API 调用写进 fetch_from_api  ★★★
+# ════════════════════════════════════════════════════════════════════════════
+
+# 接口地址 & 鉴权：直接写死，或用环境变量（token 建议走环境变量，别提交到库）
+API_URL = os.environ.get("ISSUE_API_URL", "https://你的缺陷平台/api/defects")   # TODO 换成真实地址
+API_TOKEN = os.environ.get("ISSUE_API_TOKEN", "")                              # TODO 或设环境变量
+
+# 每个项目对应的查询参数（产品/版本/baseline 等，按你的接口填）
 PROJECT_PARAMS = {
-    "YLS3000": {"product": "YLS3000 V100R001C00"},   # TODO: 换成真实参数
+    "YLS3000": {"product": "YLS3000 V100R001C00"},   # TODO 换成真实参数
     "YLS5000": {"product": "YLS5000 V100R001C00"},   # TODO
     "YLS8000": {"product": "YLS8000 V100R001C00"},   # TODO
 }
 
-# 平台返回字段名 → 标准中文字段名（同 config.yaml 的 field_mapping；按实际接口改左边）
+
+def fetch_from_api(project: str) -> list:
+    """★ 在这里写你的 API 调用，返回 list[dict]（每个 dict = 平台一条缺陷原始记录）。
+
+    只要返回的 dict 的键能在下方 FIELD_MAPPING 左边找到对应（或本身已是中文标准名 /
+    英文标准键），剩下的清洗、去重、分类、编码、输出都由本脚本标准化完成。
+
+    下面是一个 requests 版模板——把 3 个 TODO 换成你的接口即可。若你已有调通的代码，
+    直接整段替换本函数体、最后 `return 记录数组` 就行；用别的库（httpx/urllib）也没问题。
+    """
+    try:
+        import requests  # 若报「No module named requests」：pip install requests
+    except ImportError:
+        raise RuntimeError("缺少 requests，请先 `pip install requests`（或改用 urllib/httpx）")
+
+    params = dict(PROJECT_PARAMS.get(project, {}))
+    headers = {"Authorization": f"Bearer {API_TOKEN}"} if API_TOKEN else {}   # TODO 换成你的鉴权方式
+
+    resp = requests.get(API_URL, headers=headers, params=params, timeout=60)  # TODO 换成你的请求
+    resp.raise_for_status()
+    body = resp.json()
+
+    # 从返回体里取「记录数组」。按你的返回结构改这一行，常见几种：
+    #   records = body                       # 顶层就是数组
+    #   records = body["data"]               # 包在 data 里
+    #   records = body["result"]["records"]  # 更深的嵌套
+    records = body.get("data", body) if isinstance(body, dict) else body
+    if not isinstance(records, list):
+        raise ValueError(f"未取到记录数组，请检查返回结构（当前为 {type(records).__name__}）")
+    return records
+
+
+# 平台原始字段名 → 中文标准字段名（★ 第 2 步在这里对齐：改**左边**的键为你接口的字段名）
 FIELD_MAPPING = {
     "version": "版本信息",
     "defect_id": "缺陷业务编号",
@@ -40,10 +88,14 @@ FIELD_MAPPING = {
     "solution": "解决措施",
     "progress_record": "进展记录",
     "estimated_close": "预计闭环时间",
-    "customer": "客户面",           # 趋势「按客户面」维度；按实际接口字段改左边
+    "customer": "客户面",           # 趋势「按客户面」维度
 }
 
-# 关键词 → 分类（同 config.yaml 的 categories）；未命中归入 DEFAULT_CATEGORY
+# ════════════════════════════════════════════════════════════════════════════
+#  ↓↓↓  以下为标准化处理，通常无需改动  ↓↓↓
+# ════════════════════════════════════════════════════════════════════════════
+
+# 关键词 → 分类；未命中归入 DEFAULT_CATEGORY
 CATEGORIES = {
     "PXW": ["830", "pxw", "pst"],
     "RBPS": ["rbps"],
@@ -51,7 +103,7 @@ CATEGORIES = {
 }
 DEFAULT_CATEGORY = "研发"
 
-# 标准中文字段 → 后端「原始数据」表英文键
+# 中文标准字段 → 后端「原始数据」表英文键（后端 _RAW_COLS 的键，勿改）
 CN_TO_EN = {
     "版本信息": "version", "缺陷业务编号": "issue_id", "标题": "title",
     "当前责任人": "owner", "当前责任人所属小组": "group", "进展": "progress",
@@ -61,27 +113,12 @@ CN_TO_EN = {
 }
 
 
-def fetch_from_api(project: str) -> list:
-    """TODO: 把已调通的 API 访问代码粘到这里，返回 list[dict]（键＝平台原始字段名）。
-
-    示例（伪代码，按你的实际接口替换）：
-        import requests
-        params = PROJECT_PARAMS[project]
-        token = get_token(...)                       # 你的鉴权方式
-        resp = requests.get(API_URL,
-                            headers={"Authorization": f"Bearer {token}"},
-                            params=params, timeout=60)
-        resp.raise_for_status()
-        return resp.json()["data"]                   # list[dict]
-    """
-    raise NotImplementedError(
-        "请把 API 访问代码填到 fetch_from_api()，并把脚本顶部的 USE_SAMPLE 改为 False"
-    )
-
-
-# ─── 数据梳理（移植自 defect_auto_report/processor.py，纯 Python 版）──────────────
 def _to_standard(rec: dict) -> dict:
-    """平台原始字段 → 中文标准字段；也兼容已是中文键的记录。"""
+    """把一条记录规整成「中文标准字段」，兼容三种来源键：
+      ① 平台原始字段名（走 FIELD_MAPPING 映射）
+      ② 记录本身已是中文标准名
+      ③ 记录本身已是英文标准键（version/issue_id/...）
+    """
     std = {}
     for raw_key, cn in FIELD_MAPPING.items():
         if raw_key in rec and rec[raw_key] is not None:
@@ -89,6 +126,9 @@ def _to_standard(rec: dict) -> dict:
     for cn in CN_TO_EN:
         if cn in rec and rec[cn] is not None and cn not in std:
             std[cn] = rec[cn]
+    for cn, en in CN_TO_EN.items():
+        if en in rec and rec[en] is not None and cn not in std:
+            std[cn] = rec[en]
     return std
 
 

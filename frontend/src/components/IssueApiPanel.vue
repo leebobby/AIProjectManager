@@ -2,11 +2,21 @@
   <div class="api-panel" v-loading="loading">
     <div class="api-bar">
       <el-tag type="primary" effect="plain">项目：{{ project }}</el-tag>
+      <el-button
+        v-if="isAdmin"
+        size="small"
+        type="primary"
+        :icon="Refresh"
+        :loading="collecting"
+        @click="collectNow"
+      >{{ collecting ? '采集中…' : '立即采集' }}</el-button>
       <span class="muted" style="margin-left: auto">共 {{ snapshots.length }} 个历史快照</span>
     </div>
 
     <el-empty v-if="!loading && !snapshots.length" description="暂无快照数据">
-      <span class="muted">每天 07:30 自动采集；采集后即可在此查看当天统计与趋势。</span>
+      <span class="muted">
+        每天 07:30 自动采集{{ isAdmin ? '，也可点上方「立即采集」手动触发' : '' }}；采集后即可在此查看当天统计与趋势。
+      </span>
     </el-empty>
 
     <el-tabs v-else v-model="topTab" class="snap-tabs" @tab-change="onTopTabChange">
@@ -112,13 +122,17 @@
 <script setup>
 import { computed, defineComponent, h, nextTick, onMounted, onUnmounted, ref, watch } from 'vue'
 import { ElMessage, ElTable, ElTableColumn, ElTag } from 'element-plus'
-import { Search } from '@element-plus/icons-vue'
+import { Refresh, Search } from '@element-plus/icons-vue'
 import * as echarts from 'echarts'
 import { issueApi } from '../api'
+import { auth } from '../store/auth'
 
 const props = defineProps({
   project: { type: String, required: true },
 })
+
+const isAdmin = auth.isAdmin
+const collecting = ref(false)
 
 const PAL = ['#4073ba', '#67C23A', '#E6A23C', '#F56C6C', '#909399', '#8E7AD8', '#26C9C3', '#F9A825']
 const SEV_CLR = { 严重: '#F56C6C', 一般: '#E6A23C', 提示: '#909399' }
@@ -324,6 +338,28 @@ function onCellClick(rowDim, label, col, v) {
   if (label !== '合计') { f[rowDim] = label; t.push(label) }
   if (col !== '合计') { f.severity = col; t.push(col) }
   openDrill(f, t.join(' · ') || '全部')
+}
+
+// ── 手动采集（仅管理员；调后端定时同款采集逻辑，采完刷新）──
+async function collectNow() {
+  collecting.value = true
+  try {
+    const { data } = await issueApi.snapshotCollect(props.project)
+    const r = (data.results || [])[0]
+    if (r && r.ok) {
+      ElMessage.success(`采集完成：${r.total} 条（${r.date}）`)
+      trend.value = null       // 让趋势下次进入时按最新数据重算
+      selDate.value = ''       // 强制选中最新一天
+      await loadSnapshots()
+      if (topTab.value === 'trend') await loadTrend()
+    } else {
+      ElMessage.error(`采集失败：${(r && r.error) || '未知错误'}`)
+    }
+  } catch (e) {
+    ElMessage.error(e.response?.data?.detail || '采集失败')
+  } finally {
+    collecting.value = false
+  }
 }
 
 // ── 加载 ─────────────────────────────────────────
