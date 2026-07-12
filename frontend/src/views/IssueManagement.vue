@@ -310,6 +310,42 @@
               <el-button type="primary" @click="saveProjects">保存顺序</el-button>
             </div>
           </el-card>
+
+          <el-card shadow="never" class="cfg-card">
+            <template #header>
+              <span class="cfg-title">统计部门</span>
+              <span class="cfg-sub">只统计这些部门的问题单（留空＝全部）；子串匹配「责任人部门」，一行/分号一个</span>
+            </template>
+            <el-input
+              v-model="cfg.statDepartments"
+              type="textarea"
+              :rows="3"
+              placeholder="如：量检测装备软件部&#10;（多个部门一行一个，或用分号 ; 分隔；留空＝不限部门）"
+            />
+            <div class="cfg-actions">
+              <el-button type="primary" @click="saveDepartments">保存</el-button>
+            </div>
+          </el-card>
+
+          <el-card shadow="never" class="cfg-card">
+            <template #header>
+              <span class="cfg-title">小组配置</span>
+              <span class="cfg-sub">部门下的小组，用于按责任人归组统计；成员用分号「;」分隔（中英文均可）</span>
+            </template>
+            <div class="grp-list">
+              <div v-for="(g, i) in cfg.issueGroups" :key="i" class="grp-item">
+                <span class="grp-idx">{{ i + 1 }}</span>
+                <el-input v-model="g.name" placeholder="小组名" style="width:160px" />
+                <el-input v-model="g.members" placeholder="成员，用 ; 分隔，如 张三;李四;Wang Wu" />
+                <el-button link type="danger" :icon="Delete" title="删除" @click="removeGroup(i)" />
+              </div>
+              <div v-if="!cfg.issueGroups.length" class="proj-empty">暂无小组，点下方「新增小组」</div>
+            </div>
+            <div class="proj-add">
+              <el-button :icon="Plus" @click="addGroup">新增小组</el-button>
+              <el-button type="primary" @click="saveGroups">保存小组</el-button>
+            </div>
+          </el-card>
         </div>
       </el-tab-pane>
     </el-tabs>
@@ -394,7 +430,10 @@ const IssueTable = defineComponent({
 })
 
 // ── 配置 ─────────────────────────────────────────────
-const cfg = ref({ reportPath: '', scriptPath: '', apiScriptPath: '', snapshotDir: '', apiProjects: [] })
+const cfg = ref({
+  reportPath: '', scriptPath: '', apiScriptPath: '', snapshotDir: '',
+  apiProjects: [], statDepartments: '', issueGroups: [],
+})
 async function loadCfg() {
   try {
     const { data } = await configApi.get()
@@ -405,6 +444,13 @@ async function loadCfg() {
     cfg.value.apiProjects = Array.isArray(data.issue_api_projects) && data.issue_api_projects.length
       ? data.issue_api_projects.slice()
       : DEFAULT_PROJECTS.slice()
+    cfg.value.statDepartments = (Array.isArray(data.issue_stat_departments) ? data.issue_stat_departments : []).join('\n')
+    cfg.value.issueGroups = Array.isArray(data.issue_groups)
+      ? data.issue_groups.map(g => ({
+          name: g.name || '',
+          members: typeof g.members === 'string' ? g.members : (Array.isArray(g.members) ? g.members.join(';') : ''),
+        }))
+      : []
   } catch { /* 忽略 */ }
 }
 async function saveCfg(key) {
@@ -415,6 +461,34 @@ async function saveCfg(key) {
   try {
     await configApi.save({ [map[key]]: cfg.value[key] })
     ElMessage.success('已保存')
+  } catch (e) {
+    ElMessage.error(e.response?.data?.detail || '保存失败')
+  }
+}
+
+// ── 统计部门 & 小组配置（管理员）──────────────────────
+async function saveDepartments() {
+  const list = cfg.value.statDepartments.split(/[\n;；,，]/).map(s => s.trim()).filter(Boolean)
+  try {
+    await configApi.save({ issue_stat_departments: list })
+    ElMessage.success(list.length ? `已保存（只统计 ${list.length} 个部门）` : '已保存（不限部门）')
+  } catch (e) {
+    ElMessage.error(e.response?.data?.detail || '保存失败')
+  }
+}
+function addGroup() {
+  cfg.value.issueGroups.push({ name: '', members: '' })
+}
+function removeGroup(i) {
+  cfg.value.issueGroups.splice(i, 1)
+}
+async function saveGroups() {
+  const list = cfg.value.issueGroups
+    .map(g => ({ name: (g.name || '').trim(), members: (g.members || '').trim() }))
+    .filter(g => g.name)
+  try {
+    await configApi.save({ issue_groups: list })
+    ElMessage.success(`小组已保存（${list.length} 个）`)
   } catch (e) {
     ElMessage.error(e.response?.data?.detail || '保存失败')
   }
@@ -816,6 +890,16 @@ onUnmounted(() => {
 .proj-name { flex: 1 1 auto; font-size: 14px; color: #1f2329; font-weight: 600; }
 .proj-empty { color: #909399; font-size: 13px; padding: 6px 0; }
 .proj-add { display: flex; align-items: center; gap: 8px; }
+
+/* 统计部门 / 小组配置 */
+.cfg-actions { margin-top: 10px; text-align: right; }
+.grp-list { display: flex; flex-direction: column; gap: 8px; margin-bottom: 12px; }
+.grp-item { display: flex; align-items: center; gap: 8px; }
+.grp-item .el-input:last-of-type { flex: 1 1 auto; }
+.grp-idx {
+  flex: 0 0 22px; height: 22px; line-height: 22px; text-align: center;
+  background: #eef2f8; color: #4073ba; border-radius: 50%; font-size: 12px; font-weight: 600;
+}
 
 /* 模式栏 */
 .mode-bar {

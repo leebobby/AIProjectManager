@@ -57,7 +57,11 @@ _RAW_COLS = [
     "date",             # Q 日期
     "year_month",       # R 年月（钻取按月度过滤的关键字段）
     "category",         # S 标题分类（钻取按客户/分类过滤的关键字段）
-    "customer",         # T 客户面（API 快照聚合的关键维度；Excel 无此列时留空）
+    "customer",         # T 客户面（API 快照聚合的关键维度；由后端从标题匹配客户主数据得到）
+    "department",       # U 责任人部门（部门过滤的关键字段）
+    "feature",          # V 特性
+    "subsystem",        # W 子系统
+    "module",           # X 模块
 ]
 
 _DATE_PAT      = re.compile(r"_(\d{8})\.",           re.IGNORECASE)
@@ -558,12 +562,110 @@ def _safe_slug(s: str) -> str:
     return re.sub(r"[^\w\-]", "_", s or "") or "_"
 
 
+# ─── 采集后富化：部门过滤 + 责任人归组 + 从标题提取客户面 ─────────────────────
+def _as_str_list(v) -> List[str]:
+    """config 里可能存成 list 或分号/换行分隔的字符串，统一成去空的列表。"""
+    if isinstance(v, list):
+        return [str(x).strip() for x in v if str(x).strip()]
+    if isinstance(v, str):
+        return [s.strip() for s in re.split(r"[;；\n]", v) if s.strip()]
+    return []
+
+
+def _load_issue_groups(cfg: Dict) -> List[tuple]:
+    """config.issue_groups: [{name, members}] → [(小组名, [成员,...])]。成员支持分号/换行分隔。"""
+    groups: List[tuple] = []
+    for g in (cfg.get("issue_groups") or []):
+        if not isinstance(g, dict):
+            continue
+        name = str(g.get("name") or "").strip()
+        if not name:
+            continue
+        groups.append((name, _as_str_list(g.get("members"))))
+    return groups
+
+
+def _match_group(owner: str, groups: List[tuple]) -> str:
+    """按责任人姓名匹配所属小组（大小写不敏感 + 互为子串的模糊匹配）。"""
+    o = (owner or "").strip().lower()
+    if not o:
+        return ""
+    for name, members in groups:
+        for m in members:
+            ml = m.lower()
+            if ml and (ml == o or ml in o or o in ml):
+                return name
+    return ""
+
+
+def _load_customer_matchers(db: Session) -> List[tuple]:
+    """从客户主数据（code/全称/别名）构建 [(匹配文本_lower, 展示名)]，按长度降序（优先更具体）。"""
+    matchers: List[tuple] = []
+    customers = db.query(models.Customer).filter(models.Customer.is_active == True).all()  # noqa: E712
+    id2label = {}
+    for c in customers:
+        label = (c.display_name or c.code or "").strip()
+        id2label[c.id] = label
+        for t in (c.code, c.display_name):
+            if t and t.strip():
+                matchers.append((t.strip().lower(), label))
+    for a in db.query(models.CustomerAlias).all():
+        label = id2label.get(a.customer_id)
+        if label and a.alias and a.alias.strip():
+            matchers.append((a.alias.strip().lower(), label))
+    seen, uniq = set(), []
+    for mt, label in matchers:
+        if mt and mt not in seen:
+            seen.add(mt)
+            uniq.append((mt, label))
+    uniq.sort(key=lambda x: len(x[0]), reverse=True)
+    return uniq
+
+
+def _match_customer(title: str, matchers: List[tuple]) -> str:
+    t = (title or "").lower()
+    if not t:
+        return ""
+    for mt, label in matchers:
+        if mt in t:
+            return label
+    return ""
+
+
+def _enrich_rows(db: Session, rows: List[Dict]) -> List[Dict]:
+    """对采集到的问题单做：① 部门过滤 ② 按责任人归组 ③ 从标题提取客户面。
+
+    配置项（config.json，问题单管理「配置」tab 维护）：
+      issue_stat_departments —— 只统计这些部门（子串匹配责任人部门；留空＝全部）
+      issue_groups           —— [{name, members}]，成员分号分隔，按责任人归组
+    客户面来自客户主数据（客户面管理），用 code/全称/别名 在标题里做包含匹配。
+    """
+    cfg = _load_config()
+    depts = _as_str_list(cfg.get("issue_stat_departments"))
+    groups = _load_issue_groups(cfg)
+    matchers = _load_customer_matchers(db)
+
+    out: List[Dict] = []
+    for r in rows:
+        if depts:
+            dept = r.get("department", "") or ""
+            if not any(d in dept for d in depts):
+                continue
+        if groups:
+            r["group"] = _match_group(r.get("owner", ""), groups) or "未分组"
+        if matchers and not (r.get("customer") or "").strip():
+            r["customer"] = _match_customer(r.get("title", ""), matchers)
+        out.append(r)
+    return out
+
+
 def _take_snapshot(db: Session, project: str, source: str = "api") -> models.IssueSnapshot:
     """拉取该项目问题单 → 明细写文件、聚合数字写库（同项目同日覆盖）。
 
     可能抛 HTTPException（脚本未配置 / 执行失败）——调用方按需捕获。
     """
     raw = _run_issue_api_script(project)
+    raw = _enrich_rows(db, raw)   # 部门过滤 + 责任人归组 + 标题提取客户面
     today = datetime.now().strftime("%Y-%m-%d")
 
     # 明细落文件（<项目>/<日期>.json）

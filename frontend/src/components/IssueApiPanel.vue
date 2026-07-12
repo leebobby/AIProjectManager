@@ -176,8 +176,12 @@ const IssueRawTable = defineComponent({
         h(ElTableColumn, { prop: 'issue_id', label: '缺陷业务编号', width: 190 }),
         h(ElTableColumn, { prop: 'title', label: '标题', minWidth: 240, showOverflowTooltip: true }),
         h(ElTableColumn, { prop: 'owner', label: '当前责任人', width: 100 }),
-        h(ElTableColumn, { prop: 'group', label: '当前责任人所属小组', width: 150 }),
+        h(ElTableColumn, { prop: 'group', label: '所属小组', width: 130 }),
+        h(ElTableColumn, { prop: 'department', label: '责任人部门', width: 150, showOverflowTooltip: true }),
         h(ElTableColumn, { prop: 'customer', label: '客户面', width: 110 }),
+        h(ElTableColumn, { prop: 'feature', label: '特性', width: 110, showOverflowTooltip: true }),
+        h(ElTableColumn, { prop: 'subsystem', label: '子系统', width: 110, showOverflowTooltip: true }),
+        h(ElTableColumn, { prop: 'module', label: '模块', width: 110, showOverflowTooltip: true }),
         h(ElTableColumn, { prop: 'progress', label: '进展', width: 90 }),
         h(ElTableColumn, { prop: 'severity', label: '严重程度', width: 90, align: 'center' }, {
           default: ({ row }) => h(ElTag, { type: sevType(row.severity), size: 'small' }, () => row.severity || '—'),
@@ -316,7 +320,7 @@ const filtered = computed(() => {
   const kw = search.value.trim().toLowerCase()
   if (!kw) return raw.value
   return raw.value.filter((r) =>
-    [r.title, r.issue_id, r.owner, r.group, r.customer].some((v) => (v || '').toLowerCase().includes(kw)),
+    [r.title, r.issue_id, r.owner, r.group, r.department, r.customer].some((v) => (v || '').toLowerCase().includes(kw)),
   )
 })
 

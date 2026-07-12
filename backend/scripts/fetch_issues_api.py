@@ -102,13 +102,16 @@ FIELD_MAPPING = {
     "businessNo":            "缺陷业务编号",
     "title":                 "标题",
     "responsibleUser":       "当前责任人",
-    "responsibleDepartment": "当前责任人所属小组",   # 用责任人部门作「小组」维度；如需更细可换 responsibleLevelFourDepartment
+    "responsibleDepartment": "责任人部门",   # 部门过滤用；「小组」由后端按成员名单归组，不在此映射
+    "featureReal":           "特性",
+    "subSystemReal":         "子系统",
+    "moduleReal":            "模块",
     "progress":              "进展",
     "severity":              "严重程度",
-    # 下面几个 DTS 里若有对应字段，把左边键名补上即可（没有就留空，不影响主流程）：
-    # "xxxCustomer": "客户面", "priority": "优先级", "xxxDi": "严重程度DI值",
-    # "rootCause": "根因", "solution": "解决措施", "progressRecord": "进展记录",
-    # "planCloseTime": "预计闭环时间",
+    # 客户面(customer)不在此映射：由后端从标题匹配客户主数据（客户面管理）得到。
+    # 其它字段 DTS 里若有对应字段，把左边键名补上即可（没有就留空，不影响主流程）：
+    # "priority": "优先级", "xxxDi": "严重程度DI值", "rootCause": "根因",
+    # "solution": "解决措施", "progressRecord": "进展记录", "planCloseTime": "预计闭环时间",
 }
 
 # ════════════════════════════════════════════════════════════════════════════
@@ -168,6 +171,7 @@ CN_TO_EN = {
     "严重程度": "severity", "严重程度DI值": "severity_di", "根因": "root_cause",
     "解决措施": "solution", "进展记录": "progress_record",
     "预计闭环时间": "estimated_close", "优先级": "priority", "客户面": "customer",
+    "责任人部门": "department", "特性": "feature", "子系统": "subsystem", "模块": "module",
 }
 
 
