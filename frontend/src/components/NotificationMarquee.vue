@@ -107,6 +107,9 @@ defineExpose({ reload: load })
   align-items: center;
   gap: 10px;
   height: 40px;
+  /* 固定高度且不被兄弟（如很高的页面内容）挤压——否则整条会被压扁看不清字 */
+  flex-shrink: 0;
+  min-height: 40px;
   padding: 0 14px;
   background: #fff7e6;
   border-bottom: 1px solid #ffe7ba;

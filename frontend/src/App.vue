@@ -394,6 +394,8 @@ html, body, #app {
   display: flex;
   align-items: center;
   justify-content: space-between;
+  /* 顶栏固定高度，不被很高的页面内容挤压 */
+  flex-shrink: 0;
 }
 .page-title {
   font-size: 18px;
