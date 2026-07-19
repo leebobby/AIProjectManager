@@ -169,7 +169,6 @@
         <div class="sec-head">
           <span>{{ label }}事务</span>
           <el-button v-if="canEdit" size="small" :icon="Plus" @click="openItemDialog('task', null)">新增事务</el-button>
-          <el-button v-if="canEdit" size="small" @click="addExtraGrid">+ 添加表格</el-button>
           <el-checkbox v-model="showClosedTasks" size="small" class="closed-toggle">显示已闭环</el-checkbox>
         </div>
         <el-table :data="visibleTasks" :row-class-name="rowClass" border stripe size="small" style="width: 100%">
@@ -203,21 +202,78 @@
 
       </div>
 
-      <!-- 附加自由表格：每个提升为与「专项事务」并列的独立分段 -->
+      <!-- 自定义分段（表格 / 文本框 / 图片）：每个都是与固定分段并列的独立分段 -->
       <div v-else-if="key.startsWith('grid:')" class="sec extra-grid-sec">
         <div class="sec-head">
           <input
             v-if="canEdit"
             v-model="extraGrids[gridIndexOf(key)].title"
             class="extra-grid-title-input"
-            placeholder="表格标题（点击编辑）"
+            :placeholder="`${blockKindLabel(key)}标题（点击编辑）`"
           />
-          <span v-else>{{ extraGrids[gridIndexOf(key)].title || '附加表格' }}</span>
-          <el-button v-if="canEdit" size="small" type="primary" :loading="extraSaving" @click="saveExtraGrids">保存表格</el-button>
-          <el-button v-if="canEdit" size="small" type="danger" @click="removeExtraGrid(gridIndexOf(key))">删除整表</el-button>
+          <span v-else>{{ extraGrids[gridIndexOf(key)].title || blockKindLabel(key) }}</span>
+          <template v-if="canEdit">
+            <el-upload
+              v-if="blockKind(key) === 'images'"
+              :auto-upload="false"
+              :on-change="(f) => onBlockImagePick(key, f)"
+              :show-file-list="false"
+              accept="image/*"
+              multiple
+            >
+              <el-button size="small" :icon="Plus">添加图片</el-button>
+            </el-upload>
+            <el-button size="small" type="primary" :loading="extraSaving" @click="saveExtraGrids">保存</el-button>
+            <el-button size="small" type="danger" @click="removeBlock(key)">删除分段</el-button>
+          </template>
         </div>
         <div class="sec-body">
-          <RichGrid v-model="extraGrids[gridIndexOf(key)]" :editable="canEdit" />
+          <!-- 表格 -->
+          <RichGrid v-if="blockKind(key) === 'grid'" v-model="extraGrids[gridIndexOf(key)]" :editable="canEdit" />
+
+          <!-- 文本框 -->
+          <template v-else-if="blockKind(key) === 'text'">
+            <RichTextEditor
+              v-if="canEdit"
+              v-model="extraGrids[gridIndexOf(key)].html"
+              min-height="120px"
+              placeholder="支持加粗 / 字号 / 颜色，写完点右上角「保存」"
+            />
+            <div v-else class="rich-cell block-text-view" v-html="extraGrids[gridIndexOf(key)].html || '<span style=&quot;color:#909399&quot;>（空）</span>'" />
+          </template>
+
+          <!-- 图片墙：多张平铺，每张可选宽度，自动换行 -->
+          <template v-else-if="blockKind(key) === 'images'">
+            <div v-if="!extraGrids[gridIndexOf(key)].items.length" class="muted">
+              还没有图片{{ canEdit ? '，点右上角「添加图片」上传（可多张）' : '' }}
+            </div>
+            <div v-else class="block-imgs">
+              <figure
+                v-for="(im, ii) in extraGrids[gridIndexOf(key)].items"
+                :key="im.file"
+                class="block-img-item"
+                :style="{ width: `calc(${im.width || 50}% - 8px)` }"
+              >
+                <img v-if="imgSrc[im.file]" :src="imgSrc[im.file]" :alt="im.name" />
+                <div v-else class="img-loading">加载中…</div>
+                <figcaption v-if="canEdit" class="img-ops">
+                  <el-select
+                    :model-value="im.width || 50"
+                    size="small"
+                    style="width: 96px"
+                    @update:model-value="(v) => { im.width = v }"
+                  >
+                    <el-option :value="25" label="1/4 行宽" />
+                    <el-option :value="33" label="1/3 行宽" />
+                    <el-option :value="50" label="1/2 行宽" />
+                    <el-option :value="100" label="整行" />
+                  </el-select>
+                  <el-button size="small" link type="danger" @click="removeBlockImage(key, ii)">删除</el-button>
+                </figcaption>
+                <figcaption v-else-if="im.name" class="img-name">{{ im.name }}</figcaption>
+              </figure>
+            </div>
+          </template>
         </div>
       </div>
 
@@ -237,6 +293,21 @@
         </div>
       </div>
       </template>
+
+      <!-- 新增自定义分段：统一入口放在页面末尾（新分段默认追加在最后，可在「分段顺序」中上移） -->
+      <div v-if="canEdit" class="add-block-bar">
+        <el-dropdown trigger="click" @command="addBlock">
+          <el-button type="primary" plain :icon="Plus">新增分段</el-button>
+          <template #dropdown>
+            <el-dropdown-menu>
+              <el-dropdown-item command="grid">表格</el-dropdown-item>
+              <el-dropdown-item command="images">图片（可多张，宽度可调）</el-dropdown-item>
+              <el-dropdown-item command="text">文本框</el-dropdown-item>
+            </el-dropdown-menu>
+          </template>
+        </el-dropdown>
+        <span class="add-block-hint">新分段追加在页面末尾，位置可在顶部「分段顺序」中调整</span>
+      </div>
     </div>
 
     <!-- 里程碑对话框 -->
@@ -567,9 +638,9 @@ function normHeader(h) {
 }
 function normCell(c) {
   if (c && typeof c === 'object') {
-    return { text: String(c.text ?? ''), align: c.align || 'left', color: c.color || '' }
+    return { text: String(c.text ?? ''), align: c.align || 'left', color: c.color || '', bold: !!c.bold }
   }
-  return { text: String(c ?? ''), align: 'left', color: '' }
+  return { text: String(c ?? ''), align: 'left', color: '', bold: false }
 }
 const DEFAULT_COL_W = 130
 function normGrid(g) {
@@ -597,6 +668,7 @@ function normGrid(g) {
   return {
     _uid: `g${++_gridUid}`,
     gid: g.gid || nextGid(),
+    kind: 'grid',
     title: String(g.title || ''),
     headers,
     rows,
@@ -606,11 +678,38 @@ function normGrid(g) {
   }
 }
 
+// 自定义分段统一规范化：grid（表格，历史数据无 kind 字段按表格算）/ text / images
+const IMG_WIDTHS = [25, 33, 50, 100]
+function normBlock(g) {
+  if (!g || typeof g !== 'object') return normGrid({})
+  if (g.kind === 'text') {
+    return {
+      _uid: `g${++_gridUid}`, gid: g.gid || nextGid(), kind: 'text',
+      title: String(g.title || ''), html: String(g.html || ''),
+    }
+  }
+  if (g.kind === 'images') {
+    const items = (Array.isArray(g.items) ? g.items : [])
+      .filter(i => i && i.file)
+      .map(i => ({
+        file: String(i.file),
+        name: String(i.name || ''),
+        width: IMG_WIDTHS.includes(Number(i.width)) ? Number(i.width) : 50,
+      }))
+    return {
+      _uid: `g${++_gridUid}`, gid: g.gid || nextGid(), kind: 'images',
+      title: String(g.title || ''), items,
+    }
+  }
+  return normGrid(g)
+}
+
 function parseExtraGrids() {
   try {
     const arr = JSON.parse(content.value.extra_grids_json || '[]')
-    extraGrids.value = Array.isArray(arr) ? arr.map(normGrid) : []
+    extraGrids.value = Array.isArray(arr) ? arr.map(normBlock) : []
   } catch { extraGrids.value = [] }
+  loadBlockImages()
 }
 
 // —— 分段顺序（本专项独立，编辑者可调）——
@@ -651,10 +750,18 @@ function gridIndexOf(key) {
   const gid = key.slice(5) // 去掉 "grid:"
   return extraGrids.value.findIndex(g => String(g.gid) === gid)
 }
+const BLOCK_KIND_LABELS = { grid: '附加表格', text: '文本框', images: '图片' }
+function blockKind(key) {
+  const g = extraGrids.value[gridIndexOf(key)]
+  return (g && g.kind) || 'grid'
+}
+function blockKindLabel(key) {
+  return BLOCK_KIND_LABELS[blockKind(key)] || '分段'
+}
 function sectionLabel(key) {
   if (key.startsWith('grid:')) {
     const g = extraGrids.value[gridIndexOf(key)]
-    return (g && g.title) || '附加表格'
+    return (g && g.title) || blockKindLabel(key)
   }
   const f = FIXED_LABELS[key]
   return f ? f() : key
@@ -867,19 +974,90 @@ async function saveFormation(silent = false) {
   }
 }
 
-// 附加自由表格（RichGrid 模型：headers=[{text,colspan,align}], rows=[[{text,align,color}]]）
-function addExtraGrid() {
-  extraGrids.value.push(normGrid({
-    title: `附加表格 ${extraGrids.value.length + 1}`,
-    headers: [{ text: '列1', colspan: 1, align: 'center' }, { text: '列2', colspan: 1, align: 'center' }],
-    rows: [
-      [{ text: '', align: 'left', color: '' }, { text: '', align: 'left', color: '' }],
-      [{ text: '', align: 'left', color: '' }, { text: '', align: 'left', color: '' }],
-    ],
-  }))
+// —— 自定义分段：表格 / 文本框 / 图片（都存在 extra_grids_json 数组里，kind 区分）——
+function _kindCount(kind) {
+  return extraGrids.value.filter(g => (g.kind || 'grid') === kind).length
 }
-function removeExtraGrid(gi) {
+function addBlock(kind) {
+  if (kind === 'text') {
+    extraGrids.value.push(normBlock({ kind: 'text', title: `文本框 ${_kindCount('text') + 1}`, html: '' }))
+  } else if (kind === 'images') {
+    extraGrids.value.push(normBlock({ kind: 'images', title: `图片 ${_kindCount('images') + 1}`, items: [] }))
+  } else {
+    extraGrids.value.push(normGrid({
+      title: `附加表格 ${_kindCount('grid') + 1}`,
+      headers: [{ text: '列1', colspan: 1, align: 'center' }, { text: '列2', colspan: 1, align: 'center' }],
+      rows: [
+        [{ text: '', align: 'left', color: '' }, { text: '', align: 'left', color: '' }],
+        [{ text: '', align: 'left', color: '' }, { text: '', align: 'left', color: '' }],
+      ],
+    }))
+  }
+  // 新分段立即落库（否则刷新即丢；顺序默认追加在末尾）
+  saveExtraGrids(true)
+}
+
+async function removeBlock(key) {
+  const gi = gridIndexOf(key)
+  const block = extraGrids.value[gi]
+  if (!block) return
+  try {
+    await ElMessageBox.confirm(`确认删除「${block.title || blockKindLabel(key)}」整个分段吗？`, '提示', { type: 'warning' })
+  } catch { return }
+  // 图片分段：先尽力清掉服务器上的文件（失败不阻塞，孤儿文件无害）
+  if (block.kind === 'images') {
+    for (const im of block.items) {
+      specialApi.deleteBlockImage(special.value.id, im.file).catch(() => {})
+    }
+  }
   extraGrids.value.splice(gi, 1)
+  await saveExtraGrids(true)
+}
+
+// —— 图片分段：上传 / 删除单张 / 认证 blob 加载 ——
+const imgSrc = reactive({})   // stored 文件名 -> objectURL
+
+async function loadBlockImages() {
+  if (!special.value) return
+  for (const b of extraGrids.value) {
+    if ((b.kind || 'grid') !== 'images') continue
+    for (const im of b.items) {
+      if (imgSrc[im.file]) continue
+      try {
+        const resp = await http.get(`/specials/${special.value.id}/images/${im.file}`, { responseType: 'blob' })
+        imgSrc[im.file] = URL.createObjectURL(resp.data)
+      } catch { /* 单张失败不阻塞其它图片 */ }
+    }
+  }
+}
+
+async function onBlockImagePick(key, uploadFile) {
+  const gi = gridIndexOf(key)
+  const block = extraGrids.value[gi]
+  const file = uploadFile?.raw || uploadFile
+  if (!block || !file) return
+  if (!(file.type || '').toLowerCase().startsWith('image/')) {
+    ElMessage.warning('仅支持图片文件')
+    return
+  }
+  await checkStorageOrWarn()
+  try {
+    const { data } = await specialApi.uploadBlockImage(special.value.id, file)
+    block.items.push({ file: data.file, name: data.name, width: 50 })
+    await saveExtraGrids(true)   // 引用立即落库，避免"文件在、引用丢"
+    await loadBlockImages()
+  } catch (e) {
+    ElMessage.error(e.response?.data?.detail || '上传失败')
+  }
+}
+
+async function removeBlockImage(key, ii) {
+  const block = extraGrids.value[gridIndexOf(key)]
+  const im = block?.items?.[ii]
+  if (!im) return
+  specialApi.deleteBlockImage(special.value.id, im.file).catch(() => {})
+  block.items.splice(ii, 1)
+  await saveExtraGrids(true)
 }
 async function saveExtraGrids(silent = false) {
   extraSaving.value = true
@@ -894,7 +1072,7 @@ async function saveExtraGrids(silent = false) {
     content.value = data
     parseExtraGrids()
     parseSectionOrder()
-    if (silent !== true) ElMessage.success('附加表格已保存')
+    if (silent !== true) ElMessage.success('分段已保存')
   } catch (e) {
     ElMessage.error(e.response?.data?.detail || '保存失败')
   } finally {
@@ -987,6 +1165,7 @@ onBeforeUnmount(() => {
   window.removeEventListener('beforeunload', onBeforeUnload)
   stopPoll()
   releaseLockSafe()
+  Object.values(imgSrc).forEach(u => URL.revokeObjectURL(u))
 })
 </script>
 
@@ -1131,6 +1310,39 @@ onBeforeUnmount(() => {
   color: #303133;
   min-width: 200px;
 }
+
+/* 新增分段入口（页面末尾） */
+.add-block-bar {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 14px 16px;
+  border: 1px dashed #c0c4cc;
+  border-radius: 6px;
+  background: #fafbfc;
+  margin-top: 14px;
+}
+.add-block-bar:hover { border-color: #409eff; }
+.add-block-hint { font-size: 12px; color: #909399; }
+
+/* 文本框分段（只读态） */
+.block-text-view { line-height: 1.7; min-height: 24px; }
+
+/* 图片分段：flex 平铺 + 自动换行，每张宽度可选 */
+.block-imgs { display: flex; flex-wrap: wrap; gap: 8px; align-items: flex-start; }
+.block-img-item { margin: 0; display: flex; flex-direction: column; gap: 4px; }
+.block-img-item img {
+  width: 100%;
+  border: 1px solid #ebeef5;
+  border-radius: 4px;
+  display: block;
+}
+.img-loading {
+  height: 120px; display: flex; align-items: center; justify-content: center;
+  color: #909399; font-size: 13px; background: #f5f7fa; border-radius: 4px;
+}
+.img-ops { display: flex; align-items: center; gap: 8px; }
+.img-name { font-size: 12px; color: #909399; text-align: center; }
 .formation-wrap {
   padding: 12px 16px;
   overflow-x: auto;

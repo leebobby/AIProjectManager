@@ -103,6 +103,15 @@ export const specialApi = {
       headers: { 'Content-Type': 'multipart/form-data' },
     })
   },
+  // 分段图片（图片分段可多张；引用随 extra_grids_json 保存）
+  uploadBlockImage: (id, file) => {
+    const fd = new FormData()
+    fd.append('file', file)
+    return http.post(`/specials/${id}/images`, fd, {
+      headers: { 'Content-Type': 'multipart/form-data' },
+    })
+  },
+  deleteBlockImage: (id, stored) => http.delete(`/specials/${id}/images/${stored}`),
   panoramaUrl: (id) => `/api/specials/${id}/panorama`,
   listTasks: (id) => http.get(`/specials/${id}/tasks`),
   createTask: (id, data) => http.post(`/specials/${id}/tasks`, data),

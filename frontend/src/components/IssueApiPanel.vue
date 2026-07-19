@@ -308,15 +308,25 @@ function setChart(key, el, option) {
 }
 
 // 交叉表柱状图：x = 行标签（小组/客户面），按严重程度堆叠
+// 排版：图例放顶部、grid 开 containLabel（旋转后的长标签计入绘图区，不再与图例/边缘重叠）
 function crossBarOption(cross) {
   const { columns = [], rows = [] } = cross
   const cats = columns.filter((c) => c !== '合计')
   const xRows = rows.filter((r) => r.label !== '合计')
   return {
     tooltip: { trigger: 'axis', axisPointer: { type: 'shadow' } },
-    legend: { data: cats, bottom: 0, type: 'scroll' },
-    grid: { top: 10, left: 40, right: 10, bottom: 40 },
-    xAxis: { type: 'category', data: xRows.map((r) => r.label), axisLabel: { rotate: xRows.length > 5 ? 30 : 0 } },
+    legend: { data: cats, top: 0, type: 'scroll' },
+    grid: { top: 32, left: 8, right: 12, bottom: 4, containLabel: true },
+    xAxis: {
+      type: 'category',
+      data: xRows.map((r) => r.label),
+      axisLabel: {
+        rotate: xRows.length > 5 ? 35 : 0,
+        interval: 0,                       // 全量显示，不隔项省略
+        fontSize: 11,
+        width: 84, overflow: 'truncate',   // 超长名截断（tooltip 里仍是全名）
+      },
+    },
     yAxis: { type: 'value', minInterval: 1 },
     series: cats.map((c, i) => ({
       name: c, type: 'bar', stack: 'total', color: SEV_CLR[c] || PAL[i % PAL.length],
@@ -330,9 +340,9 @@ function trendLineOption(t) {
   const color = (name, i) => (trendDim.value === 'severity' ? (SEV_CLR[name] || PAL[i % PAL.length]) : PAL[i % PAL.length])
   return {
     tooltip: { trigger: 'axis' },
-    legend: { data: ['合计', ...(t.series || []).map((s) => s.name)], bottom: 0, type: 'scroll' },
-    grid: { top: 20, left: 45, right: 20, bottom: 50 },
-    xAxis: { type: 'category', data: dates, axisLabel: { rotate: dates.length > 8 ? 30 : 0 } },
+    legend: { data: ['合计', ...(t.series || []).map((s) => s.name)], top: 0, type: 'scroll' },
+    grid: { top: 34, left: 8, right: 16, bottom: 4, containLabel: true },
+    xAxis: { type: 'category', data: dates, axisLabel: { rotate: dates.length > 8 ? 30 : 0, fontSize: 11 } },
     yAxis: { type: 'value', minInterval: 1, name: '缺陷数' },
     series: [
       {

@@ -375,6 +375,80 @@ def get_panorama(sid: int, db: Session = Depends(get_db)):
     return FileResponse(str(p))
 
 
+# ─── 分段图片（图片分段可挂多张；文件在磁盘，引用存 extra_grids_json 里的 images 块）──
+# 存储名 = uuid hex + 扩展名，服务端生成，正则校验后才拼路径，杜绝目录穿越。
+_BLOCK_IMG_NAME_RE = re.compile(r"^[0-9a-f]{32}\.[A-Za-z0-9]{1,15}$")
+
+
+@router.post("/{sid}/images")
+def upload_block_image(
+    sid: int,
+    request: Request,
+    file: UploadFile = File(...),
+    db: Session = Depends(get_db),
+    current_user: models.User = Depends(get_current_user),
+):
+    """上传一张分段图片，返回 {file, name}；引用由前端随 extra_grids_json 一起保存。"""
+    ct = (file.content_type or "").lower()
+    ext = pathlib.Path(file.filename or "").suffix.lower()
+    if not (ct.startswith("image/") or ext in _PANORAMA_OK_EXT):
+        raise HTTPException(400, "仅支持图片文件")
+    special = _get_or_404(db, sid)
+    _require_not_locked_by_other(db, sid, current_user)
+
+    sub = UPLOAD_ROOT / str(sid)
+    _ensure_dir(sub)
+    orig_name = file.filename or "image.png"
+    safe_ext = (pathlib.Path(orig_name).suffix[:16] or ".png").lower()
+    stored = f"{uuid.uuid4().hex}{safe_ext}"
+    with open(sub / stored, "wb") as f:
+        while True:
+            chunk = file.file.read(64 * 1024)
+            if not chunk:
+                break
+            f.write(chunk)
+
+    log_op(db, action="上传", target=f"{_kind_label(special.kind)}分段图片", target_id=sid,
+           detail=f"name={special.name} file={orig_name}",
+           user=current_user, request=request)
+    return {"file": stored, "name": orig_name}
+
+
+@router.get("/{sid}/images/{stored}")
+def get_block_image(sid: int, stored: str, db: Session = Depends(get_db)):
+    _get_or_404(db, sid)
+    if not _BLOCK_IMG_NAME_RE.match(stored):
+        raise HTTPException(400, "非法文件名")
+    p = (UPLOAD_ROOT / str(sid) / stored).resolve()
+    if not p.exists():
+        raise HTTPException(404, "图片不存在")
+    return FileResponse(str(p))
+
+
+@router.delete("/{sid}/images/{stored}")
+def delete_block_image(
+    sid: int,
+    stored: str,
+    db: Session = Depends(get_db),
+    current_user: models.User = Depends(get_current_user),
+):
+    """删除磁盘文件（尽力而为）；JSON 引用由前端随保存移除。文件不存在也返回 ok。"""
+    special = _get_or_404(db, sid)
+    _require_not_locked_by_other(db, sid, current_user)
+    if not _BLOCK_IMG_NAME_RE.match(stored):
+        raise HTTPException(400, "非法文件名")
+    # 全景图与分段图片同目录：别把当前全景图误删了
+    if special.content and (special.content.panorama_image_path or "").endswith("/" + stored):
+        raise HTTPException(400, "该文件是当前全景图，请在全景图分段中替换")
+    p = (UPLOAD_ROOT / str(sid) / stored).resolve()
+    try:
+        if p.exists():
+            p.unlink()
+    except OSError:
+        pass
+    return {"ok": True}
+
+
 # ─── 事务 / 风险 (合并实现) ─────────────────────────────────────────
 
 def _item_model(kind: str):

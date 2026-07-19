@@ -418,7 +418,8 @@ def build_special_xlsx(special) -> io.BytesIO:
             extra_grids = []
     used_names = {ws.title}
     for gi, grid in enumerate(extra_grids):
-        if isinstance(grid, dict):
+        # 自定义分段现有三种：grid（表格，导出独立工作表）/ text / images（不导出 Excel）
+        if isinstance(grid, dict) and (grid.get("kind") or "grid") == "grid":
             _render_extra_grid_sheet(wb, grid, gi, used_names)
 
     buf = io.BytesIO()
@@ -509,13 +510,14 @@ def _render_extra_grid_sheet(wb, grid, idx, used_names):
                 text = str(cd.get("text", ""))
                 align = cd.get("align") or "left"
                 color = _hex_to_rgb6(cd.get("color", ""))
+                bold = bool(cd.get("bold"))
             else:
                 text = "" if cd is None else str(cd)
-                align, color = "left", "262626"
+                align, color, bold = "left", "262626", False
             cap = max(4, int(_px(c - 1) / 7))
             max_lines = max(max_lines, _cell_lines(text, cap))
             cell = ws.cell(row=r, column=c, value=text)
-            cell.font = Font(name=_FONT, size=10, color=color)
+            cell.font = Font(name=_FONT, size=10, color=color, bold=bold)
             cell.alignment = Alignment(horizontal=align, vertical="center", wrap_text=True)
             cell.border = _BORDER
             if zebra:

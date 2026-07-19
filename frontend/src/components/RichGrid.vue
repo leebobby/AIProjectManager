@@ -6,7 +6,11 @@
       <el-button-group>
         <el-button size="small" :disabled="!sel" @click="setAlign('left')">左对齐</el-button>
         <el-button size="small" :disabled="!sel" @click="setAlign('center')">居中</el-button>
+        <el-button size="small" :disabled="!sel" @click="setAlign('right')">右对齐</el-button>
       </el-button-group>
+      <el-button size="small" :disabled="!isBodySel" :type="selBold ? 'primary' : ''" @click="toggleBold">
+        <b>B</b> 加粗
+      </el-button>
       <el-button-group>
         <el-button size="small" :disabled="!isBodySel" @click="setColor('')">
           <span class="swatch" style="background:#303133" /> 黑
@@ -99,7 +103,7 @@
             v-for="(cell, ci) in row"
             :key="'c' + ri + '-' + ci"
             :class="{ selected: isSel('body', ri, ci) }"
-            :style="{ textAlign: cell.align || 'left', color: cell.color || '#303133' }"
+            :style="{ textAlign: cell.align || 'left', color: cell.color || '#303133', fontWeight: cell.bold ? 700 : 400 }"
             @click="editable && selectCell('body', ri, ci)"
           >
             <template v-if="editable">
@@ -126,7 +130,7 @@
                 v-else
                 v-model="cell.text"
                 class="rg-input"
-                :style="{ textAlign: cell.align || 'left', color: cell.color || '#303133' }"
+                :style="{ textAlign: cell.align || 'left', color: cell.color || '#303133', fontWeight: cell.bold ? 700 : 400 }"
                 @input="emitUpdate"
               />
             </template>
@@ -157,7 +161,7 @@
  *   {
  *     title: string,
  *     headers: [{ text, colspan, align }],   // sum(colspan) === 正文列数
- *     rows: [ [{ text, align, color }, ...], ... ],
+ *     rows: [ [{ text, align, color, bold }, ...], ... ],
  *     colWidths:  [number, ...],             // 长度 = 正文列数
  *     colTypes:   ['text'|'select'|'date', ...],  // 每个物理列的输入格式
  *     colOptions: [ [string, ...], ... ],    // 下拉列的候选项（其余列为 []）
@@ -306,6 +310,19 @@ function setColor(color) {
   const s = sel.value
   if (!s || s.type !== 'body') return
   model.value.rows[s.r][s.c].color = color
+  emitUpdate()
+}
+
+// —— 加粗（正文单元格；表头本就恒为粗体）——
+const selBold = computed(() => {
+  const s = sel.value
+  return s?.type === 'body' ? !!model.value.rows[s.r]?.[s.c]?.bold : false
+})
+function toggleBold() {
+  const s = sel.value
+  if (!s || s.type !== 'body') return
+  const cell = model.value.rows[s.r][s.c]
+  cell.bold = !cell.bold
   emitUpdate()
 }
 

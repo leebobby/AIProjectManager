@@ -856,9 +856,17 @@ function _stackedBarOption(cross, labelField = 'label') {
   const series  = rows.filter(r => r.label !== '合计')
   return {
     tooltip: { trigger: 'axis', axisPointer: { type: 'shadow' } },
-    legend: { data: series.map(s => s.label), bottom: 0, type: 'scroll' },
-    grid:   { top: 10, left: 50, right: 10, bottom: 50 },
-    xAxis:  { type: 'category', data: xLabels, axisLabel: { rotate: xLabels.length > 5 ? 30 : 0 } },
+    // 图例放顶部 + containLabel：旋转后的长标签计入绘图区，不与图例/边缘重叠
+    legend: { data: series.map(s => s.label), top: 0, type: 'scroll' },
+    grid:   { top: 32, left: 8, right: 12, bottom: 4, containLabel: true },
+    xAxis:  {
+      type: 'category', data: xLabels,
+      axisLabel: {
+        rotate: xLabels.length > 5 ? 35 : 0,
+        interval: 0, fontSize: 11,
+        width: 84, overflow: 'truncate',
+      },
+    },
     yAxis:  { type: 'value', minInterval: 1 },
     series: series.map((s, i) => ({
       name: s.label, type: 'bar', stack: 'total',
@@ -894,9 +902,9 @@ function initTrendCharts() {
   if (trendGroupEl.value) {
     setChart('trendGroup', trendGroupEl.value, {
       tooltip: { trigger: 'axis' },
-      legend: { data: groups, bottom: 0, type: 'scroll' },
-      grid:   { top: 20, left: 50, right: 20, bottom: 50 },
-      xAxis:  { type: 'category', data: dates, axisLabel: { rotate: dates.length > 10 ? 30 : 0 } },
+      legend: { data: groups, top: 0, type: 'scroll' },
+      grid:   { top: 34, left: 8, right: 16, bottom: 4, containLabel: true },
+      xAxis:  { type: 'category', data: dates, axisLabel: { rotate: dates.length > 10 ? 30 : 0, fontSize: 11 } },
       yAxis:  { type: 'value', minInterval: 1, name: '缺陷数' },
       series: groups.map((g, i) => ({
         name: g, type: 'line', smooth: true, symbolSize: 7,
@@ -909,9 +917,9 @@ function initTrendCharts() {
   if (trendSeverityEl.value) {
     setChart('trendSeverity', trendSeverityEl.value, {
       tooltip: { trigger: 'axis' },
-      legend: { data: sevs, bottom: 0 },
-      grid:   { top: 20, left: 50, right: 20, bottom: 50 },
-      xAxis:  { type: 'category', data: dates, axisLabel: { rotate: dates.length > 10 ? 30 : 0 } },
+      legend: { data: sevs, top: 0 },
+      grid:   { top: 34, left: 8, right: 16, bottom: 4, containLabel: true },
+      xAxis:  { type: 'category', data: dates, axisLabel: { rotate: dates.length > 10 ? 30 : 0, fontSize: 11 } },
       yAxis:  { type: 'value', minInterval: 1, name: '缺陷数' },
       series: sevs.map(s => ({
         name: s, type: 'line', smooth: true, symbolSize: 8, lineWidth: 2,
