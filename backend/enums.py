@@ -26,6 +26,18 @@ TASK_STATUSES = ("open", "closed")
 # ── 年度迭代状态 ─────────────────────────────────────────────────────────────
 ITERATION_STATUSES = ("planning", "in_progress", "done")
 
+# ── 客户面问题 / 关键事务（customer_issues）──────────────────────────────────
+# kind：一张表装两类，issue 用全套字段，task 只用 描述 + 预计时间 + 状态
+CUSTOMER_ISSUE_KINDS = ("issue", "task")
+CUSTOMER_ISSUE_KIND_DEFAULT = "issue"
+# 状态词表与 domain_risks 对齐，避免同一概念两套口径
+CUSTOMER_ISSUE_STATUSES = ("OPEN", "CLOSED", "挂起")
+CUSTOMER_ISSUE_STATUS_DEFAULT = "OPEN"
+CUSTOMER_ISSUE_URGENCIES = ("重要紧急", "紧急", "一般")
+CUSTOMER_ISSUE_URGENCY_DEFAULT = "一般"
+# 汇总页默认排序用：越紧急越靠前
+CUSTOMER_ISSUE_URGENCY_RANK = {"重要紧急": 0, "紧急": 1, "一般": 2}
+
 
 def _is_blank(v) -> bool:
     return v is None or (isinstance(v, str) and v.strip() == "")
@@ -56,3 +68,38 @@ def norm_progress(v, *, partial: bool = False) -> Optional[str]:
     if s in PROGRESS_STATUSES:
         return s
     raise ValueError(f"进展状态「{v}」非法，应为 {'/'.join(PROGRESS_STATUSES)} 之一")
+
+
+def _norm_choice(v, choices, default, label, *, partial=False, upper=False):
+    """通用白名单规范化：空值按 partial 决定 None / 默认值，非法值抛 ValueError。"""
+    if _is_blank(v):
+        return None if partial else default
+    s = str(v).strip()
+    if upper:
+        s = s.upper()
+    if s in choices:
+        return s
+    raise ValueError(f"{label}「{v}」非法，应为 {'/'.join(choices)} 之一")
+
+
+def norm_issue_kind(v, *, partial: bool = False) -> Optional[str]:
+    return _norm_choice(v, CUSTOMER_ISSUE_KINDS, CUSTOMER_ISSUE_KIND_DEFAULT, "条目类型",
+                        partial=partial)
+
+
+def norm_issue_status(v, *, partial: bool = False) -> Optional[str]:
+    """OPEN/CLOSED 大小写不敏感；「挂起」原样匹配。"""
+    if _is_blank(v):
+        return None if partial else CUSTOMER_ISSUE_STATUS_DEFAULT
+    s = str(v).strip()
+    if s in CUSTOMER_ISSUE_STATUSES:
+        return s
+    up = s.upper()
+    if up in CUSTOMER_ISSUE_STATUSES:
+        return up
+    raise ValueError(f"状态「{v}」非法，应为 {'/'.join(CUSTOMER_ISSUE_STATUSES)} 之一")
+
+
+def norm_issue_urgency(v, *, partial: bool = False) -> Optional[str]:
+    return _norm_choice(v, CUSTOMER_ISSUE_URGENCIES, CUSTOMER_ISSUE_URGENCY_DEFAULT,
+                        "紧急程度", partial=partial)

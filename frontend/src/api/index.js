@@ -189,6 +189,17 @@ export const issueApi = {
   snapshotExport:  (project, date)      => http.get('/issues/snapshot-export', { responseType: 'blob', params: date ? { project, date } : { project } }),
 }
 
+// 客户面「软件类问题 / 现场关键事务」条目：单机台清单与全战场汇总共用 list
+export const customerIssueApi = {
+  list:    (params = {}) => http.get('/customer-issues', { params }),
+  summary: ()            => http.get('/customer-issues/summary'),
+  create:  (data)        => http.post('/customer-issues', data),
+  update:  (id, data)    => http.put(`/customer-issues/${id}`, data),
+  remove:  (id)          => http.delete(`/customer-issues/${id}`),
+  exportXlsx: (include_closed = true) =>
+    http.get('/customer-issues/export.xlsx', { responseType: 'blob', params: { include_closed } }),
+}
+
 export const customerApi = {
   list: (include_inactive = false) => http.get('/customers', { params: { include_inactive } }),
   get: (id) => http.get(`/customers/${id}`),

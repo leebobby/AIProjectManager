@@ -1,8 +1,9 @@
 """后台调度：APScheduler 跑定时任务。
 
 当前任务：
-- daily_ddl_scan：每天 08:00 扫描 special_tasks / special_risks，
-  对未关闭、planned_close_date 落在未来 3 天内/已逾期的，给 owner_user_id 发通知。
+- daily_ddl_scan：每天 08:00 扫描 special_tasks / special_risks（按 planned_close_date）
+  与 customer_issues（按 due_date），对未关闭、落在未来 3 天内/已逾期的，
+  给 owner_user_id 发通知。
 - daily_issue_snapshot：每天定时采集各项目问题单快照。执行时刻由
   config.issue_snapshot_time（HH:MM，默认 07:30）决定，可在问题单管理「配置」中改；
   改完由 config 路由调 apply_issue_snapshot_schedule() 热更新，不用重启。
@@ -89,6 +90,59 @@ def _scan_specials(db, today: date) -> int:
     return cnt
 
 
+def _scan_customer_issues(db, today: date) -> int:
+    """客户面问题/关键事务：以 due_date（预计闭环）为基准做临期/逾期提醒。
+
+    只提醒未闭环且有责任人的条目。挂起同样会提醒——挂起只是没在推进，
+    不代表这个日期不算数，正是需要有人来决定要不要重排的时候。
+    """
+    soon_threshold = today + timedelta(days=3)
+    cnt = 0
+    rows = (
+        db.query(models.CustomerIssue)
+        .filter(models.CustomerIssue.status != "CLOSED")
+        .all()
+    )
+    for r in rows:
+        if not r.owner_user_id:
+            continue
+        d = _parse_date(r.due_date or "")
+        if d is None:
+            continue
+        label = "问题" if r.kind == "issue" else "关键事务"
+        m = r.machine_status
+        where = f"{(m.battlefield if m else '') or ''} {(m.machine_id if m else '') or ''}".strip()
+        preview = (r.description or "").strip().splitlines()[0][:60] if r.description else ""
+
+        if d < today:
+            key = ("customer_issue", r.id, "overdue")
+            if key in _sent_today:
+                continue
+            _sent_today.add(key)
+            dispatch(
+                db, kind="overdue",
+                title=f"[已逾期] {label}：{preview}",
+                body=f"{where}｜预计闭环 {r.due_date}，已逾期 {(today - d).days} 天",
+                link="/customer-issues", source_type="customer_issue", source_id=r.id,
+                recipient_ids=[r.owner_user_id],
+            )
+            cnt += 1
+        elif d <= soon_threshold:
+            key = ("customer_issue", r.id, "soon")
+            if key in _sent_today:
+                continue
+            _sent_today.add(key)
+            dispatch(
+                db, kind="due_soon",
+                title=f"[临期提醒] {label}：{preview}",
+                body=f"{where}｜预计闭环 {r.due_date}，剩 {(d - today).days} 天",
+                link="/customer-issues", source_type="customer_issue", source_id=r.id,
+                recipient_ids=[r.owner_user_id],
+            )
+            cnt += 1
+    return cnt
+
+
 def daily_ddl_scan() -> None:
     """每天 08:00 跑一次。"""
     global _sent_today
@@ -102,7 +156,7 @@ def daily_ddl_scan() -> None:
 
     db = SessionLocal()
     try:
-        n = _scan_specials(db, today)
+        n = _scan_specials(db, today) + _scan_customer_issues(db, today)
         logger.info("daily_ddl_scan: %s 条通知已发", n)
     except Exception as e:
         logger.exception("daily_ddl_scan 失败: %s", e)

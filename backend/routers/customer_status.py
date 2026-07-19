@@ -6,8 +6,11 @@
 - 编辑 PUT：
     机台编号 / 客户(battlefield) / 型号(model) —— 创建后锁定，路由层拒绝任何修改
     current_stage / field_version / attention_level —— 仅 admin 可改
-    customer_status / recent_focus / key_issues   —— 所有登录用户均可改
+    customer_status / milestones_json             —— 所有登录用户均可改
 - 导出 PPT：仅 admin
+
+注：recent_focus / key_issues 两列已被 customer_issues 表取代（见 routers/customer_issues.py），
+仅为回滚保险保留在模型与白名单里，现有前端不再写入它们。
 """
 import io
 from datetime import datetime

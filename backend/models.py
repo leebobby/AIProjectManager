@@ -81,6 +81,55 @@ class CustomerStatus(Base):
         "MachineLicense", back_populates="machine_status",
         cascade="all, delete-orphan", order_by="MachineLicense.id",
     )
+    issues = relationship(
+        "CustomerIssue", back_populates="machine_status",
+        cascade="all, delete-orphan", order_by="CustomerIssue.sort_order",
+    )
+
+
+class CustomerIssue(Base):
+    """客户面「软件类风险和问题」/「现场关键事务」的单条记录。
+
+    原来这两栏是 customer_status.key_issues / recent_focus 两个 Text 列里的
+    JSON 清单 [{text, done}]：装不下责任人/时间/紧急程度，也无法跨战场汇总查询
+    （只能把所有机台拉下来在前端拆 JSON）。这里提升为一行一条的实体表。
+
+    一表两类，靠 kind 区分（同 specials 的 专项/攻关 套路）：
+      - issue（软件类问题）：用全套字段
+      - task （现场关键事务）：只用 description + due_date + status，其余留空
+    customer_id 是从所属机台冗余下来的，汇总页按战场过滤/分组全靠它。
+    """
+    __tablename__ = "customer_issues"
+
+    id = Column(Integer, primary_key=True, index=True)
+    machine_status_id = Column(
+        Integer, ForeignKey("customer_status.id", ondelete="CASCADE"),
+        nullable=False, index=True, comment="所属机台（customer_status 行）",
+    )
+    customer_id = Column(
+        Integer, ForeignKey("customers.id", ondelete="SET NULL"),
+        nullable=True, index=True, comment="所属客户/战场；随机台冗余，供汇总过滤",
+    )
+    kind = Column(String(16), nullable=False, default="issue", index=True,
+                  comment="issue 软件类问题 / task 现场关键事务")
+    description = Column(Text, default="", comment="问题描述 / 任务内容")
+    issue_ref = Column(String(128), default="", comment="关联问题单编号（可为空）")
+    urgency = Column(String(16), default="一般", comment="重要紧急 / 紧急 / 一般")
+    owner_user_id = Column(Integer, ForeignKey("users.id", ondelete="SET NULL"),
+                           nullable=True, index=True, comment="责任人（系统用户）")
+    owner_name = Column(String(64), default="", comment="责任人自由文本（非系统用户时兜底）")
+    raised_at = Column(String(10), default="", comment="提出时间 YYYY-MM-DD")
+    due_date = Column(String(10), default="", comment="预计闭环时间 YYYY-MM-DD（逾期提醒基准）")
+    closed_at = Column(String(10), default="", comment="实际闭环时间 YYYY-MM-DD")
+    status = Column(String(16), nullable=False, default="OPEN", index=True,
+                    comment="OPEN / CLOSED / 挂起")
+    sort_order = Column(Integer, default=0, comment="同机台内的展示顺序")
+    version = Column(Integer, nullable=False, default=0, comment="乐观锁版本号")
+    created_at = Column(DateTime, default=datetime.utcnow)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+    machine_status = relationship("CustomerStatus", back_populates="issues")
+    owner = relationship("User", foreign_keys=[owner_user_id])
 
 
 class SowFieldDef(Base):

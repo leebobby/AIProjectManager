@@ -108,6 +108,84 @@ class CustomerStatusOut(CustomerStatusBase):
     model_config = ConfigDict(from_attributes=True, protected_namespaces=())
 
 
+# ===== CustomerIssue（软件类问题 / 现场关键事务）=====
+class CustomerIssueBase(BaseModel):
+    """注意：不在 Base 上挂 norm_* 校验器。
+
+    Base 被 Out 继承，而 Out 走 from_attributes 读库；老库里若有历史脏值，
+    读取时就会 422。校验只放在 Create/Update（写入口）上。
+    """
+    kind: Optional[str] = "issue"
+    description: Optional[str] = ""
+    issue_ref: Optional[str] = ""
+    urgency: Optional[str] = "一般"
+    owner_user_id: Optional[int] = None
+    owner_name: Optional[str] = ""
+    raised_at: Optional[str] = ""
+    due_date: Optional[str] = ""
+    closed_at: Optional[str] = ""
+    status: Optional[str] = "OPEN"
+    sort_order: Optional[int] = 0
+
+
+class CustomerIssueCreate(CustomerIssueBase):
+    machine_status_id: int
+
+    @field_validator("kind")
+    @classmethod
+    def _v_kind(cls, v):
+        return enums.norm_issue_kind(v)
+
+    @field_validator("status")
+    @classmethod
+    def _v_status(cls, v):
+        return enums.norm_issue_status(v)
+
+    @field_validator("urgency")
+    @classmethod
+    def _v_urgency(cls, v):
+        return enums.norm_issue_urgency(v)
+
+
+class CustomerIssueUpdate(BaseModel):
+    version: int
+    description: Optional[str] = None
+    issue_ref: Optional[str] = None
+    urgency: Optional[str] = None
+    owner_user_id: Optional[int] = None
+    owner_name: Optional[str] = None
+    raised_at: Optional[str] = None
+    due_date: Optional[str] = None
+    closed_at: Optional[str] = None
+    status: Optional[str] = None
+    sort_order: Optional[int] = None
+
+    @field_validator("status")
+    @classmethod
+    def _v_status(cls, v):
+        return enums.norm_issue_status(v, partial=True)
+
+    @field_validator("urgency")
+    @classmethod
+    def _v_urgency(cls, v):
+        return enums.norm_issue_urgency(v, partial=True)
+
+
+class CustomerIssueOut(CustomerIssueBase):
+    id: int
+    machine_status_id: int
+    customer_id: Optional[int] = None
+    version: int
+    updated_at: Optional[datetime] = None
+    # 汇总页展示用的冗余字段，由路由层填充（非 ORM 列）
+    machine_id: Optional[str] = ""
+    battlefield: Optional[str] = ""
+    owner_display: Optional[str] = ""
+    overdue: Optional[bool] = False
+
+    model_config = _BASE_CONFIG
+
+
 # ===== 客户详情：机台 + SOW + License =====
 class CustomerMachineOut(BaseModel):
     """客户详情页机台 tab 用：从 customer_status 派生，含编辑当前进展所需字段。"""

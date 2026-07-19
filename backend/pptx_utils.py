@@ -33,6 +33,27 @@ def checklist_to_text(val: str) -> str:
         pass
     return val  # 旧纯文本，原样返回
 
+
+def issues_to_text(machine, kind: str) -> str:
+    """把机台的 customer_issues 条目转成 PPT 单元格文本。
+
+    前缀：✓ 已闭环 / ⏸ 挂起 / · 进行中；挂起单独标出来，否则它在 PPT 里
+    和未开始的看不出区别，评审时容易被当成"没人管"。
+    已闭环的排在最后，重要的先入眼。
+    """
+    rows = [i for i in (getattr(machine, "issues", None) or []) if i.kind == kind]
+    if not rows:
+        return ""
+    rank = {"OPEN": 0, "挂起": 1, "CLOSED": 2}
+    rows.sort(key=lambda i: (rank.get(i.status, 9), i.sort_order or 0, i.id))
+    mark = {"CLOSED": "✓ ", "挂起": "⏸ "}
+    lines = []
+    for i in rows:
+        text = (i.description or "").strip()
+        if text:
+            lines.append(mark.get(i.status, "· ") + text)
+    return "\n".join(lines)
+
 from lxml import etree
 from pptx import Presentation
 from pptx.dml.color import RGBColor
@@ -314,8 +335,8 @@ def build_customer_status_pptx(rows: Iterable) -> io.BytesIO:
             r.field_version or "",
             ("★" * (r.attention_level or 0)) or "-",
             r.customer_status or "",
-            checklist_to_text(r.recent_focus or ""),
-            checklist_to_text(r.key_issues or ""),
+            issues_to_text(r, "task"),
+            issues_to_text(r, "issue"),
             getattr(r, "issue_url", "") or "—",
         ])
 

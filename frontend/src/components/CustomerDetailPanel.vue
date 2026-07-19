@@ -120,32 +120,42 @@
                   </div>
                 </div>
 
-                <!-- 现场关键事务（与总览 recent_focus 同步）-->
+                <!-- 现场关键事务 / 软件类问题（与总览同一份 customer_issues 数据）-->
                 <div class="block">
                   <div class="block-head">
                     <span>现场关键事务</span>
-                    <span class="muted-hint">与「客户面状态」总览的"现场关键事务"同步，勾选表示已完成</span>
-                    <div v-if="canEditStage" class="actions">
-                      <el-button size="small" :icon="Plus" @click="machineState[m.id].recentFocus.push({ text: '', done: false })">添加条目</el-button>
-                    </div>
+                    <span class="muted-hint">与「客户面状态」总览同步；勾选＝已闭环，点条目可到「问题跟踪」看详情</span>
                   </div>
                   <div class="block-body">
-                    <div v-if="!machineState[m.id].recentFocus.length" class="empty inline">暂无现场关键事务</div>
-                    <div v-for="(item, idx) in machineState[m.id].recentFocus" :key="idx" class="rf-row">
-                      <span class="rf-box" :class="{ checked: item.done }" @click="canEditStage && (item.done = !item.done)">
-                        <svg v-if="item.done" viewBox="0 0 10 8" fill="none" stroke="#fff" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="1,4 4,7 9,1"/></svg>
-                      </span>
-                      <el-input v-model="item.text" size="small" placeholder="条目内容" :readonly="!canEditStage" :class="{ 'rf-done': item.done }" style="flex: 1" />
-                      <el-button v-if="canEditStage" :icon="Delete" size="small" circle plain type="danger" @click="machineState[m.id].recentFocus.splice(idx, 1)" />
-                    </div>
-                    <div v-if="canEditStage" class="right">
-                      <el-button
-                        type="primary"
-                        size="small"
-                        :disabled="!isRecentFocusDirty(m.id)"
-                        @click="saveRecentFocus(m)"
-                      >保存现场关键事务</el-button>
-                    </div>
+                    <CustomerIssueCell
+                      kind="task"
+                      :items="machineIssues[m.id]?.task || []"
+                      :machine-status-id="m.id"
+                      :edit-mode="canEditStage"
+                      :show-completed="showCompletedIssues"
+                      :is-admin="canEdit"
+                      @refresh="loadMachineIssues"
+                      @open="gotoTracking"
+                    />
+                  </div>
+                </div>
+
+                <div class="block">
+                  <div class="block-head">
+                    <span>软件类风险和问题</span>
+                    <el-checkbox v-model="showCompletedIssues" size="small" label="显示已完成" />
+                  </div>
+                  <div class="block-body">
+                    <CustomerIssueCell
+                      kind="issue"
+                      :items="machineIssues[m.id]?.issue || []"
+                      :machine-status-id="m.id"
+                      :edit-mode="canEditStage"
+                      :show-completed="showCompletedIssues"
+                      :is-admin="canEdit"
+                      @refresh="loadMachineIssues"
+                      @open="gotoTracking"
+                    />
                   </div>
                 </div>
 
@@ -544,11 +554,15 @@
 import { computed, nextTick, reactive, ref, watch } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { Delete, Edit, Paperclip, Plus, Refresh, Upload } from '@element-plus/icons-vue'
+import { useRouter } from 'vue-router'
 import {
-  customerApi, customerCustomReqApi, customerExtraApi, customerStatusApi, downloadBlob, issueApi, licenseApi, sowApi,
+  customerApi, customerCustomReqApi, customerExtraApi, customerIssueApi, customerStatusApi, downloadBlob, issueApi, licenseApi, sowApi,
 } from '../api'
 import { auth } from '../store/auth'
+import CustomerIssueCell from './CustomerIssueCell.vue'
 import MilestoneTimeline from './MilestoneTimeline.vue'
+
+const router = useRouter()
 
 const MILESTONE_STAGES = ['出厂', 'Tier0', 'Tier1', 'Tier2', 'Tier3', '验收']
 const MS_STATUS = [
@@ -568,20 +582,6 @@ function parseMilestones(raw) {
     date: byName[name]?.date || '',
     status: byName[name]?.status || 'planning',
   }))
-}
-
-// 现场关键事务（recent_focus）：与总览同一字段、同一 JSON 清单格式
-function parseChecklist(val) {
-  if (!val) return []
-  try {
-    const parsed = JSON.parse(val)
-    if (Array.isArray(parsed)) return parsed.map((i) => ({ text: String(i.text ?? ''), done: !!i.done }))
-  } catch { /* 兼容旧的换行格式 */ }
-  return val.split('\n').filter((s) => s.trim()).map((t) => ({ text: t.trim(), done: false }))
-}
-function serializeChecklist(items) {
-  const clean = items.filter((i) => (i.text || '').trim())
-  return clean.length ? JSON.stringify(clean) : ''
 }
 
 const props = defineProps({
@@ -608,6 +608,9 @@ const machines = ref([])
 const activeMachine = ref('')
 // machineState[machineId] = { current, sowLoading, sowRows, sowOriginals, licenseLoading, licenses }
 const machineState = reactive({})
+// machineIssues[machineId] = { task: [...], issue: [...] }，来自 customer_issues 表
+const machineIssues = reactive({})
+const showCompletedIssues = ref(false)
 
 // SOW 字段定义（全局共享）
 const sowFields = ref([])
@@ -709,8 +712,6 @@ async function loadMachines() {
       if (!machineState[m.id]) {
         machineState[m.id] = {
           current: m.customer_status || '',
-          recentFocus: parseChecklist(m.recent_focus),
-          recentFocusOrig: serializeChecklist(parseChecklist(m.recent_focus)),
           milestones: parseMilestones(m.milestones_json),
           sowLoading: false,
           sowRows: [],
@@ -723,12 +724,11 @@ async function loadMachines() {
         }
       } else {
         machineState[m.id].current = m.customer_status || ''
-        machineState[m.id].recentFocus = parseChecklist(m.recent_focus)
-        machineState[m.id].recentFocusOrig = serializeChecklist(parseChecklist(m.recent_focus))
         machineState[m.id].milestones = parseMilestones(m.milestones_json)
       }
     }
     machines.value = data
+    await loadMachineIssues()
     if (data.length) {
       activeMachine.value = String(data[0].id)
       // 先把第一个 tab 的子数据加载出来
@@ -737,6 +737,28 @@ async function loadMachines() {
   } catch (e) {
     ElMessage.error(e.response?.data?.detail || '机台加载失败')
   }
+}
+
+// 问题/事务条目：一次拉全量再按机台分组，避免每个机台一个请求
+async function loadMachineIssues() {
+  try {
+    const { data } = await customerIssueApi.list()
+    const ids = new Set(machines.value.map((m) => m.id))
+    const grouped = {}
+    for (const it of data) {
+      if (!ids.has(it.machine_status_id)) continue
+      const g = (grouped[it.machine_status_id] ||= { task: [], issue: [] })
+      ;(it.kind === 'task' ? g.task : g.issue).push(it)
+    }
+    Object.keys(machineIssues).forEach((k) => delete machineIssues[k])
+    Object.assign(machineIssues, grouped)
+  } catch {
+    /* 静默：条目加载失败不该拖垮整个客户详情 */
+  }
+}
+
+function gotoTracking(item) {
+  router.push(item?.id ? { path: '/customer-issues', query: { focus: item.id } } : '/customer-issues')
 }
 
 async function loadSowRows(mid) {
@@ -1003,38 +1025,6 @@ async function saveCurrentStage(m) {
   } catch (e) {
     if (e.response?.status === 409) {
       // 409 已由 axios 拦截器弹 warning；这里重新拉一遍机台状态
-      await loadMachines()
-    } else {
-      ElMessage.error(e.response?.data?.detail || '保存失败')
-    }
-  }
-}
-
-// ─── 现场关键事务（recent_focus）─────────────────────────────────
-
-function isRecentFocusDirty(mid) {
-  const st = machineState[mid]
-  if (!st) return false
-  return serializeChecklist(st.recentFocus) !== (st.recentFocusOrig || '')
-}
-
-async function saveRecentFocus(m) {
-  const st = machineState[m.id]
-  const serialized = serializeChecklist(st.recentFocus)
-  try {
-    const { data } = await customerStatusApi.update(m.id, {
-      version: m.version,
-      recent_focus: serialized,
-    })
-    const idx = machines.value.findIndex((x) => x.id === m.id)
-    if (idx >= 0) {
-      machines.value[idx] = { ...machines.value[idx], recent_focus: serialized, version: data.version }
-    }
-    st.recentFocus = parseChecklist(serialized)
-    st.recentFocusOrig = serialized
-    ElMessage.success('已同步到总览')
-  } catch (e) {
-    if (e.response?.status === 409) {
       await loadMachines()
     } else {
       ElMessage.error(e.response?.data?.detail || '保存失败')

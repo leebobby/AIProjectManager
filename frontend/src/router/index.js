@@ -22,6 +22,12 @@ const routes = [
     meta: { title: '客户面状态', icon: 'DataLine', customersParent: true, group: '客户面管理' },
   },
   {
+    path: '/customer-issues',
+    name: 'CustomerIssueTracking',
+    component: () => import('../views/CustomerIssueTracking.vue'),
+    meta: { title: '问题跟踪', icon: 'Tickets', group: '客户面管理' },
+  },
+  {
     path: '/customers',
     name: 'CustomerManagement',
     component: () => import('../views/CustomerManagement.vue'),
