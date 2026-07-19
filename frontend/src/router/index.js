@@ -22,10 +22,10 @@ const routes = [
     meta: { title: '客户面状态', icon: 'DataLine', customersParent: true, group: '客户面管理' },
   },
   {
+    // 问题跟踪不再单独进侧边栏——它就是客户面状态的另一个视角，
+    // 已收进 /customer-status 的「问题跟踪」tab。老链接重定向保持可用。
     path: '/customer-issues',
-    name: 'CustomerIssueTracking',
-    component: () => import('../views/CustomerIssueTracking.vue'),
-    meta: { title: '问题跟踪', icon: 'Tickets', group: '客户面管理' },
+    redirect: (to) => ({ path: '/customer-status', query: { ...to.query, tab: 'issues' } }),
   },
   {
     path: '/customers',

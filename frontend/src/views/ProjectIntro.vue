@@ -115,8 +115,8 @@ import {
   annualIterationApi,
   configApi,
   customerStatusApi,
+  majorVersionApi,
   roadmapApi,
-  versionApi,
 } from '../api'
 import RoadmapTimeline from './RoadmapTimeline.vue'
 
@@ -132,7 +132,7 @@ const modules = [
   },
   {
     title: '版本管理',
-    desc: '记录软件版本发布、说明与跳转链接，作为现场版本的来源。',
+    desc: '大版本/迭代版本两级规划、版本计划图与现场调试版本（T版本）。',
     icon: 'Files',
     path: '/versions',
     theme: 't-green',
@@ -245,7 +245,7 @@ async function loadRoadmaps() {
 async function loadStats() {
   try {
     const [v, m] = await Promise.all([
-      versionApi.list(),
+      majorVersionApi.list(),   // 两级版本体系：首页统计数的是大版本
       customerStatusApi.list(),
     ])
     stats.versions = v.data.length

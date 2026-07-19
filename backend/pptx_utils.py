@@ -40,8 +40,10 @@ def issues_to_text(machine, kind: str) -> str:
     前缀：✓ 已闭环 / ⏸ 挂起 / · 进行中；挂起单独标出来，否则它在 PPT 里
     和未开始的看不出区别，评审时容易被当成"没人管"。
     已闭环的排在最后，重要的先入眼。
+    kind="issue" 时把 demand（需求）一并带上（页面上两者同栏），加 [需求] 前缀区分。
     """
-    rows = [i for i in (getattr(machine, "issues", None) or []) if i.kind == kind]
+    kinds = {"issue", "demand"} if kind == "issue" else {kind}
+    rows = [i for i in (getattr(machine, "issues", None) or []) if i.kind in kinds]
     if not rows:
         return ""
     rank = {"OPEN": 0, "挂起": 1, "CLOSED": 2}
@@ -51,7 +53,8 @@ def issues_to_text(machine, kind: str) -> str:
     for i in rows:
         text = (i.description or "").strip()
         if text:
-            lines.append(mark.get(i.status, "· ") + text)
+            prefix = "[需求] " if i.kind == "demand" else ""
+            lines.append(mark.get(i.status, "· ") + prefix + text)
     return "\n".join(lines)
 
 from lxml import etree

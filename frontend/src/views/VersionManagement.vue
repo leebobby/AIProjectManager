@@ -58,7 +58,7 @@
                   :sort-method="(a, b) => naturalCompare(a.version_no, b.version_no)" />
                 <el-table-column prop="title" label="标题" min-width="200" show-overflow-tooltip />
                 <el-table-column prop="planned_date" label="预计发布日期" width="150" sortable>
-                  <template #default="{ row: ir }">{{ formatDate(ir.planned_date) }}</template>
+                  <template #default="{ row: ir }">{{ fmtDate(ir.planned_date) }}</template>
                 </el-table-column>
                 <el-table-column label="合入需求" width="100" align="center">
                   <template #default="{ row: ir }">
@@ -84,7 +84,7 @@
         <el-table-column label="版本范围" width="230">
           <template #default="{ row }">
             <span v-if="row.range_start || row.range_end">
-              {{ formatDate(row.range_start) }} ~ {{ formatDate(row.range_end) }}
+              {{ fmtDate(row.range_start) }} ~ {{ fmtDate(row.range_end) }}
             </span>
             <span v-else style="color:#c0c4cc">—</span>
           </template>
@@ -92,7 +92,7 @@
         <el-table-column prop="actual_release_date" label="实际发布" width="120" sortable>
           <template #default="{ row }">
             <el-tag v-if="row.actual_release_date" type="success" size="small">
-              {{ formatDate(row.actual_release_date) }}
+              {{ fmtDate(row.actual_release_date) }}
             </el-tag>
             <span v-else style="color:#c0c4cc">待发布</span>
           </template>
@@ -205,17 +205,13 @@ import { onMounted, reactive, ref } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { Plus, Refresh } from '@element-plus/icons-vue'
 import { majorVersionApi, roadmapApi } from '../api'
+import { fmtDate, naturalCompare } from '../utils/format'
 import { auth } from '../store/auth'
 import VersionTimeline from '../components/VersionTimeline.vue'
 import DebugVersionPanel from '../components/DebugVersionPanel.vue'
 import VersionMergeDialog from '../components/VersionMergeDialog.vue'
 
 const isAdmin = auth.isAdmin
-
-// 自然排序：让 V2.2 < V2.10（数字段按数值比较，而非字符串）
-function naturalCompare(a, b) {
-  return String(a ?? '').localeCompare(String(b ?? ''), 'zh-Hans-CN', { numeric: true, sensitivity: 'base' })
-}
 
 const projects = ref([])
 const activeTab = ref('debug')   // 默认若无项目则停留在「客户面调试版本」
@@ -317,7 +313,7 @@ async function onSubmitMajor() {
     return
   }
   try {
-    const projectId = activeTab.value === 'global' ? null : Number(activeTab.value)
+    const projectId = Number(activeTab.value)
     if (editingMajor.value) {
       await majorVersionApi.update(editingMajor.value.id, majorForm)
       ElMessage.success('已更新')
@@ -399,12 +395,6 @@ async function onDeleteIter(row) {
   } catch (e) {
     ElMessage.error(e.response?.data?.detail || '删除失败')
   }
-}
-
-function formatDate(d) {
-  if (!d) return ''
-  const dt = new Date(d)
-  return `${dt.getFullYear()}-${String(dt.getMonth() + 1).padStart(2, '0')}-${String(dt.getDate()).padStart(2, '0')}`
 }
 
 onMounted(loadProjects)

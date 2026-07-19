@@ -758,7 +758,9 @@ async function loadMachineIssues() {
 }
 
 function gotoTracking(item) {
-  router.push(item?.id ? { path: '/customer-issues', query: { focus: item.id } } : '/customer-issues')
+  // 问题跟踪是客户面状态页的一个 tab，用查询串深链过去（focus=条目 id 时自动高亮）
+  const query = { tab: 'issues', ...(item?.id ? { focus: item.id } : {}) }
+  router.push({ path: '/customer-status', query })
 }
 
 async function loadSowRows(mid) {

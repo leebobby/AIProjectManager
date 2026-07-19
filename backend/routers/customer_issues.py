@@ -265,7 +265,7 @@ def _notify_owner(db: Session, item: models.CustomerIssue, machine,
     """成为责任人时通知本人（大颗粒：只在"指派"这一刻发，状态改动不发）。"""
     if not item.owner_user_id or item.owner_user_id == actor.id:
         return
-    label = "问题" if item.kind == "issue" else "关键事务"
+    label = {"issue": "问题", "demand": "需求"}.get(item.kind, "关键事务")
     where = f"{(machine.battlefield if machine else '') or ''} {(machine.machine_id if machine else '') or ''}".strip()
     dispatch(
         db, kind="assignment",
@@ -316,8 +316,9 @@ def export_xlsx(
         c.fill = head_fill
         c.alignment = Alignment(horizontal="center", vertical="center")
         ws.column_dimensions[c.column_letter].width = w
+    kind_labels = {"issue": "软件类问题", "task": "关键事务", "demand": "需求"}
     for d in data:
-        d["kind_label"] = "软件类问题" if d["kind"] == "issue" else "关键事务"
+        d["kind_label"] = kind_labels.get(d["kind"], d["kind"])
         ws.append([d.get(k, "") for k, _, _ in cols])
     ws.freeze_panes = "A2"
 

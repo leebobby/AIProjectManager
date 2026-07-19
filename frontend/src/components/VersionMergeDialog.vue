@@ -56,11 +56,6 @@
         </el-table>
         <el-empty v-if="!loading && !domains.length" description="该版本暂无关联领域需求" :image-size="80" />
       </el-tab-pane>
-
-      <!-- 问题单（待接入） -->
-      <el-tab-pane label="问题单" name="issue">
-        <el-empty description="问题单接入开发中，关联规则确定后补充" :image-size="90" />
-      </el-tab-pane>
     </el-tabs>
 
     <template #footer>

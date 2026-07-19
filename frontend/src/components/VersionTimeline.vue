@@ -107,6 +107,7 @@
 
 <script setup>
 import { computed, ref } from 'vue'
+import { fmtDate } from '../utils/format'
 
 const props = defineProps({
   majors: { type: Array, default: () => [] },
@@ -120,11 +121,6 @@ function ts(d) {
   if (!d) return null
   const t = new Date(d).getTime()
   return Number.isNaN(t) ? null : t
-}
-function dl(t) {
-  if (t == null) return ''
-  const d = new Date(t)
-  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
 }
 
 const layout = computed(() => {
@@ -214,13 +210,13 @@ const layout = computed(() => {
           if (x - halfW < belowR + 4) showLabel = false
           else belowR = x + halfW
         }
-        return { id: iv.id, version_no: iv.version_no, title: iv.title, x, dateLabel: dl(iv.t), above, showLabel }
+        return { id: iv.id, version_no: iv.version_no, title: iv.title, x, dateLabel: fmtDate(iv.t), above, showLabel }
       })
 
     const out = {
       id: r.m.id, version_no: r.m.version_no, title: r.m.title || '',
       color, y, startX, endX, isMain, nodes, labelX, labelW,
-      released: r.relT != null, releaseLabel: dl(r.relT), endLabel: dl(r.endT),
+      released: r.relT != null, releaseLabel: fmtDate(r.relT), endLabel: fmtDate(r.endT),
     }
     if (isMain) {
       out.preX = startX > padL + 1 ? padL : null

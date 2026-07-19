@@ -531,37 +531,6 @@ def _run_issue_api_script(project: str) -> List[Dict]:
     return [_normalize_issue_row(r) for r in data if isinstance(r, dict)]
 
 
-@router.get("/api-data")
-def get_api_data(project: str, _: models.User = Depends(get_current_user)):
-    """按项目（YLS3000 / YLS5000 / YLS8000）通过脚本调用外部 API 拉取问题单。
-
-    脚本契约：后端以 `python <issue_api_script_path> <project>` 调用，脚本把问题单
-    列表以 JSON 数组打印到 stdout（字段同「原始数据」表：version/issue_id/title/owner/
-    group/progress/severity/…）。失败时以 200 + error 字段返回，便于前端友好提示。
-    """
-    cfg = _load_config()
-    if not (cfg.get("issue_api_script_path") or "").strip():
-        return {"configured": False, "project": project}
-    try:
-        raw = _run_issue_api_script(project)
-    except HTTPException as exc:
-        return {
-            "configured": True, "project": project, "error": str(exc.detail),
-            "count": 0, "raw": [], "by_severity": {}, "by_group": {}, "by_customer": {},
-        }
-    return {
-        "configured": True,
-        "project": project,
-        "fetched_at": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
-        "count": len(raw),
-        "raw": raw,
-        "by_severity": _count_by(raw, "severity"),
-        "by_group": _count_by(raw, "group"),
-        "by_customer": _count_by(raw, "category"),
-        "error": None,
-    }
-
-
 # ─── 每日快照：库存"数字"（趋势）+ 文件存明细（钻取）──────────────────────────
 _BACKEND_DIR = pathlib.Path(__file__).resolve().parent.parent
 _SEV_ORDER = {"严重": 0, "一般": 1, "提示": 2}

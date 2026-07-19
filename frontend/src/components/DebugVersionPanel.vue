@@ -16,11 +16,11 @@
         </template>
       </el-table-column>
       <el-table-column label="计划发布" width="110">
-        <template #default="{ row }">{{ fmt(row.planned_release_date) || '—' }}</template>
+        <template #default="{ row }">{{ fmtDate(row.planned_release_date) || '—' }}</template>
       </el-table-column>
       <el-table-column label="发布时间" width="110">
         <template #default="{ row }">
-          <el-tag v-if="row.release_date" size="small" type="success">{{ fmt(row.release_date) }}</el-tag>
+          <el-tag v-if="row.release_date" size="small" type="success">{{ fmtDate(row.release_date) }}</el-tag>
           <span v-else class="muted">待发布</span>
         </template>
       </el-table-column>
@@ -184,6 +184,7 @@ import { computed, onMounted, reactive, ref } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { MagicStick, Plus, Refresh, UserFilled } from '@element-plus/icons-vue'
 import { debugVersionApi, debugDemandApi, customerApi } from '../api'
+import { fmtDate } from '../utils/format'
 
 const loading = ref(false)
 const saving = ref(false)
@@ -191,11 +192,6 @@ const versions = ref([])
 const demands = ref([])
 const customers = ref([])
 
-function fmt(d) {
-  if (!d) return ''
-  const dt = new Date(d)
-  return `${dt.getFullYear()}-${String(dt.getMonth() + 1).padStart(2, '0')}-${String(dt.getDate()).padStart(2, '0')}`
-}
 function custLabel(c) {
   return c.display_name || c.code
 }

@@ -43,6 +43,7 @@
         </label>
         <!-- 元信息：问题看紧急度/责任人，事务只看预计时间 -->
         <div class="cl-meta">
+          <span v-if="item.kind === 'demand'" class="cl-tag u-demand">需求</span>
           <span v-if="kind === 'issue' && item.urgency && item.urgency !== '一般'"
                 class="cl-tag" :class="item.urgency === '重要紧急' ? 'u-crit' : 'u-urg'">{{ item.urgency }}</span>
           <span v-if="item.status === '挂起'" class="cl-tag u-hold">挂起</span>
@@ -68,7 +69,7 @@
     <!-- 快速新增：只填一句话，其余字段走默认值，细节到跟踪表里补 -->
     <div v-if="adding" class="cl-add-row">
       <input ref="addInput" v-model="addText" class="cl-add-input"
-             :placeholder="kind === 'issue' ? '输入问题描述…' : '输入任务内容…'"
+             :placeholder="kind === 'issue' ? '输入内容…（「需求:」开头记为需求，其余记为问题）' : '输入任务内容…'"
              @keydown.enter.prevent="confirmAdd" @keydown.esc="cancelAdd" />
       <button class="cl-btn-ok" type="button" @click="confirmAdd">确认</button>
       <button class="cl-btn-no" type="button" @click="cancelAdd">取消</button>
@@ -146,11 +147,23 @@ function cancelAdd() {
 async function confirmAdd() {
   const text = addText.value.trim()
   if (!text) { cancelAdd(); return }
+  // 问题栏支持前缀分流：「需求:」开头记为需求，「问题:」开头或无前缀记为问题（前缀本身不入库）
+  let kind = props.kind
+  let description = text
+  if (props.kind === 'issue') {
+    if (/^需求[:：]/.test(text)) {
+      kind = 'demand'
+      description = text.replace(/^需求[:：]\s*/, '')
+    } else if (/^问题[:：]/.test(text)) {
+      description = text.replace(/^问题[:：]\s*/, '')
+    }
+    if (!description) { ElMessage.warning('前缀后面要有内容'); return }
+  }
   try {
     await customerIssueApi.create({
       machine_status_id: props.machineStatusId,
-      kind: props.kind,
-      description: text,
+      kind,
+      description,
     })
     cancelAdd()
     emit('refresh')
@@ -198,6 +211,7 @@ async function confirmAdd() {
 .u-crit { background: #fef0f0; color: #f56c6c; }
 .u-urg { background: #fdf6ec; color: #e6a23c; }
 .u-hold { background: #f4f4f5; color: #909399; }
+.u-demand { background: #ecf5ff; color: #409eff; }
 .cl-mini { font-size: 11px; color: #909399; }
 .cl-mini.ref { color: #409eff; }
 .cl-mini.is-overdue { color: #f56c6c; font-weight: 600; }

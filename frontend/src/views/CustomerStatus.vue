@@ -1,5 +1,8 @@
 <template>
   <div>
+    <!-- 机台总览与问题跟踪本就是一份数据的两个视角，收进同一页面的两个 tab -->
+    <el-tabs v-model="pageTab" class="cs-tabs">
+      <el-tab-pane label="机台总览" name="overview">
     <el-card shadow="never">
       <div class="toolbar">
         <el-button :type="editMode ? 'warning' : 'primary'" :icon="editMode ? Check : Edit" @click="editMode = !editMode">
@@ -13,7 +16,6 @@
           <el-button :type="tableMode==='detail'?'primary':''" size="small" @click="tableMode='detail'">详细</el-button>
         </el-button-group>
         <el-checkbox v-model="showCompleted" label="显示已完成" size="small" />
-        <el-button link type="primary" :icon="Tickets" @click="gotoTracking()">问题跟踪总表</el-button>
         <span class="tip">
           {{ editMode ? '编辑模式：可直接修改各字段，完成后点「完成」退出' : '只读模式：点「编辑」进入可修改各字段' }}
         </span>
@@ -117,6 +119,13 @@
         </el-table-column>
       </el-table>
     </el-card>
+      </el-tab-pane>
+
+      <el-tab-pane label="问题跟踪" name="issues">
+        <!-- v-if：每次切进来都重新拉数据，与总览的增删保持同步 -->
+        <CustomerIssueTracking v-if="pageTab === 'issues'" :focus="trackingFocus" />
+      </el-tab-pane>
+    </el-tabs>
 
     <!-- ── 新增 / 编辑弹窗 ──────────────────────────── -->
     <el-dialog v-model="dialogVisible" :title="editing ? '编辑' : '新增'" width="640px">
@@ -183,16 +192,23 @@
 
 <script setup>
 import { computed, nextTick, onMounted, reactive, ref } from 'vue'
-import { useRouter } from 'vue-router'
+import { useRoute, useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
-import { Check, Download, Edit, Plus, Refresh, Tickets } from '@element-plus/icons-vue'
+import { Check, Download, Edit, Plus, Refresh } from '@element-plus/icons-vue'
 import { configApi, customerApi, customerIssueApi, customerStatusApi, downloadBlob, majorVersionApi } from '../api'
 import { auth } from '../store/auth'
+import { naturalCompare } from '../utils/format'
 import CustomerIssueCell from '../components/CustomerIssueCell.vue'
+import CustomerIssueTracking from './CustomerIssueTracking.vue'
 
 const router = useRouter()
+const route = useRoute()
 
 const isAdmin = auth.isAdmin
+
+// 页面顶层 tab：overview=机台总览 / issues=问题跟踪；支持 ?tab=issues&focus=<id> 深链
+const pageTab = ref(route.query.tab === 'issues' ? 'issues' : 'overview')
+const trackingFocus = ref(Number(route.query.focus) || null)
 
 const list    = ref([])
 const stages  = ref([])
@@ -213,11 +229,6 @@ const ADMIN_FIELDS = ['current_stage', 'field_version', 'attention_level', 'issu
 const USER_FIELDS  = ['customer_status']
 
 const versionOptions = computed(() => versions.value)
-
-// 自然排序：让 M2 < M10、V2.2 < V2.10（数字段按数值比较，而非字符串）
-function naturalCompare(a, b) {
-  return String(a ?? '').localeCompare(String(b ?? ''), 'zh-Hans-CN', { numeric: true, sensitivity: 'base' })
-}
 
 function defaultForm() {
   return {
@@ -262,7 +273,8 @@ async function load() {
 
 // 点条目 → 跳到问题跟踪总表并聚焦该条；不传则只是打开总表
 function gotoTracking(item) {
-  router.push(item?.id ? { path: '/customer-issues', query: { focus: item.id } } : '/customer-issues')
+  trackingFocus.value = item?.id || null
+  pageTab.value = 'issues'
 }
 
 async function loadConfig() {

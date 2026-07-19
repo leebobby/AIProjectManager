@@ -27,6 +27,7 @@
         </el-select>
         <el-select v-model="filters.kind" placeholder="类型" clearable size="small" style="width:130px" @change="reload">
           <el-option label="软件类问题" value="issue" />
+          <el-option label="需求" value="demand" />
           <el-option label="关键事务" value="task" />
         </el-select>
         <el-select v-model="filters.urgency" placeholder="紧急程度" clearable size="small" style="width:130px" @change="reload">
@@ -56,8 +57,8 @@
         <el-table-column prop="machine_id" label="机台" width="100" />
         <el-table-column label="类型" width="100" align="center">
           <template #default="{ row }">
-            <el-tag size="small" :type="row.kind === 'issue' ? 'danger' : 'primary'" effect="plain">
-              {{ row.kind === 'issue' ? '问题' : '事务' }}
+            <el-tag size="small" :type="KIND_TAG[row.kind]?.type || 'info'" effect="plain">
+              {{ KIND_TAG[row.kind]?.label || row.kind }}
             </el-tag>
           </template>
         </el-table-column>
@@ -70,7 +71,7 @@
 
         <el-table-column label="关联问题单" width="150">
           <template #default="{ row }">
-            <template v-if="row.kind === 'issue'">
+            <template v-if="row.kind !== 'task'">
               <EditableCell :value="row.issue_ref" type="text" placeholder="—"
                             @save="(v) => save(row, { issue_ref: v })" />
             </template>
@@ -80,7 +81,7 @@
 
         <el-table-column label="紧急程度" width="120" align="center">
           <template #default="{ row }">
-            <el-select v-if="row.kind === 'issue'" :model-value="row.urgency" size="small"
+            <el-select v-if="row.kind !== 'task'" :model-value="row.urgency" size="small"
                        @change="(v) => save(row, { urgency: v })">
               <el-option v-for="u in URGENCIES" :key="u" :label="u" :value="u" />
             </el-select>
@@ -153,12 +154,22 @@ import { Delete, Download, Refresh, Search } from '@element-plus/icons-vue'
 import { customerApi, customerIssueApi, downloadBlob, userApi } from '../api'
 import { auth } from '../store/auth'
 
+// 既可独立路由使用（?focus= 查询串），也可作为「客户面状态」页的内嵌 tab（focus prop）
+const props = defineProps({
+  focus: { type: Number, default: null },
+})
+
 const route = useRoute()
 const isAdmin = auth.isAdmin
 
 // 与后端 enums.py 保持一致
 const URGENCIES = ['重要紧急', '紧急', '一般']
 const STATUSES = ['OPEN', 'CLOSED', '挂起']
+const KIND_TAG = {
+  issue: { label: '问题', type: 'danger' },
+  demand: { label: '需求', type: 'primary' },   // 与总览单元格里的蓝色「需求」角标一致
+  task: { label: '事务', type: 'info' },
+}
 
 // ── 内联组件：点击即改的文本单元格 ────────────────────
 const EditableCell = defineComponent({
@@ -198,8 +209,8 @@ const filters = reactive({
   owner_user_id: null, q: '', overdue_only: false,
 })
 
-// 从总览点条目跳过来时高亮那一条
-const focusId = computed(() => Number(route.query.focus) || null)
+// 从总览点条目跳过来时高亮那一条（prop 优先，路由查询串兜底）
+const focusId = computed(() => props.focus || Number(route.query.focus) || null)
 
 function rowClass({ row }) {
   if (row.id === focusId.value) return 'row-focus'
@@ -289,8 +300,12 @@ async function onExport() {
   }
 }
 
-// 带 focus 参数进来时，把已闭环也放开，否则点进来可能一片空白
-watch(focusId, (v) => { if (v) includeClosed.value = true }, { immediate: true })
+// 带 focus 进来时，把已闭环也放开，否则点进来可能一片空白；已挂载时切换聚焦要重拉
+watch(focusId, (v) => {
+  if (!v) return
+  includeClosed.value = true
+  if (rows.value.length) reload()
+}, { immediate: true })
 
 onMounted(async () => {
   const [u, c] = await Promise.allSettled([userApi.options({ only_can_login: true }), customerApi.list()])
@@ -323,9 +338,9 @@ onMounted(async () => {
 .filter-right { display: flex; align-items: center; gap: 8px; margin-left: auto; }
 .muted { color: #909399; font-size: 13px; }
 
-/* 行着色：已闭环整行变灰 + 删除线，挂起偏黄，逾期偏红 */
-:deep(.row-done) { background: #fafafa !important; color: #a8abb2; }
-:deep(.row-done .cell-text) { text-decoration: line-through; color: #a8abb2; }
+/* 行着色：已闭环浅绿（与专项管理 closed-row 同款，盖过斑马纹），挂起偏黄，逾期偏红 */
+:deep(.row-done td.el-table__cell) { background: #f0f9eb !important; }
+:deep(.row-done .cell) { color: #6b7d6b; }
 :deep(.row-hold) { background: #fdf9f0 !important; }
 :deep(.row-overdue) { background: #fef4f4 !important; }
 :deep(.row-focus) { background: #ecf5ff !important; box-shadow: inset 3px 0 0 #409eff; }
@@ -339,6 +354,6 @@ onMounted(async () => {
 .legend .dot { display: inline-block; width: 10px; height: 10px; border-radius: 2px; margin-right: 5px; vertical-align: -1px; }
 .d-open { background: #fff; border: 1px solid #dcdfe6; }
 .d-hold { background: #fdf9f0; border: 1px solid #f3d19e; }
-.d-done { background: #fafafa; border: 1px solid #dcdfe6; }
+.d-done { background: #f0f9eb; border: 1px solid #b3d8a4; }
 .d-over { background: #fef4f4; border: 1px solid #fab6b6; }
 </style>

@@ -109,7 +109,7 @@ def _scan_customer_issues(db, today: date) -> int:
         d = _parse_date(r.due_date or "")
         if d is None:
             continue
-        label = "问题" if r.kind == "issue" else "关键事务"
+        label = {"issue": "问题", "demand": "需求"}.get(r.kind, "关键事务")
         m = r.machine_status
         where = f"{(m.battlefield if m else '') or ''} {(m.machine_id if m else '') or ''}".strip()
         preview = (r.description or "").strip().splitlines()[0][:60] if r.description else ""

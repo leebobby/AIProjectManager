@@ -1,8 +1,8 @@
-"""年度迭代 CRUD + 单迭代 PPT 导出。
+"""年度迭代（读 + 元数据编辑）+ 单迭代 PPT 导出。
 
 - 列表按年份过滤；缺失的月份会被自动补齐为占位行（status=planning, name=空）。
-- 元数据编辑（name/owner/status/goal）：仅 admin。
-- 新增 / 删除：仅 admin。
+- 元数据编辑（name/owner/status/goal）与 PPT 导出：仅 admin。
+- 没有新增/删除端点：迭代行随「首次浏览某年份」自动物化 12 个月，不支持手工增删。
 """
 from datetime import datetime
 from typing import List, Optional

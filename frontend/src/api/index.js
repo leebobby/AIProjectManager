@@ -177,7 +177,6 @@ export const issueApi = {
   scriptStatus: ()     => http.get('/issues/run-script/status'),
   runScript:    ()     => http.post('/issues/run-script'),
   exportPptx:   (date) => http.get('/issues/export.pptx', { responseType: 'blob', ...(date ? { params: { date } } : {}) }),
-  apiData:      (project) => http.get('/issues/api-data', { params: { project } }),
   // 每日快照：库存数字（趋势）+ 文件存明细（某次统计）
   snapshotList:    (project)            => http.get('/issues/snapshots', { params: { project } }),
   snapshotDetail:  (project, date)      => http.get('/issues/snapshot-detail', { params: date ? { project, date } : { project } }),
@@ -284,10 +283,6 @@ export const customerCustomReqApi = {
 }
 
 // 遗留版本表：只读，仅项目简介页消费旧数据；写接口已在后端下线
-export const versionApi = {
-  list: () => http.get('/versions'),
-}
-
 export const majorVersionApi = {
   list: (project_id) => http.get('/major-versions', { params: project_id != null ? { project_id } : {} }),
   create: (data) => http.post('/major-versions', data),

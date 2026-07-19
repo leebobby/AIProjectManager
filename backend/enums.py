@@ -26,9 +26,10 @@ TASK_STATUSES = ("open", "closed")
 # ── 年度迭代状态 ─────────────────────────────────────────────────────────────
 ITERATION_STATUSES = ("planning", "in_progress", "done")
 
-# ── 客户面问题 / 关键事务（customer_issues）──────────────────────────────────
-# kind：一张表装两类，issue 用全套字段，task 只用 描述 + 预计时间 + 状态
-CUSTOMER_ISSUE_KINDS = ("issue", "task")
+# ── 客户面问题 / 关键事务 / 需求（customer_issues）───────────────────────────
+# kind：一张表装三类。issue/demand 用全套字段（demand＝客户需求，录入时以
+# 「需求:」前缀区分，与问题同栏展示）；task 只用 描述 + 预计时间 + 状态。
+CUSTOMER_ISSUE_KINDS = ("issue", "task", "demand")
 CUSTOMER_ISSUE_KIND_DEFAULT = "issue"
 # 状态词表与 domain_risks 对齐，避免同一概念两套口径
 CUSTOMER_ISSUE_STATUSES = ("OPEN", "CLOSED", "挂起")

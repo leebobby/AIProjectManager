@@ -10,7 +10,7 @@ from migrate import ensure_schema
 from routers import annual_iterations, iteration_product_requirements, iteration_requirements
 from routers import auth as auth_router
 from routers import config as config_router
-from routers import business_trips, customer_custom_req, customer_extra, customer_issues, customer_status, customers, debug_versions, domains, handbook, issues, iterations, licenses, major_versions, mapping, metrics, notifications, op_logs, project_formation, resource_groups, roadmap, sow, specials, stakeholders, system as system_router, users, versions
+from routers import business_trips, customer_custom_req, customer_extra, customer_issues, customer_status, customers, debug_versions, domains, handbook, issues, licenses, major_versions, mapping, metrics, notifications, op_logs, project_formation, resource_groups, roadmap, sow, specials, stakeholders, system as system_router, users
 
 # 先做轻量迁移（给老库加列），再 create_all 补齐缺失的表。
 ensure_schema()
@@ -41,8 +41,6 @@ app.include_router(sow.router, dependencies=authed)
 app.include_router(licenses.router, dependencies=authed)
 app.include_router(customer_extra.router, dependencies=authed)
 app.include_router(customer_custom_req.router, dependencies=authed)
-app.include_router(versions.router, dependencies=authed)
-app.include_router(iterations.router, dependencies=authed)
 app.include_router(annual_iterations.router, dependencies=authed)
 app.include_router(iteration_requirements.router, dependencies=authed)
 app.include_router(iteration_product_requirements.router, dependencies=authed)
@@ -110,22 +108,8 @@ def seed_initial_data():
                 ),
             ])
 
-        if db.query(models.Version).count() == 0:
-            db.add(models.Version(
-                version_no="v1.0.0",
-                title="首发版本",
-                description="项目管理系统首个可用版本",
-                release_url="https://example.com/release/v1.0.0",
-                released_at=datetime(2026, 5, 1),
-            ))
-
-        if db.query(models.Iteration).count() == 0:
-            db.add(models.Iteration(
-                name="Sprint-1 基础框架",
-                goal="搭建前后端项目骨架,完成 4 个页面 + 用户管理",
-                status="in_progress",
-                owner="admin",
-            ))
+        # 注：legacy `versions` / `iterations` 两表已停止 seed 与路由（2026-07 清理），
+        # 模型保留只为不动老库的存量表；新体系走 major_versions / annual_iterations。
 
         # 当前年度 12 个迭代占位 + 1 个示例需求
         current_year = datetime.now().year
