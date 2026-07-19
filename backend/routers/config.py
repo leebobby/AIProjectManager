@@ -46,6 +46,13 @@ def save_config(
         log_op(db, action="修改", target="配置",
                detail=f"keys={','.join(payload.keys())}",
                user=current_admin, request=request)
+        # 改了定时采集配置就热更新调度，省得改完还要重启后端才生效
+        if {"issue_snapshot_time", "issue_snapshot_enabled"} & set(payload.keys()):
+            try:
+                import scheduler
+                scheduler.apply_issue_snapshot_schedule()
+            except Exception:  # 调度未启动 / 装载失败不该让保存失败
+                pass
         return cfg
     except Exception as exc:
         raise HTTPException(status_code=500, detail=f"保存配置失败: {exc}")

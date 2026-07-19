@@ -305,6 +305,14 @@ def main():
     positional = [a for a in args if not a.startswith("--")]
     project = positional[0] if positional else ""
 
+    if not USE_SAMPLE and not project:
+        sys.stderr.write(
+            "用法: python fetch_issues_api.py <项目名> [--peek]\n"
+            "  例如: python fetch_issues_api.py YLS3000\n"
+            f"  可用项目: {', '.join(PROJECT_PARAMS) or '(见脚本顶部 PROJECT_PARAMS)'}\n"
+        )
+        sys.exit(2)
+
     if peek:
         _peek(project)
         return

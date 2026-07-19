@@ -973,3 +973,23 @@ class IssueSnapshotStat(Base):
     dimension = Column(String(16), nullable=False, index=True, comment="group / customer / severity")
     dim_key = Column(String(128), nullable=False, default="", comment="维度取值，如小组名/客户面名/严重程度")
     count = Column(Integer, nullable=False, default=0)
+
+
+class IssueCollectLog(Base):
+    """问题单采集执行日志：每次采集（定时 / 手动）一条，成功失败都记。
+
+    快照表只留"最后成功的结果"，失败时它什么都不写，排查无从下手。这张表专门
+    记录执行过程：耗时、退出信息、失败原因，用于定位"脚本报错 / 采集超时"。
+    新表由 create_all 自动建。
+    """
+    __tablename__ = "issue_collect_logs"
+
+    id = Column(Integer, primary_key=True, index=True)
+    project = Column(String(64), nullable=False, index=True, comment="项目/版本，如 YLS3000")
+    source = Column(String(16), default="auto", comment="来源：auto（定时）/ manual（手动）")
+    ok = Column(Boolean, default=False, index=True, comment="是否采集成功")
+    total = Column(Integer, default=0, comment="成功时采集到的问题单条数")
+    duration_ms = Column(Integer, default=0, comment="耗时（毫秒）")
+    error = Column(Text, default="", comment="失败原因（含脚本 stderr 尾部）")
+    started_at = Column(DateTime, default=datetime.utcnow, index=True)
+    finished_at = Column(DateTime)

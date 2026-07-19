@@ -1,7 +1,12 @@
 <template>
   <div class="issue-page">
     <el-tabs v-model="topTab" class="issue-top-tabs">
-      <el-tab-pane label="本地报表" name="local">
+      <!-- 各项目：通过 API 拉取（懒加载，切到该 tab 才请求；顺序由管理员配置） -->
+      <el-tab-pane v-for="proj in apiProjects" :key="proj" :label="proj" :name="proj">
+        <IssueApiPanel v-if="topTab === proj" :project="proj" />
+      </el-tab-pane>
+
+      <el-tab-pane label="历史数据" name="local">
 
     <!-- ── 模式切换栏 ────────────────────────────────── -->
     <div class="mode-bar">
@@ -242,18 +247,46 @@
     </el-drawer>
       </el-tab-pane>
 
-      <!-- 各项目：通过 API 拉取（懒加载，切到该 tab 才请求；顺序由管理员配置） -->
-      <el-tab-pane v-for="proj in apiProjects" :key="proj" :label="proj" :name="proj">
-        <IssueApiPanel v-if="topTab === proj" :project="proj" />
-      </el-tab-pane>
-
       <!-- ── 管理员配置（数据源 + 项目 Tab） ──────────────── -->
       <el-tab-pane v-if="isAdmin" name="config">
         <template #label><el-icon><Setting /></el-icon> 配置</template>
         <div class="config-pane">
           <el-alert type="info" :closable="false" show-icon
             title="问题单管理配置（仅管理员可见）"
-            description="在此维护数据源路径与项目 Tab；各项修改后点对应「保存」。API 各项目每天 07:30 自动采集快照。" />
+            description="在此维护数据源路径、定时采集与项目 Tab；各项修改后点对应「保存」。" />
+
+          <el-card shadow="never" class="cfg-card">
+            <template #header>
+              <span class="cfg-title">定时采集</span>
+              <span class="cfg-sub">各项目 Tab 每天自动跑一次采集脚本；保存后立即生效，无需重启后端</span>
+            </template>
+            <el-form label-width="130px" label-position="right">
+              <el-form-item label="启用">
+                <el-switch v-model="cfg.snapshotEnabled" active-text="每天自动采集" inactive-text="仅手动采集" />
+              </el-form-item>
+              <el-form-item label="执行时间">
+                <div class="cfg-row">
+                  <el-time-picker
+                    v-model="snapshotTime"
+                    format="HH:mm"
+                    placeholder="选择时间"
+                    style="width: 160px"
+                    :disabled="!cfg.snapshotEnabled"
+                  />
+                  <el-button type="primary" @click="saveSchedule">保存</el-button>
+                </div>
+                <div class="cfg-hint">建议放在上班前（如 07:30）；采集耗时取决于问题单数量。</div>
+              </el-form-item>
+              <el-form-item label="脚本超时">
+                <div class="cfg-row">
+                  <el-input-number v-model="cfg.scriptTimeout" :min="30" :max="7200" :step="30" style="width: 160px" />
+                  <span class="cfg-hint" style="margin:0">秒</span>
+                  <el-button type="primary" @click="saveTimeout">保存</el-button>
+                </div>
+                <div class="cfg-hint">单个项目采集脚本的最长执行时间，超时判为失败。默认 600 秒。</div>
+              </el-form-item>
+            </el-form>
+          </el-card>
 
           <el-card shadow="never" class="cfg-card">
             <template #header><span class="cfg-title">数据源路径</span></template>
@@ -379,7 +412,8 @@ import IssueApiPanel from '../components/IssueApiPanel.vue'
 
 const isAdmin = auth.isAdmin
 
-// 顶层 tab：local=本地报表（默认），其余＝各项目（走 API）
+// 顶层 tab：各项目（走 API）在前，local=历史数据（旧的本地报表）在后
+// 默认停在第一个项目上；配置加载完才知道项目列表，见 onMounted
 const topTab = ref('local')
 // 项目 Tab 列表 + 顺序由管理员配置（config.issue_api_projects）；无配置时回退默认
 const DEFAULT_PROJECTS = ['YLS3000', 'YLS5000', 'YLS8000']
@@ -448,6 +482,21 @@ const cfg = ref({
   reportPath: '', scriptPath: '', apiScriptPath: '', snapshotDir: '',
   rawExcelDir: '', analysisExcelDir: '',
   apiProjects: [], statDepartments: '', issueGroups: [],
+  snapshotEnabled: true, snapshotTime: '07:30', scriptTimeout: 600,
+})
+
+// el-time-picker 要 Date 对象，config 里存 "HH:mm" 字符串，这里做两向转换
+const snapshotTime = computed({
+  get() {
+    const [h, m] = (cfg.value.snapshotTime || '07:30').split(':')
+    const d = new Date()
+    d.setHours(Number(h) || 0, Number(m) || 0, 0, 0)
+    return d
+  },
+  set(d) {
+    if (!d) return
+    cfg.value.snapshotTime = `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`
+  },
 })
 async function loadCfg() {
   try {
@@ -461,6 +510,9 @@ async function loadCfg() {
     cfg.value.apiProjects = Array.isArray(data.issue_api_projects) && data.issue_api_projects.length
       ? data.issue_api_projects.slice()
       : DEFAULT_PROJECTS.slice()
+    cfg.value.snapshotEnabled = data.issue_snapshot_enabled !== false
+    cfg.value.snapshotTime = /^\d{1,2}:\d{2}$/.test(data.issue_snapshot_time || '') ? data.issue_snapshot_time : '07:30'
+    cfg.value.scriptTimeout = Number(data.issue_script_timeout) > 0 ? Number(data.issue_script_timeout) : 600
     cfg.value.statDepartments = (Array.isArray(data.issue_stat_departments) ? data.issue_stat_departments : []).join('\n')
     cfg.value.issueGroups = Array.isArray(data.issue_groups)
       ? data.issue_groups.map(g => ({
@@ -478,6 +530,29 @@ async function saveCfg(key) {
   }
   try {
     await configApi.save({ [map[key]]: cfg.value[key] })
+    ElMessage.success('已保存')
+  } catch (e) {
+    ElMessage.error(e.response?.data?.detail || '保存失败')
+  }
+}
+
+// ── 定时采集配置（管理员）────────────────────────────
+async function saveSchedule() {
+  try {
+    await configApi.save({
+      issue_snapshot_enabled: cfg.value.snapshotEnabled,
+      issue_snapshot_time: cfg.value.snapshotTime,
+    })
+    ElMessage.success(cfg.value.snapshotEnabled
+      ? `已保存：每天 ${cfg.value.snapshotTime} 自动采集`
+      : '已保存：已停用每日自动采集')
+  } catch (e) {
+    ElMessage.error(e.response?.data?.detail || '保存失败')
+  }
+}
+async function saveTimeout() {
+  try {
+    await configApi.save({ issue_script_timeout: Number(cfg.value.scriptTimeout) || 600 })
     ElMessage.success('已保存')
   } catch (e) {
     ElMessage.error(e.response?.data?.detail || '保存失败')
@@ -871,6 +946,8 @@ function onResize() { Object.values(instances).forEach(c => c.resize()) }
 // ── 生命周期 ─────────────────────────────────────────
 onMounted(async () => {
   await loadCfg()
+  // 默认落在第一个项目 tab（问题单日常看的是这个），没有项目才回退历史数据
+  if (cfg.value.apiProjects.length) topTab.value = cfg.value.apiProjects[0]
   await loadDates()   // 先拿到日期列表，selectedDate 会自动设为最新
   await loadToday()
   window.addEventListener('resize', onResize)

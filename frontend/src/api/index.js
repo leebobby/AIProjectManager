@@ -182,7 +182,10 @@ export const issueApi = {
   snapshotList:    (project)            => http.get('/issues/snapshots', { params: { project } }),
   snapshotDetail:  (project, date)      => http.get('/issues/snapshot-detail', { params: date ? { project, date } : { project } }),
   snapshotTrend:   (project, dimension) => http.get('/issues/snapshot-trend', { params: { project, dimension } }),
+  // 采集是长任务（几分钟），后端起线程立即返回，前端轮询 collectStatus 拿结果
   snapshotCollect: (project)            => http.post('/issues/snapshot-collect', null, { params: project ? { project } : {} }),
+  collectStatus:   ()                   => http.get('/issues/collect-status'),
+  collectLogs:     (project, limit = 50) => http.get('/issues/collect-logs', { params: project ? { project, limit } : { limit } }),
   snapshotExport:  (project, date)      => http.get('/issues/snapshot-export', { responseType: 'blob', params: date ? { project, date } : { project } }),
 }
 

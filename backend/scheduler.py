@@ -3,6 +3,9 @@
 当前任务：
 - daily_ddl_scan：每天 08:00 扫描 special_tasks / special_risks，
   对未关闭、planned_close_date 落在未来 3 天内/已逾期的，给 owner_user_id 发通知。
+- daily_issue_snapshot：每天定时采集各项目问题单快照。执行时刻由
+  config.issue_snapshot_time（HH:MM，默认 07:30）决定，可在问题单管理「配置」中改；
+  改完由 config 路由调 apply_issue_snapshot_schedule() 热更新，不用重启。
 
 设计原则：
 - 任何异常吞掉，不能阻塞 FastAPI
@@ -108,25 +111,20 @@ def daily_ddl_scan() -> None:
 
 
 def daily_issue_snapshot() -> None:
-    """每天 07:30 采集各项目问题单快照：维度数字入库、明细落文件。
+    """每天定时采集各项目问题单快照：维度数字入库、明细落文件。
 
     未配置 API 脚本或项目列表则跳过；单项目失败不影响其它项目。
+    每次执行（成败）都会在 issue_collect_logs 留一条日志，供页面「采集日志」查看。
     """
     from routers.config import _load as _load_config  # 延迟导入避免循环依赖
     cfg = _load_config()
     projects = cfg.get("issue_api_projects") or []
     if not (cfg.get("issue_api_script_path") or "").strip() or not projects:
         return
-    from routers.issues import _take_snapshot  # 延迟导入
+    from routers.issues import collect_with_log  # 延迟导入
     db = SessionLocal()
     try:
-        ok = 0
-        for p in projects:
-            try:
-                _take_snapshot(db, p, source="api")
-                ok += 1
-            except Exception as e:  # noqa: BLE001 — 单项目失败继续
-                logger.warning("issue snapshot %s 失败: %s", p, e)
+        ok = sum(1 for p in projects if collect_with_log(db, p, source="auto")["ok"])
         logger.info("daily_issue_snapshot: %s/%s 个项目已采集", ok, len(projects))
     except Exception as e:
         logger.exception("daily_issue_snapshot 失败: %s", e)
@@ -134,7 +132,48 @@ def daily_issue_snapshot() -> None:
         db.close()
 
 
+# ─── 采集时刻可配置 ──────────────────────────────────────────────────────────
+DEFAULT_SNAPSHOT_TIME = "07:30"
+_TIME_RE = re.compile(r"^([01]?\d|2[0-3]):([0-5]\d)$")
+
+
+def _snapshot_schedule() -> tuple[bool, int, int]:
+    """读取 config：(是否启用, 时, 分)。解析失败回退默认时刻。"""
+    try:
+        from routers.config import _load as _load_config
+        cfg = _load_config()
+    except Exception:
+        cfg = {}
+    enabled = cfg.get("issue_snapshot_enabled")
+    enabled = True if enabled is None else bool(enabled)
+    m = _TIME_RE.match(str(cfg.get("issue_snapshot_time") or "").strip())
+    if not m:
+        m = _TIME_RE.match(DEFAULT_SNAPSHOT_TIME)
+    return enabled, int(m.group(1)), int(m.group(2))
+
+
 _scheduler: Optional[BackgroundScheduler] = None
+
+
+def apply_issue_snapshot_schedule() -> str:
+    """按当前 config 重建每日采集任务。改完配置立即调用，无需重启后端。
+
+    返回一句人话描述，方便调用方回给前端。
+    """
+    if _scheduler is None:
+        return "调度器未启动"
+    enabled, hour, minute = _snapshot_schedule()
+    if not enabled:
+        try:
+            _scheduler.remove_job("daily_issue_snapshot")
+        except Exception:
+            pass
+        logger.info("daily_issue_snapshot 已停用")
+        return "每日自动采集已停用"
+    _scheduler.add_job(daily_issue_snapshot, "cron", hour=hour, minute=minute,
+                       id="daily_issue_snapshot", replace_existing=True)
+    logger.info("daily_issue_snapshot 已排期 @%02d:%02d", hour, minute)
+    return f"每日自动采集时间已设为 {hour:02d}:{minute:02d}"
 
 
 def start() -> None:
@@ -146,9 +185,8 @@ def start() -> None:
     # 每天早上 8:00：临期/逾期扫描
     sched.add_job(daily_ddl_scan, "cron", hour=8, minute=0, id="daily_ddl_scan",
                   replace_existing=True)
-    # 每天 7:30：问题单快照采集（数字入库 + 明细落文件）
-    sched.add_job(daily_issue_snapshot, "cron", hour=7, minute=30, id="daily_issue_snapshot",
-                  replace_existing=True)
     sched.start()
     _scheduler = sched
-    logger.info("APScheduler started; daily_ddl_scan@08:00, daily_issue_snapshot@07:30")
+    # 问题单快照采集：时刻来自 config，可在页面「配置」中改
+    apply_issue_snapshot_schedule()
+    logger.info("APScheduler started; daily_ddl_scan@08:00")

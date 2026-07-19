@@ -20,15 +20,18 @@
       <span class="muted" style="margin-left: auto">共 {{ snapshots.length }} 个历史快照</span>
     </div>
 
-    <el-empty v-if="!loading && !snapshots.length" description="暂无快照数据">
-      <span class="muted">
-        每天 07:30 自动采集{{ isAdmin ? '，也可点上方「立即采集」手动触发' : '' }}；采集后即可在此查看当天统计与趋势。
-      </span>
-    </el-empty>
-
-    <el-tabs v-else v-model="topTab" class="snap-tabs" @tab-change="onTopTabChange">
+    <!-- 采集失败时快照会是空的，而「采集日志」正是这时最该看的，所以 tabs 始终渲染 -->
+    <el-tabs v-model="topTab" class="snap-tabs" @tab-change="onTopTabChange">
       <!-- Tab 1：某一次统计到的数据 -->
       <el-tab-pane label="统计数据" name="snapshot">
+        <el-empty v-if="!loading && !snapshots.length" description="暂无快照数据">
+          <span class="muted">
+            每天定时自动采集{{ isAdmin ? '（时刻在「配置」中设置），也可点上方「立即采集」手动触发' : '' }}；
+            若长期没有数据，请到「采集日志」查看失败原因。
+          </span>
+        </el-empty>
+
+        <template v-else>
         <div class="snap-bar">
           <span class="muted">统计日期：</span>
           <el-select v-model="selDate" size="small" style="width: 190px" @change="loadDetail">
@@ -110,6 +113,7 @@
           </el-card>
         </template>
         <el-empty v-else description="该日期无数据" />
+        </template>
       </el-tab-pane>
 
       <!-- Tab 2：趋势（每日刷新，只读库里数字）-->
@@ -127,6 +131,34 @@
           暂无趋势数据（至少采集 1 天后展示；多天才能看出走势）
         </div>
         <div v-else ref="trendEl" class="chart-lg" />
+      </el-tab-pane>
+
+      <!-- Tab 3：采集日志（定时 + 手动的每次执行，成败都留痕）-->
+      <el-tab-pane label="采集日志" name="logs">
+        <div class="trend-bar">
+          <el-button size="small" :icon="Refresh" :loading="logsLoading" @click="loadLogs">刷新</el-button>
+          <span class="muted">记录每次采集的耗时与失败原因，最近 50 条</span>
+        </div>
+        <el-table v-loading="logsLoading" :data="logs" border stripe size="small" max-height="520">
+          <el-table-column prop="started_at" label="开始时间" width="160" />
+          <el-table-column label="结果" width="90" align="center">
+            <template #default="{ row }">
+              <el-tag :type="row.ok ? 'success' : 'danger'" size="small">{{ row.ok ? '成功' : '失败' }}</el-tag>
+            </template>
+          </el-table-column>
+          <el-table-column label="触发" width="90" align="center">
+            <template #default="{ row }">{{ row.source === 'manual' ? '手动' : '定时' }}</template>
+          </el-table-column>
+          <el-table-column prop="total" label="条数" width="80" align="center" />
+          <el-table-column label="耗时" width="90" align="center">
+            <template #default="{ row }">{{ (row.duration_ms / 1000).toFixed(1) }}s</template>
+          </el-table-column>
+          <el-table-column prop="error" label="失败原因" min-width="280" show-overflow-tooltip>
+            <template #default="{ row }">
+              <span :class="row.ok ? 'muted' : 'err-text'">{{ row.error || '—' }}</span>
+            </template>
+          </el-table-column>
+        </el-table>
       </el-tab-pane>
     </el-tabs>
 
@@ -331,6 +363,7 @@ function renderActive() {
 }
 function onTopTabChange() {
   if (topTab.value === 'trend' && !trend.value) loadTrend()
+  else if (topTab.value === 'logs') loadLogs()
   else renderActive()
 }
 function onSubTabChange() { renderActive() }
@@ -368,24 +401,64 @@ function onCellClick(rowDim, label, col, v) {
 }
 
 // ── 手动采集（仅管理员；调后端定时同款采集逻辑，采完刷新）──
+// 采集脚本要跑几分钟，而 axios 全局超时只有 10s。以前同步等结果必然先弹「采集失败」，
+// 但后台其实跑完了 —— 这就是"报错后过会儿刷新数据又出来了"的原因。
+// 现在后端起线程立即返回，这里轮询 collect-status 拿真实结果。
+let _pollTimer = null
+function stopPoll() {
+  if (_pollTimer) { clearInterval(_pollTimer); _pollTimer = null }
+}
+
+async function finishCollect(results) {
+  collecting.value = false
+  const r = (results || []).find((x) => x.project === props.project) || (results || [])[0]
+  if (r && r.ok) {
+    ElMessage.success(`采集完成：${r.total} 条（${r.date}）`)
+    trend.value = null       // 让趋势下次进入时按最新数据重算
+    selDate.value = ''       // 强制选中最新一天
+    await loadSnapshots()
+    if (topTab.value === 'trend') await loadTrend()
+  } else {
+    ElMessage.error(`采集失败：${(r && r.error) || '未知错误'}，详情见「采集日志」`)
+  }
+  if (topTab.value === 'logs') loadLogs()
+}
+
+async function pollCollect() {
+  try {
+    const { data } = await issueApi.collectStatus()
+    if (!data.running) {
+      stopPoll()
+      await finishCollect(data.results)
+    }
+  } catch { /* 单次轮询失败继续下一轮 */ }
+}
+
 async function collectNow() {
   collecting.value = true
   try {
-    const { data } = await issueApi.snapshotCollect(props.project)
-    const r = (data.results || [])[0]
-    if (r && r.ok) {
-      ElMessage.success(`采集完成：${r.total} 条（${r.date}）`)
-      trend.value = null       // 让趋势下次进入时按最新数据重算
-      selDate.value = ''       // 强制选中最新一天
-      await loadSnapshots()
-      if (topTab.value === 'trend') await loadTrend()
-    } else {
-      ElMessage.error(`采集失败：${(r && r.error) || '未知错误'}`)
-    }
+    await issueApi.snapshotCollect(props.project)
+    ElMessage.info('已开始采集，可能需要几分钟，完成后自动刷新')
+    stopPoll()
+    _pollTimer = setInterval(pollCollect, 3000)
   } catch (e) {
-    ElMessage.error(e.response?.data?.detail || '采集失败')
-  } finally {
     collecting.value = false
+    ElMessage.error(e.response?.data?.detail || '采集启动失败')
+  }
+}
+
+// ── 采集日志 ─────────────────────────────────────
+const logs = ref([])
+const logsLoading = ref(false)
+async function loadLogs() {
+  logsLoading.value = true
+  try {
+    const { data } = await issueApi.collectLogs(props.project, 50)
+    logs.value = data || []
+  } catch (e) {
+    ElMessage.error(e.response?.data?.detail || '日志加载失败')
+  } finally {
+    logsLoading.value = false
   }
 }
 
@@ -457,6 +530,7 @@ function onResize() { Object.values(inst).forEach((c) => c.resize()) }
 watch(() => props.project, () => {
   detail.value = null
   trend.value = null
+  logs.value = []
   selDate.value = ''
   topTab.value = 'snapshot'
   loadSnapshots()
@@ -464,8 +538,17 @@ watch(() => props.project, () => {
 onMounted(() => {
   window.addEventListener('resize', onResize)
   loadSnapshots()
+  // 别的页面/别人触发的采集也可能正在跑，进来就接上进度
+  issueApi.collectStatus().then(({ data }) => {
+    if (data.running) {
+      collecting.value = true
+      stopPoll()
+      _pollTimer = setInterval(pollCollect, 3000)
+    }
+  }).catch(() => {})
 })
 onUnmounted(() => {
+  stopPoll()
   Object.values(inst).forEach((c) => c.dispose())
   window.removeEventListener('resize', onResize)
 })
@@ -475,6 +558,7 @@ onUnmounted(() => {
 .api-panel { min-height: 200px; }
 .api-bar { display: flex; align-items: center; gap: 12px; margin-bottom: 12px; }
 .muted { color: #909399; font-size: 13px; }
+.err-text { color: #f56c6c; }
 
 .snap-bar, .trend-bar { display: flex; align-items: center; gap: 10px; margin: 4px 0 14px; flex-wrap: wrap; }
 

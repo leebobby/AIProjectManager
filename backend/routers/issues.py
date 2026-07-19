@@ -8,8 +8,11 @@
 - GET  /api/issues/export.pptx       —— 所有登录用户（导出 PPT）
 
 配置项（via PUT /api/config）：
-  issue_report_path  —— Excel 目录或文件路径
-  issue_script_path  —— 刷新脚本路径（.py / .bat / .exe）
+  issue_report_path      —— Excel 目录或文件路径
+  issue_script_path      —— 刷新脚本路径（.py / .bat / .exe）
+  issue_script_timeout   —— 采集脚本超时秒数（默认 600）
+  issue_snapshot_time    —— 每日自动采集时刻 HH:MM（默认 07:30）
+  issue_snapshot_enabled —— 是否启用每日自动采集（默认 true）
 """
 import io
 import json
@@ -27,7 +30,7 @@ from sqlalchemy.orm import Session
 
 import models
 from auth import get_current_user, require_admin
-from database import get_db
+from database import SessionLocal, get_db
 from op_log import log_op
 from routers.config import _load as _load_config
 
@@ -479,6 +482,19 @@ def _normalize_issue_row(r: dict) -> Dict[str, str]:
     return {col: (str(r.get(col)).strip() if r.get(col) is not None else "") for col in _RAW_COLS}
 
 
+def _script_timeout(cfg: Dict) -> int:
+    """脚本执行超时（秒）。config.issue_script_timeout，默认 600s。
+
+    原来写死 120s：DTS 接口慢一点就被杀，但快照有时已经落盘，表现为"报错了、
+    过会儿刷新数据又有了"。留成可配置，默认给足。
+    """
+    try:
+        v = int(cfg.get("issue_script_timeout") or 0)
+    except (TypeError, ValueError):
+        v = 0
+    return v if v > 0 else 600
+
+
 def _run_issue_api_script(project: str) -> List[Dict]:
     """以 `python <issue_api_script_path> <project>` 调用脚本，期望 stdout 为 JSON 数组。"""
     cfg = _load_config()
@@ -489,14 +505,15 @@ def _run_issue_api_script(project: str) -> List[Dict]:
     if not sp.exists():
         raise HTTPException(404, f"脚本不存在：{script}")
 
+    timeout = _script_timeout(cfg)
     cmd = [sys.executable, str(sp), project] if sp.suffix.lower() == ".py" else [str(sp), project]
     try:
         result = subprocess.run(
             cmd, capture_output=True, encoding="utf-8", errors="replace",
-            timeout=120, cwd=str(sp.parent),
+            timeout=timeout, cwd=str(sp.parent),
         )
     except subprocess.TimeoutExpired:
-        raise HTTPException(504, "脚本执行超时（>2 分钟）")
+        raise HTTPException(504, f"脚本执行超时（>{timeout} 秒），可在「配置」中调大超时时间")
     except Exception as exc:
         raise HTTPException(500, f"脚本启动失败：{exc}")
 
@@ -721,6 +738,60 @@ def _take_snapshot(db: Session, project: str, source: str = "api") -> models.Iss
     return snap
 
 
+def collect_with_log(db: Session, project: str, source: str = "auto") -> Dict[str, Any]:
+    """采集一个项目并写执行日志（成功失败都写）。不抛异常，返回结果字典。
+
+    定时任务与手动采集共用，保证两条路径的日志口径一致。
+    """
+    started = datetime.utcnow()
+    log = models.IssueCollectLog(project=project, source=source, started_at=started)
+    result: Dict[str, Any]
+    try:
+        snap = _take_snapshot(db, project, source=source)
+        log.ok, log.total, log.error = True, snap.total, ""
+        result = {"project": project, "ok": True, "date": snap.snapshot_date, "total": snap.total}
+    except HTTPException as exc:
+        log.ok, log.error = False, str(exc.detail)[:2000]
+        result = {"project": project, "ok": False, "error": log.error}
+    except Exception as exc:  # noqa: BLE001 —— 脚本/解析的意外错误也要留痕
+        log.ok, log.error = False, f"{type(exc).__name__}: {exc}"[:2000]
+        result = {"project": project, "ok": False, "error": log.error}
+
+    log.finished_at = datetime.utcnow()
+    log.duration_ms = int((log.finished_at - started).total_seconds() * 1000)
+    try:
+        db.add(log)
+        db.commit()
+    except Exception:  # 日志写失败不能影响采集结论
+        db.rollback()
+    return result
+
+
+# ─── 手动采集：后台线程执行 + 轮询状态 ────────────────────────────────────────
+# 采集要跑几分钟，而前端 axios 超时只有 10s：同步返回必然先弹「采集失败」、
+# 但后台其实还在跑并最终成功，于是"过会儿刷新数据又有了"。改成立即返回 + 轮询。
+_collect_lock = threading.Lock()
+_collect_state: Dict[str, Any] = {
+    "running": False, "projects": [], "current": None,
+    "started_at": None, "finished_at": None, "results": [],
+}
+
+
+def _collect_worker(projects: List[str], source: str) -> None:
+    db = SessionLocal()
+    try:
+        for p in projects:
+            _collect_state["current"] = p
+            _collect_state["results"].append(collect_with_log(db, p, source=source))
+    finally:
+        db.close()
+        _collect_state["current"] = None
+        _collect_state["finished_at"] = datetime.utcnow().isoformat()
+        _collect_state["running"] = False
+        if _collect_lock.locked():
+            _collect_lock.release()
+
+
 @router.post("/snapshot-collect")
 def snapshot_collect(
     request: Request,
@@ -728,23 +799,53 @@ def snapshot_collect(
     db: Session = Depends(get_db),
     current_user: models.User = Depends(require_admin),
 ):
-    """立即采集一次快照（仅管理员）。project 省略则采集 config.issue_api_projects 全部。"""
+    """启动一次采集（仅管理员），立即返回；用 GET /collect-status 轮询进度。
+
+    project 省略则采集 config.issue_api_projects 全部。
+    """
     cfg = _load_config()
     projects = [project] if project else (cfg.get("issue_api_projects") or [])
     if not projects:
         raise HTTPException(400, "没有可采集的项目（未配置 issue_api_projects）")
 
-    results = []
-    for p in projects:
-        try:
-            snap = _take_snapshot(db, p, source="manual")
-            results.append({"project": p, "ok": True, "date": snap.snapshot_date, "total": snap.total})
-        except HTTPException as exc:
-            results.append({"project": p, "ok": False, "error": str(exc.detail)})
-    ok = sum(1 for r in results if r["ok"])
+    if not _collect_lock.acquire(blocking=False):
+        raise HTTPException(423, f"已有采集任务在执行（{_collect_state.get('current') or '…'}），请稍候")
+
+    _collect_state.update({
+        "running": True, "projects": list(projects), "current": None,
+        "started_at": datetime.utcnow().isoformat(), "finished_at": None, "results": [],
+    })
+    threading.Thread(target=_collect_worker, args=(list(projects), "manual"), daemon=True).start()
+
     log_op(db, action="issue_snapshot", target="issue_snapshot", target_id=None,
-           detail=f"手动采集 {ok}/{len(projects)} 个项目", user=current_user, request=request)
-    return {"results": results}
+           detail=f"手动触发采集：{', '.join(projects)}", user=current_user, request=request)
+    return {"started": True, "projects": projects}
+
+
+@router.get("/collect-status")
+def collect_status(_: models.User = Depends(get_current_user)):
+    """采集任务进度（所有登录用户可查）。running=false 且 results 非空即为本轮结果。"""
+    return dict(_collect_state)
+
+
+@router.get("/collect-logs")
+def collect_logs(project: Optional[str] = None, limit: int = 50,
+                 db: Session = Depends(get_db),
+                 _: models.User = Depends(get_current_user)):
+    """采集执行日志（新→旧）。project 省略则返回所有项目。"""
+    q = db.query(models.IssueCollectLog)
+    if project:
+        q = q.filter(models.IssueCollectLog.project == project)
+    rows = q.order_by(models.IssueCollectLog.started_at.desc()).limit(max(1, min(limit, 200))).all()
+    return [
+        {
+            "id": r.id, "project": r.project, "source": r.source, "ok": bool(r.ok),
+            "total": r.total or 0, "duration_ms": r.duration_ms or 0, "error": r.error or "",
+            "started_at": r.started_at.strftime("%Y-%m-%d %H:%M:%S") if r.started_at else "",
+            "finished_at": r.finished_at.strftime("%Y-%m-%d %H:%M:%S") if r.finished_at else "",
+        }
+        for r in rows
+    ]
 
 
 @router.get("/snapshots")
