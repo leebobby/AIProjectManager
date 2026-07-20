@@ -116,6 +116,9 @@ _ADDITIONS = [
 
     # v0.23: 专项「一句话进展&求助」拆分为「整体进展」+「求助」
     ("special_contents", "help_request", "TEXT NOT NULL DEFAULT ''"),
+
+    # v0.24: 专项/攻关详情页「各自调整分段顺序」，对齐 Alembic 0003
+    ("special_contents", "section_order_json", "TEXT NOT NULL DEFAULT '[]'"),
 ]
 
 
