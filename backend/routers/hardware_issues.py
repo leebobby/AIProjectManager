@@ -107,13 +107,16 @@ def _is_done(val: str, done_set: set) -> bool:
 @router.get("/machine-summary")
 def machine_summary(db: Session = Depends(get_db), _: models.User = Depends(get_current_user)):
     """按机台汇总清零进度：{machine_status_id(str): {total, done}}。
-    total＝该机台有非空清零状态的条数；done＝其中算"已清零"的条数。供客户总览联动列用。"""
+    total＝该机台需清零的条数（"不涉及"不计入分母）；done＝其中算"已清零"的条数。供客户总览联动列用。"""
     rows = db.query(models.HardwareIssue).all()
-    done_set = set(load_config().get("hw_machine_cell_done_options") or [])
+    cfg = load_config()
+    done_set = set(cfg.get("hw_machine_cell_done_options") or [])
+    # "不涉及"这类状态不算清零项，不计入分母；可用 config 覆盖，缺省即"不涉及"
+    na_set = set(cfg.get("hw_machine_cell_na_options") or ["不涉及"])
     out: Dict[str, Dict[str, int]] = {}
     for r in rows:
         for msid, val in _parse_cells(r.machine_cells_json).items():
-            if not val:
+            if not val or val in na_set:
                 continue
             s = out.setdefault(msid, {"total": 0, "done": 0})
             s["total"] += 1
