@@ -554,7 +554,7 @@
 import { computed, nextTick, reactive, ref, watch } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { Delete, Edit, Paperclip, Plus, Refresh, Upload } from '@element-plus/icons-vue'
-import { useRouter } from 'vue-router'
+import { useRoute, useRouter } from 'vue-router'
 import {
   customerApi, customerCustomReqApi, customerExtraApi, customerIssueApi, customerStatusApi, downloadBlob, issueApi, licenseApi, sowApi,
 } from '../api'
@@ -563,6 +563,7 @@ import CustomerIssueCell from './CustomerIssueCell.vue'
 import MilestoneTimeline from './MilestoneTimeline.vue'
 
 const router = useRouter()
+const route = useRoute()
 
 const MILESTONE_STAGES = ['出厂', 'Tier0', 'Tier1', 'Tier2', 'Tier3', '验收']
 const MS_STATUS = [
@@ -730,9 +731,13 @@ async function loadMachines() {
     machines.value = data
     await loadMachineIssues()
     if (data.length) {
-      activeMachine.value = String(data[0].id)
-      // 先把第一个 tab 的子数据加载出来
-      await Promise.all([loadSowRows(data[0].id), loadLicenses(data[0].id), loadExtraValues(data[0].id)])
+      // 支持 ?machine=<machine_status_id> 深链（问题跟踪的机台列跳转过来）：
+      // 命中则定位到该机台 tab，否则默认第一台
+      const wanted = String(route.query.machine || '')
+      const target = data.find(m => String(m.id) === wanted) || data[0]
+      activeMachine.value = String(target.id)
+      // 先把目标 tab 的子数据加载出来
+      await Promise.all([loadSowRows(target.id), loadLicenses(target.id), loadExtraValues(target.id)])
     }
   } catch (e) {
     ElMessage.error(e.response?.data?.detail || '机台加载失败')

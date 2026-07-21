@@ -118,8 +118,13 @@ class CustomerIssue(Base):
     owner_user_id = Column(Integer, ForeignKey("users.id", ondelete="SET NULL"),
                            nullable=True, index=True, comment="责任人（系统用户）")
     owner_name = Column(String(64), default="", comment="责任人自由文本（非系统用户时兜底）")
+    group_id = Column(Integer, ForeignKey("resource_groups.id", ondelete="SET NULL"),
+                      nullable=True, index=True, comment="责任领域（PL 组 FK）")
+    owner_group = Column(String(64), default="", comment="责任领域自由文本快照（导入兜底）")
+    progress_note = Column(Text, default="", comment="问题进展（多行文本）")
+    category = Column(String(64), default="", comment="分类 / 专项")
     raised_at = Column(String(10), default="", comment="提出时间 YYYY-MM-DD")
-    due_date = Column(String(10), default="", comment="预计闭环时间 YYYY-MM-DD（逾期提醒基准）")
+    due_date = Column(String(10), default="", comment="计划解决时间 YYYY-MM-DD（逾期提醒基准）")
     closed_at = Column(String(10), default="", comment="实际闭环时间 YYYY-MM-DD")
     status = Column(String(16), nullable=False, default="OPEN", index=True,
                     comment="OPEN / CLOSED / 挂起")
@@ -130,6 +135,43 @@ class CustomerIssue(Base):
 
     machine_status = relationship("CustomerStatus", back_populates="issues")
     owner = relationship("User", foreign_keys=[owner_user_id])
+    group = relationship("ResourceGroup", foreign_keys=[group_id])
+
+
+class HardwareIssue(Base):
+    """硬件问题清零：一行一条硬件问题，尾部按机台展开跟踪清零状态。
+
+    固定列描述问题本身（来源/问题单号/简述/更换部件/责任/CCB结论/进展/SOP）；
+    尾部每台机台一列，单元格存该机台的清零状态（下拉，选项在 config.json 维护）。
+    per-machine 值集中存 machine_cells_json：{machine_status_id: 状态字符串}，
+    机台增删不改表结构（同 SowRow.data 的套路）。协作编辑域；删除限 admin。
+    """
+    __tablename__ = "hardware_issues"
+
+    id = Column(Integer, primary_key=True, index=True)
+    source = Column(String(128), default="", comment="来源")
+    issue_ref = Column(String(128), default="", comment="问题单号")
+    summary = Column(Text, default="", comment="问题简述")
+    replaced_part = Column(String(256), default="", comment="更换部件")
+    issue_source = Column(String(64), default="", comment="问题来源（config 下拉）")
+    group_id = Column(Integer, ForeignKey("resource_groups.id", ondelete="SET NULL"),
+                      nullable=True, index=True, comment="责任领域（PL 组 FK）")
+    owner_group = Column(String(64), default="", comment="责任领域文本快照")
+    owner_user_id = Column(Integer, ForeignKey("users.id", ondelete="SET NULL"),
+                           nullable=True, index=True, comment="责任人（系统用户）")
+    owner_name = Column(String(64), default="", comment="责任人自由文本兜底")
+    ccb_conclusion = Column(Text, default="", comment="CCB 清零结论")
+    ship_clear_from = Column(String(64), default="", comment="从 #N 开始发货清零（机台编号）")
+    clear_progress = Column(Text, default="", comment="清零进展")
+    sop_status = Column(Text, default="", comment="SOP 情况")
+    machine_cells_json = Column(Text, default="{}", comment="{machine_status_id: 清零状态}")
+    sort_order = Column(Integer, default=0, comment="展示顺序")
+    version = Column(Integer, nullable=False, default=0, comment="乐观锁版本号")
+    created_at = Column(DateTime, default=datetime.utcnow)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+    owner = relationship("User", foreign_keys=[owner_user_id])
+    group = relationship("ResourceGroup", foreign_keys=[group_id])
 
 
 class SowFieldDef(Base):

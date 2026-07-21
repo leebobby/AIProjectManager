@@ -88,7 +88,7 @@
               :compact="tableMode === 'compact'"
               :show-completed="showCompleted"
               :is-admin="isAdmin"
-              @refresh="loadIssues"
+              @refresh="reloadIssuesGrouped"
               @open="gotoTracking"
             />
           </template>
@@ -105,7 +105,7 @@
               :compact="tableMode === 'compact'"
               :show-completed="showCompleted"
               :is-admin="isAdmin"
-              @refresh="loadIssues"
+              @refresh="reloadIssuesGrouped"
               @open="gotoTracking"
             />
           </template>
@@ -124,6 +124,10 @@
       <el-tab-pane label="问题跟踪" name="issues">
         <!-- v-if：每次切进来都重新拉数据，与总览的增删保持同步 -->
         <CustomerIssueTracking v-if="pageTab === 'issues'" :focus="trackingFocus" />
+      </el-tab-pane>
+
+      <el-tab-pane label="硬件问题清零" name="hardware">
+        <HardwareClearance v-if="pageTab === 'hardware'" />
       </el-tab-pane>
     </el-tabs>
 
@@ -191,15 +195,17 @@
 </template>
 
 <script setup>
-import { computed, nextTick, onMounted, reactive, ref } from 'vue'
+import { computed, nextTick, onMounted, reactive, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { Check, Download, Edit, Plus, Refresh } from '@element-plus/icons-vue'
 import { configApi, customerApi, customerIssueApi, customerStatusApi, downloadBlob, majorVersionApi } from '../api'
 import { auth } from '../store/auth'
+import { customerIssues, ensureIssues, reloadIssues } from '../store/customerIssues'
 import { naturalCompare } from '../utils/format'
 import CustomerIssueCell from '../components/CustomerIssueCell.vue'
 import CustomerIssueTracking from './CustomerIssueTracking.vue'
+import HardwareClearance from './HardwareClearance.vue'
 
 const router = useRouter()
 const route = useRoute()
@@ -239,22 +245,38 @@ function defaultForm() {
 }
 
 // ── 数据加载 ──────────────────────────────────────────
-// 条目单独一张表，一次全量拉回来按机台分组，避免每行一个请求
+// 条目单独一张表，与「问题跟踪」tab 共用一份全局缓存（store/customerIssues），
+// 按机台分组挂到每行；避免总览与 tab 各自全量重拉。
+function applyIssueGrouping() {
+  const byMachine = {}
+  for (const it of customerIssues.rows) {
+    const g = (byMachine[it.machine_status_id] ||= { task: [], issue: [] })
+    ;(it.kind === 'task' ? g.task : g.issue).push(it)
+  }
+  list.value = list.value.map(row => ({
+    ...row,
+    task_items:  byMachine[row.id]?.task  || [],
+    issue_items: byMachine[row.id]?.issue || [],
+  }))
+}
+
+// 初次进入：有缓存就秒显，无缓存才拉一次
 async function loadIssues() {
   try {
-    const { data } = await customerIssueApi.list()
-    const byMachine = {}
-    for (const it of data) {
-      const g = (byMachine[it.machine_status_id] ||= { task: [], issue: [] })
-      ;(it.kind === 'task' ? g.task : g.issue).push(it)
-    }
-    list.value = list.value.map(row => ({
-      ...row,
-      task_items:  byMachine[row.id]?.task  || [],
-      issue_items: byMachine[row.id]?.issue || [],
-    }))
+    await ensureIssues()
+    applyIssueGrouping()
   } catch (e) {
     ElMessage.error(e.response?.data?.detail || '问题条目加载失败')
+  }
+}
+
+// 单元格增删条目后：强制刷新缓存再重组（同时惠及问题跟踪 tab）
+async function reloadIssuesGrouped() {
+  try {
+    await reloadIssues()
+    applyIssueGrouping()
+  } catch (e) {
+    ElMessage.error(e.response?.data?.detail || '问题条目刷新失败')
   }
 }
 
@@ -276,6 +298,9 @@ function gotoTracking(item) {
   trackingFocus.value = item?.id || null
   pageTab.value = 'issues'
 }
+
+// 从问题跟踪 tab 切回总览时，用（可能被 tab 改过的）缓存重组一次，保持一致
+watch(pageTab, (v) => { if (v === 'overview' && list.value.length) applyIssueGrouping() })
 
 async function loadConfig() {
   try {

@@ -1,5 +1,5 @@
 from datetime import datetime
-from typing import List, Optional
+from typing import Dict, List, Optional
 
 from pydantic import BaseModel, ConfigDict, field_validator
 
@@ -102,6 +102,7 @@ class CustomerStatusUpdate(BaseModel):
 
 class CustomerStatusOut(CustomerStatusBase):
     id: int
+    customer_id: Optional[int] = None
     version: int
     updated_at: datetime
 
@@ -121,6 +122,10 @@ class CustomerIssueBase(BaseModel):
     urgency: Optional[str] = "一般"
     owner_user_id: Optional[int] = None
     owner_name: Optional[str] = ""
+    group_id: Optional[int] = None
+    owner_group: Optional[str] = ""
+    progress_note: Optional[str] = ""
+    category: Optional[str] = ""
     raised_at: Optional[str] = ""
     due_date: Optional[str] = ""
     closed_at: Optional[str] = ""
@@ -154,6 +159,10 @@ class CustomerIssueUpdate(BaseModel):
     urgency: Optional[str] = None
     owner_user_id: Optional[int] = None
     owner_name: Optional[str] = None
+    group_id: Optional[int] = None
+    owner_group: Optional[str] = None
+    progress_note: Optional[str] = None
+    category: Optional[str] = None
     raised_at: Optional[str] = None
     due_date: Optional[str] = None
     closed_at: Optional[str] = None
@@ -181,7 +190,61 @@ class CustomerIssueOut(CustomerIssueBase):
     machine_id: Optional[str] = ""
     battlefield: Optional[str] = ""
     owner_display: Optional[str] = ""
+    group_name: Optional[str] = ""
     overdue: Optional[bool] = False
+
+    model_config = _BASE_CONFIG
+
+
+# ===== 硬件问题清零 =====
+class HardwareIssueBase(BaseModel):
+    source: Optional[str] = ""
+    issue_ref: Optional[str] = ""
+    summary: Optional[str] = ""
+    replaced_part: Optional[str] = ""
+    issue_source: Optional[str] = ""
+    group_id: Optional[int] = None
+    owner_group: Optional[str] = ""
+    owner_user_id: Optional[int] = None
+    owner_name: Optional[str] = ""
+    ccb_conclusion: Optional[str] = ""
+    ship_clear_from: Optional[str] = ""
+    clear_progress: Optional[str] = ""
+    sop_status: Optional[str] = ""
+    sort_order: Optional[int] = 0
+    # {machine_status_id(str): 清零状态}；后端与 machine_cells_json 互转
+    machine_cells: Dict[str, str] = {}
+
+
+class HardwareIssueCreate(HardwareIssueBase):
+    pass
+
+
+class HardwareIssueUpdate(BaseModel):
+    version: int
+    source: Optional[str] = None
+    issue_ref: Optional[str] = None
+    summary: Optional[str] = None
+    replaced_part: Optional[str] = None
+    issue_source: Optional[str] = None
+    group_id: Optional[int] = None
+    owner_group: Optional[str] = None
+    owner_user_id: Optional[int] = None
+    owner_name: Optional[str] = None
+    ccb_conclusion: Optional[str] = None
+    ship_clear_from: Optional[str] = None
+    clear_progress: Optional[str] = None
+    sop_status: Optional[str] = None
+    sort_order: Optional[int] = None
+    machine_cells: Optional[Dict[str, str]] = None
+
+
+class HardwareIssueOut(HardwareIssueBase):
+    id: int
+    version: int
+    updated_at: Optional[datetime] = None
+    owner_display: Optional[str] = ""
+    group_name: Optional[str] = ""
 
     model_config = _BASE_CONFIG
 

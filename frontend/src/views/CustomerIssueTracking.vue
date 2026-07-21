@@ -2,7 +2,7 @@
   <div class="track-page">
     <!-- ── 统计卡 ─────────────────────────────────── -->
     <div class="stat-row">
-      <div class="stat-card" :class="{ active: !filters.status && !filters.overdue_only }" @click="resetStatusFilter">
+      <div class="stat-card" :class="{ active: !filters.status && !filters.overdue_only && !filters.urgency }" @click="resetStatusFilter">
         <div class="stat-num">{{ stats.open }}</div><div class="stat-label">未闭环</div>
       </div>
       <div class="stat-card crit" :class="{ active: filters.urgency === '重要紧急' }" @click="toggleFilter('urgency', '重要紧急')">
@@ -22,70 +22,62 @@
     <el-card shadow="never">
       <!-- ── 筛选栏 ───────────────────────────────── -->
       <div class="filter-bar">
-        <el-select v-model="filters.customer_id" placeholder="战场" clearable size="small" style="width:150px" @change="reload">
+        <el-select v-model="filters.customer_id" placeholder="客户 / 战场" clearable size="small" style="width:160px">
           <el-option v-for="c in customers" :key="c.id" :label="c.display_name || c.code" :value="c.id" />
         </el-select>
-        <el-select v-model="filters.kind" placeholder="类型" clearable size="small" style="width:130px" @change="reload">
-          <el-option label="软件类问题" value="issue" />
-          <el-option label="需求" value="demand" />
-          <el-option label="关键事务" value="task" />
-        </el-select>
-        <el-select v-model="filters.urgency" placeholder="紧急程度" clearable size="small" style="width:130px" @change="reload">
+        <el-select v-model="filters.urgency" placeholder="重要程度" clearable size="small" style="width:130px">
           <el-option v-for="u in URGENCIES" :key="u" :label="u" :value="u" />
         </el-select>
-        <el-select v-model="filters.status" placeholder="状态" clearable size="small" style="width:120px" @change="reload">
+        <el-select v-model="filters.group_id" placeholder="责任领域" clearable filterable size="small" style="width:150px">
+          <el-option v-for="g in groups" :key="g.id" :label="g.name" :value="g.id" />
+        </el-select>
+        <el-select v-model="filters.status" placeholder="状态" clearable size="small" style="width:120px">
           <el-option v-for="s in STATUSES" :key="s" :label="s" :value="s" />
         </el-select>
-        <el-select v-model="filters.owner_user_id" placeholder="责任人" clearable filterable size="small" style="width:140px" @change="reload">
+        <el-select v-model="filters.owner_user_id" placeholder="责任人" clearable filterable size="small" style="width:140px">
           <el-option v-for="u in users" :key="u.id" :label="u.full_name || u.username" :value="u.id" />
         </el-select>
-        <el-input v-model="filters.q" placeholder="搜索描述 / 问题单 / 机台" clearable size="small" style="width:220px"
-                  :prefix-icon="Search" @change="reload" />
-        <el-checkbox v-model="includeClosed" size="small" @change="reload">含已闭环</el-checkbox>
+        <el-input v-model="filters.q" placeholder="搜索描述 / 问题单 / 机台 / 进展" clearable size="small" style="width:230px"
+                  :prefix-icon="Search" />
+        <el-checkbox v-model="includeClosed" size="small">含已闭环</el-checkbox>
 
         <div class="filter-right">
-          <span class="muted">共 {{ rows.length }} 条</span>
-          <el-button size="small" :icon="Refresh" @click="reload">刷新</el-button>
+          <span class="muted">共 {{ filteredRows.length }} 条<span v-if="customerIssues.loading"> · 刷新中…</span></span>
+          <el-button size="small" :icon="Refresh" :loading="customerIssues.loading" @click="reloadIssues">刷新</el-button>
+          <el-button size="small" text :icon="Document" @click="onImportTemplate">模板</el-button>
+          <el-upload :auto-upload="false" :show-file-list="false" accept=".xlsx" :on-change="onImport">
+            <el-button size="small" :icon="Upload" :loading="importing">导入</el-button>
+          </el-upload>
           <el-button size="small" :icon="Download" :loading="exporting" @click="onExport">导出 Excel</el-button>
         </div>
       </div>
 
       <!-- ── 主表 ─────────────────────────────────── -->
-      <el-table :data="rows" v-loading="loading" border stripe size="small"
+      <el-table :data="filteredRows" v-loading="!customerIssues.loaded && customerIssues.loading" border stripe size="small"
                 :row-class-name="rowClass" max-height="calc(100vh - 320px)">
-        <el-table-column prop="battlefield" label="战场" width="120" show-overflow-tooltip />
-        <el-table-column prop="machine_id" label="机台" width="100" />
-        <el-table-column label="类型" width="100" align="center">
+        <el-table-column type="index" label="编号" width="60" align="center" />
+        <el-table-column prop="battlefield" label="客户" width="120" show-overflow-tooltip />
+
+        <el-table-column label="机台编号" width="110">
           <template #default="{ row }">
-            <el-tag size="small" :type="KIND_TAG[row.kind]?.type || 'info'" effect="plain">
-              {{ KIND_TAG[row.kind]?.label || row.kind }}
-            </el-tag>
+            <router-link v-if="row.customer_id && row.machine_id"
+                         :to="`/customers/${row.customer_id}?machine=${row.machine_status_id}`" class="machine-link">
+              {{ row.machine_id }}
+            </router-link>
+            <span v-else>{{ row.machine_id || '—' }}</span>
           </template>
         </el-table-column>
 
-        <el-table-column label="问题描述 / 任务" min-width="260">
+        <el-table-column label="问题单号" width="150">
           <template #default="{ row }">
-            <EditableCell :value="row.description" type="text" @save="(v) => save(row, { description: v })" />
+            <LinkableCell :value="row.issue_ref" :to="issueRefLink(row.issue_ref)" placeholder="—"
+                          @save="(v) => save(row, { issue_ref: v })" />
           </template>
         </el-table-column>
 
-        <el-table-column label="关联问题单" width="150">
+        <el-table-column label="关键问题描述" min-width="240">
           <template #default="{ row }">
-            <template v-if="row.kind !== 'task'">
-              <EditableCell :value="row.issue_ref" type="text" placeholder="—"
-                            @save="(v) => save(row, { issue_ref: v })" />
-            </template>
-            <span v-else class="muted">—</span>
-          </template>
-        </el-table-column>
-
-        <el-table-column label="紧急程度" width="120" align="center">
-          <template #default="{ row }">
-            <el-select v-if="row.kind !== 'task'" :model-value="row.urgency" size="small"
-                       @change="(v) => save(row, { urgency: v })">
-              <el-option v-for="u in URGENCIES" :key="u" :label="u" :value="u" />
-            </el-select>
-            <span v-else class="muted">—</span>
+            <EditableCell :value="row.description" @save="(v) => save(row, { description: v })" />
           </template>
         </el-table-column>
 
@@ -98,14 +90,22 @@
           </template>
         </el-table-column>
 
-        <el-table-column label="提出时间" width="130" align="center">
+        <el-table-column label="重要程度" width="118" align="center">
+          <template #default="{ row }">
+            <el-select :model-value="row.urgency" size="small" @change="(v) => save(row, { urgency: v })">
+              <el-option v-for="u in URGENCIES" :key="u" :label="u" :value="u" />
+            </el-select>
+          </template>
+        </el-table-column>
+
+        <el-table-column label="提出时间" width="128" align="center">
           <template #default="{ row }">
             <el-date-picker :model-value="row.raised_at" type="date" size="small" value-format="YYYY-MM-DD"
                             placeholder="—" style="width:110px" @update:model-value="(v) => save(row, { raised_at: v || '' })" />
           </template>
         </el-table-column>
 
-        <el-table-column label="预计闭环" width="130" align="center">
+        <el-table-column label="计划解决时间" width="132" align="center">
           <template #default="{ row }">
             <el-date-picker :model-value="row.due_date" type="date" size="small" value-format="YYYY-MM-DD"
                             placeholder="—" style="width:110px"
@@ -114,13 +114,23 @@
           </template>
         </el-table-column>
 
-        <el-table-column label="闭环时间" width="110" align="center">
+        <el-table-column label="责任领域" width="130" align="center">
           <template #default="{ row }">
-            <span :class="row.closed_at ? '' : 'muted'">{{ row.closed_at || '—' }}</span>
+            <el-select :model-value="row.group_id" size="small" clearable filterable placeholder="—"
+                       @change="(v) => save(row, { group_id: v ?? null })">
+              <el-option v-for="g in groups" :key="g.id" :label="g.name" :value="g.id" />
+            </el-select>
           </template>
         </el-table-column>
 
-        <el-table-column label="状态" width="110" align="center" fixed="right">
+        <el-table-column label="问题进展" min-width="200">
+          <template #default="{ row }">
+            <EditableCell :value="row.progress_note" multiline placeholder="点击填写进展"
+                          @save="(v) => save(row, { progress_note: v })" />
+          </template>
+        </el-table-column>
+
+        <el-table-column label="状态" width="108" align="center" fixed="right">
           <template #default="{ row }">
             <el-select :model-value="row.status" size="small" @change="(v) => save(row, { status: v })">
               <el-option v-for="s in STATUSES" :key="s" :label="s" :value="s" />
@@ -128,7 +138,13 @@
           </template>
         </el-table-column>
 
-        <el-table-column v-if="isAdmin" label="操作" width="70" align="center" fixed="right">
+        <el-table-column label="分类专项" width="130" fixed="right">
+          <template #default="{ row }">
+            <EditableCell :value="row.category" placeholder="—" @save="(v) => save(row, { category: v })" />
+          </template>
+        </el-table-column>
+
+        <el-table-column v-if="isAdmin" label="操作" width="60" align="center" fixed="right">
           <template #default="{ row }">
             <el-button link type="danger" :icon="Delete" @click="onDelete(row)" />
           </template>
@@ -140,7 +156,7 @@
         <span><i class="dot d-hold" />挂起</span>
         <span><i class="dot d-done" />已闭环</span>
         <span><i class="dot d-over" />逾期</span>
-        <span class="muted">条目在「客户面状态」总览的对应单元格里新增；此处维护跟踪信息。</span>
+        <span class="muted">条目在「客户面状态」总览的对应单元格里新增；此处维护跟踪信息，缓存共享、秒开。</span>
       </div>
     </el-card>
   </div>
@@ -148,11 +164,14 @@
 
 <script setup>
 import { computed, defineComponent, h, onMounted, reactive, ref, watch } from 'vue'
-import { useRoute } from 'vue-router'
-import { ElInput, ElMessage, ElMessageBox } from 'element-plus'
-import { Delete, Download, Refresh, Search } from '@element-plus/icons-vue'
-import { customerApi, customerIssueApi, downloadBlob, userApi } from '../api'
+import { RouterLink, useRoute } from 'vue-router'
+import { ElIcon, ElInput, ElMessage, ElMessageBox } from 'element-plus'
+import { Delete, Document, Download, Edit, Refresh, Search, Upload } from '@element-plus/icons-vue'
+import { customerApi, customerIssueApi, downloadBlob, resourceGroupApi, userApi } from '../api'
 import { auth } from '../store/auth'
+import {
+  customerIssues, ensureIssues, reloadIssues, refreshIssues, removeIssue, upsertIssue,
+} from '../store/customerIssues'
 
 // 既可独立路由使用（?focus= 查询串），也可作为「客户面状态」页的内嵌 tab（focus prop）
 const props = defineProps({
@@ -163,17 +182,23 @@ const route = useRoute()
 const isAdmin = auth.isAdmin
 
 // 与后端 enums.py 保持一致
-const URGENCIES = ['重要紧急', '紧急', '一般']
+const URGENCIES = ['重要紧急', '重要', '一般']
 const STATUSES = ['OPEN', 'CLOSED', '挂起']
-const KIND_TAG = {
-  issue: { label: '问题', type: 'danger' },
-  demand: { label: '需求', type: 'primary' },   // 与总览单元格里的蓝色「需求」角标一致
-  task: { label: '事务', type: 'info' },
+const STATUS_RANK = { OPEN: 0, 挂起: 1, CLOSED: 2 }
+const URGENCY_RANK = { 重要紧急: 0, 重要: 1, 一般: 2 }
+
+// 问题单号变链接：跳到「问题单管理」页（后续与版本联动会再细化落点）
+function issueRefLink(ref) {
+  return ref ? { path: '/issue-management', query: { q: ref } } : ''
 }
 
-// ── 内联组件：点击即改的文本单元格 ────────────────────
+// ── 内联组件：点击即改的文本单元格（支持多行）────────────
 const EditableCell = defineComponent({
-  props: { value: String, placeholder: { type: String, default: '点击填写' } },
+  props: {
+    value: String,
+    placeholder: { type: String, default: '点击填写' },
+    multiline: { type: Boolean, default: false },
+  },
   emits: ['save'],
   setup(props, { emit }) {
     const editing = ref(false)
@@ -186,31 +211,117 @@ const EditableCell = defineComponent({
     return () => editing.value
       ? h(ElInput, {
           modelValue: draft.value, size: 'small', autofocus: true,
+          type: props.multiline ? 'textarea' : 'text',
+          autosize: props.multiline ? { minRows: 1, maxRows: 6 } : false,
           'onUpdate:modelValue': (v) => { draft.value = v },
-          onBlur: commit, onKeyup: (e) => { if (e.key === 'Enter') commit(); if (e.key === 'Escape') editing.value = false },
+          onBlur: commit,
+          onKeyup: (e) => {
+            if (e.key === 'Enter' && !props.multiline) commit()
+            if (e.key === 'Escape') editing.value = false
+          },
         })
       : h('span', {
-          class: props.value ? 'cell-text' : 'cell-text muted',
+          class: [props.value ? 'cell-text' : 'cell-text muted', props.multiline ? 'cell-multiline' : ''],
           onClick: start,
         }, props.value || props.placeholder)
   },
 })
 
-const rows = ref([])
+// ── 内联组件：有值显示为链接（可点跳转）+ 铅笔改；空值点击录入 ──
+const LinkableCell = defineComponent({
+  props: {
+    value: String,
+    to: { type: [String, Object], default: '' },
+    placeholder: { type: String, default: '—' },
+  },
+  emits: ['save'],
+  setup(props, { emit }) {
+    const editing = ref(false)
+    const draft = ref('')
+    const start = () => { draft.value = props.value || ''; editing.value = true }
+    const commit = () => {
+      editing.value = false
+      if (draft.value !== (props.value || '')) emit('save', draft.value)
+    }
+    return () => {
+      if (editing.value) {
+        return h(ElInput, {
+          modelValue: draft.value, size: 'small', autofocus: true,
+          'onUpdate:modelValue': (v) => { draft.value = v },
+          onBlur: commit,
+          onKeyup: (e) => { if (e.key === 'Enter') commit(); if (e.key === 'Escape') editing.value = false },
+        })
+      }
+      if (!props.value) {
+        return h('span', { class: 'cell-text muted', onClick: start }, props.placeholder)
+      }
+      return h('span', { class: 'linkcell' }, [
+        props.to
+          ? h(RouterLink, { to: props.to, class: 'issue-link' }, () => props.value)
+          : h('span', props.value),
+        h(ElIcon, { class: 'edit-ico', title: '修改', onClick: start }, () => h(Edit)),
+      ])
+    }
+  },
+})
+
 const users = ref([])
 const customers = ref([])
-const loading = ref(false)
+const groups = ref([])
 const exporting = ref(false)
-const includeClosed = ref(false)
-const stats = reactive({ open: 0, closed: 0, on_hold: 0, critical: 0, overdue: 0, total: 0 })
+const importing = ref(false)
+const includeClosed = ref(true)
 
 const filters = reactive({
-  customer_id: null, kind: null, urgency: null, status: null,
+  customer_id: null, urgency: null, group_id: null, status: null,
   owner_user_id: null, q: '', overdue_only: false,
 })
 
 // 从总览点条目跳过来时高亮那一条（prop 优先，路由查询串兜底）
 const focusId = computed(() => props.focus || Number(route.query.focus) || null)
+
+// ── 统计卡：从缓存现算，不再单独请求 /summary ──
+const stats = computed(() => {
+  const rows = customerIssues.rows
+  const open = rows.filter((r) => r.status !== 'CLOSED')
+  return {
+    open: open.length,
+    critical: open.filter((r) => r.urgency === '重要紧急').length,
+    overdue: open.filter((r) => r.overdue).length,
+    on_hold: rows.filter((r) => r.status === '挂起').length,
+    closed: rows.filter((r) => r.status === 'CLOSED').length,
+  }
+})
+
+// ── 筛选 + 排序：全部在前端做（数据已全量缓存）──
+const filteredRows = computed(() => {
+  let rows = customerIssues.rows.slice()
+  const f = filters
+  if (!includeClosed.value) rows = rows.filter((r) => r.status !== 'CLOSED')
+  if (f.customer_id) rows = rows.filter((r) => r.customer_id === f.customer_id)
+  if (f.owner_user_id) rows = rows.filter((r) => r.owner_user_id === f.owner_user_id)
+  if (f.group_id) rows = rows.filter((r) => r.group_id === f.group_id)
+  if (f.urgency) rows = rows.filter((r) => r.urgency === f.urgency)
+  if (f.status) rows = rows.filter((r) => r.status === f.status)
+  if (f.overdue_only) rows = rows.filter((r) => r.overdue)
+  if (f.q) {
+    const kw = f.q.trim().toLowerCase()
+    rows = rows.filter((r) =>
+      (r.description || '').toLowerCase().includes(kw)
+      || (r.issue_ref || '').toLowerCase().includes(kw)
+      || (r.owner_display || '').toLowerCase().includes(kw)
+      || (r.machine_id || '').toLowerCase().includes(kw)
+      || (r.battlefield || '').toLowerCase().includes(kw)
+      || (r.progress_note || '').toLowerCase().includes(kw)
+      || (r.category || '').toLowerCase().includes(kw))
+  }
+  rows.sort((a, b) =>
+    (STATUS_RANK[a.status] ?? 9) - (STATUS_RANK[b.status] ?? 9)
+    || (URGENCY_RANK[a.urgency] ?? 9) - (URGENCY_RANK[b.urgency] ?? 9)
+    || (a.raised_at || '9999-99-99').localeCompare(b.raised_at || '9999-99-99')
+    || a.id - b.id)
+  return rows
+})
 
 function rowClass({ row }) {
   if (row.id === focusId.value) return 'row-focus'
@@ -222,54 +333,25 @@ function rowClass({ row }) {
 
 function toggleFilter(key, val) {
   filters[key] = filters[key] === val ? null : val
-  if (key === 'status' && filters.status === 'CLOSED') includeClosed.value = true
   filters.overdue_only = false
-  reload()
 }
 function toggleOverdue() {
   filters.overdue_only = !filters.overdue_only
-  reload()
 }
 function resetStatusFilter() {
   filters.status = null
   filters.urgency = null
   filters.overdue_only = false
-  reload()
 }
 
-async function reload() {
-  loading.value = true
-  try {
-    const params = { include_closed: includeClosed.value }
-    for (const [k, v] of Object.entries(filters)) {
-      if (v !== null && v !== '' && v !== false) params[k] = v
-    }
-    const [listRes, sumRes] = await Promise.all([
-      customerIssueApi.list(params),
-      customerIssueApi.summary(),
-    ])
-    rows.value = listRes.data
-    Object.assign(stats, sumRes.data)
-  } catch (e) {
-    ElMessage.error(e.response?.data?.detail || '加载失败')
-  } finally {
-    loading.value = false
-  }
-}
-
-// 逐格保存：后端会在状态流转时自动维护闭环时间，所以保存后用返回值整行替换
+// 逐格保存：后端会在状态流转时自动维护闭环时间，保存后用返回值整行替换缓存
 async function save(row, patch) {
   try {
     const { data } = await customerIssueApi.update(row.id, { version: row.version, ...patch })
-    const idx = rows.value.findIndex((r) => r.id === row.id)
-    if (idx >= 0) rows.value[idx] = data
-    // 状态类改动会影响统计卡，刷一下数字
-    if ('status' in patch || 'urgency' in patch || 'due_date' in patch) {
-      customerIssueApi.summary().then(({ data: s }) => Object.assign(stats, s)).catch(() => {})
-    }
+    upsertIssue(data)
   } catch (e) {
     if (e.response?.status !== 409) ElMessage.error(e.response?.data?.detail || '保存失败')
-    reload()
+    refreshIssues()
   }
 }
 
@@ -279,8 +361,8 @@ async function onDelete(row) {
   } catch { return }
   try {
     await customerIssueApi.remove(row.id)
+    removeIssue(row.id)
     ElMessage.success('已删除')
-    reload()
   } catch (e) {
     ElMessage.error(e.response?.data?.detail || '删除失败')
   }
@@ -300,18 +382,62 @@ async function onExport() {
   }
 }
 
-// 带 focus 进来时，把已闭环也放开，否则点进来可能一片空白；已挂载时切换聚焦要重拉
-watch(focusId, (v) => {
-  if (!v) return
-  includeClosed.value = true
-  if (rows.value.length) reload()
-}, { immediate: true })
+async function onImportTemplate() {
+  try {
+    const resp = await customerIssueApi.importTemplate()
+    downloadBlob(resp.data, '客户面问题跟踪_导入模板.xlsx')
+  } catch (e) {
+    ElMessage.error(e.response?.data?.detail || '模板下载失败')
+  }
+}
+
+// el-upload 的 on-change：拿到文件后自己上传；失败要明确报错
+async function onImport(uploadFile) {
+  const file = uploadFile?.raw
+  if (!file) return
+  if (!file.name.toLowerCase().endsWith('.xlsx')) {
+    ElMessage.error('仅支持 .xlsx 文件')
+    return
+  }
+  importing.value = true
+  try {
+    const { data } = await customerIssueApi.importXlsx(file)
+    await reloadIssues()
+    const errs = data.errors || []
+    if (errs.length) {
+      // 部分失败：逐行原因列全（HTML 换行），让用户能定位改哪一行
+      ElMessageBox.alert(
+        `成功导入 <b>${data.created}</b> 条，另有 <b>${errs.length}</b> 行未导入：<br><br>`
+          + errs.map((e) => `· ${e}`).join('<br>'),
+        '导入完成（部分未成功）',
+        { type: 'warning', dangerouslyUseHTMLString: true, customClass: 'ci-import-box' },
+      )
+    } else {
+      ElMessage.success(`成功导入 ${data.created} 条`)
+    }
+  } catch (e) {
+    // 文件级错误（解析失败 / 缺列 / 空文件）后端返回 400 detail
+    ElMessage.error(e.response?.data?.detail || '导入失败，请检查文件格式')
+  } finally {
+    importing.value = false
+  }
+}
+
+// 带 focus 进来时，把已闭环也放开，否则聚焦项可能是已闭环、被过滤掉
+watch(focusId, (v) => { if (v) includeClosed.value = true }, { immediate: true })
 
 onMounted(async () => {
-  const [u, c] = await Promise.allSettled([userApi.options({ only_can_login: true }), customerApi.list()])
+  const [u, c, g] = await Promise.allSettled([
+    userApi.options({ only_can_login: true }),
+    customerApi.list(),
+    resourceGroupApi.list({ kind: 'pl' }),
+  ])
   if (u.status === 'fulfilled') users.value = u.value.data
   if (c.status === 'fulfilled') customers.value = c.value.data
-  await reload()
+  if (g.status === 'fulfilled') groups.value = g.value.data
+  // 已有缓存 → 秒显 + 后台静默刷新；否则首次加载
+  if (customerIssues.loaded) refreshIssues()
+  else await ensureIssues()
 })
 </script>
 
@@ -347,10 +473,18 @@ onMounted(async () => {
 
 :deep(.cell-text) { cursor: pointer; display: inline-block; min-height: 20px; min-width: 40px; }
 :deep(.cell-text:hover) { color: #409eff; }
+:deep(.cell-multiline) { white-space: pre-wrap; line-height: 1.5; }
 :deep(.dp-overdue .el-input__inner) { color: #f56c6c; }
 
+/* 链接单元格 */
+:deep(.machine-link), :deep(.issue-link) { color: #409eff; text-decoration: none; }
+:deep(.machine-link:hover), :deep(.issue-link:hover) { text-decoration: underline; }
+:deep(.linkcell) { display: inline-flex; align-items: center; gap: 4px; }
+:deep(.linkcell .edit-ico) { cursor: pointer; color: #c0c4cc; font-size: 13px; }
+:deep(.linkcell .edit-ico:hover) { color: #409eff; }
+
 /* 图例 */
-.legend { display: flex; align-items: center; gap: 16px; margin-top: 10px; font-size: 12px; color: #606266; }
+.legend { display: flex; align-items: center; gap: 16px; margin-top: 10px; font-size: 12px; color: #606266; flex-wrap: wrap; }
 .legend .dot { display: inline-block; width: 10px; height: 10px; border-radius: 2px; margin-right: 5px; vertical-align: -1px; }
 .d-open { background: #fff; border: 1px solid #dcdfe6; }
 .d-hold { background: #fdf9f0; border: 1px solid #f3d19e; }

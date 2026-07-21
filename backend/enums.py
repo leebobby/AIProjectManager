@@ -34,10 +34,12 @@ CUSTOMER_ISSUE_KIND_DEFAULT = "issue"
 # 状态词表与 domain_risks 对齐，避免同一概念两套口径
 CUSTOMER_ISSUE_STATUSES = ("OPEN", "CLOSED", "挂起")
 CUSTOMER_ISSUE_STATUS_DEFAULT = "OPEN"
-CUSTOMER_ISSUE_URGENCIES = ("重要紧急", "紧急", "一般")
+# 重要程度口径：重要紧急 / 重要 / 一般（旧词表用「紧急」，统一迁移为「重要」）
+CUSTOMER_ISSUE_URGENCIES = ("重要紧急", "重要", "一般")
 CUSTOMER_ISSUE_URGENCY_DEFAULT = "一般"
+CUSTOMER_ISSUE_URGENCY_LEGACY = {"紧急": "重要"}
 # 汇总页默认排序用：越紧急越靠前
-CUSTOMER_ISSUE_URGENCY_RANK = {"重要紧急": 0, "紧急": 1, "一般": 2}
+CUSTOMER_ISSUE_URGENCY_RANK = {"重要紧急": 0, "重要": 1, "一般": 2}
 
 
 def _is_blank(v) -> bool:
@@ -102,5 +104,10 @@ def norm_issue_status(v, *, partial: bool = False) -> Optional[str]:
 
 
 def norm_issue_urgency(v, *, partial: bool = False) -> Optional[str]:
-    return _norm_choice(v, CUSTOMER_ISSUE_URGENCIES, CUSTOMER_ISSUE_URGENCY_DEFAULT,
-                        "紧急程度", partial=partial)
+    """重要程度：旧「紧急」自动归一为「重要」，再走白名单校验。"""
+    if _is_blank(v):
+        return None if partial else CUSTOMER_ISSUE_URGENCY_DEFAULT
+    s = CUSTOMER_ISSUE_URGENCY_LEGACY.get(str(v).strip(), str(v).strip())
+    if s in CUSTOMER_ISSUE_URGENCIES:
+        return s
+    raise ValueError(f"重要程度「{v}」非法，应为 {'/'.join(CUSTOMER_ISSUE_URGENCIES)} 之一")

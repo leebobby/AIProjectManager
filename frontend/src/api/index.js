@@ -206,6 +206,26 @@ export const customerIssueApi = {
   remove:  (id)          => http.delete(`/customer-issues/${id}`),
   exportXlsx: (include_closed = true) =>
     http.get('/customer-issues/export.xlsx', { responseType: 'blob', params: { include_closed } }),
+  importTemplate: () => http.get('/customer-issues/import-template.xlsx', { responseType: 'blob' }),
+  importXlsx: (file) => {
+    const fd = new FormData()
+    fd.append('file', file)
+    return http.post('/customer-issues/import', fd)
+  },
+}
+
+export const hardwareIssueApi = {
+  list:    ()         => http.get('/hardware-issues'),
+  create:  (data)     => http.post('/hardware-issues', data),
+  update:  (id, data) => http.put(`/hardware-issues/${id}`, data),
+  remove:  (id)       => http.delete(`/hardware-issues/${id}`),
+  exportXlsx:     () => http.get('/hardware-issues/export.xlsx', { responseType: 'blob' }),
+  importTemplate: () => http.get('/hardware-issues/import-template.xlsx', { responseType: 'blob' }),
+  importXlsx: (file) => {
+    const fd = new FormData()
+    fd.append('file', file)
+    return http.post('/hardware-issues/import', fd)
+  },
 }
 
 export const customerApi = {
