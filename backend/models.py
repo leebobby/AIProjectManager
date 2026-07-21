@@ -174,6 +174,26 @@ class HardwareIssue(Base):
     group = relationship("ResourceGroup", foreign_keys=[group_id])
 
 
+class IssueReportDaily(Base):
+    """问题单"历史数据"报表的按天聚合缓存（趋势图数据源）。
+
+    历史数据 tab 原来每次画趋势都要把报表目录下所有 xlsx 重新用 openpyxl
+    解析一遍（O(文件数)）。这里把每天的聚合"数字"落库：趋势直接读库，
+    只有新增/变更（file_mtime 变化）的那一天才重新解析文件。明细仍按天在
+    钻取时从本地 xlsx 现读，不进库。表由 create_all 自动建。
+    """
+    __tablename__ = "issue_report_daily"
+
+    id = Column(Integer, primary_key=True, index=True)
+    date = Column(String(10), nullable=False, unique=True, index=True, comment="YYYY-MM-DD")
+    file_name = Column(String(256), default="", comment="该天取用的 xlsx 文件名")
+    file_mtime = Column(String(40), default="", comment="文件 mtime（变更检测）")
+    total = Column(Integer, default=0)
+    by_group_json = Column(Text, default="{}", comment="{小组: 数量}")
+    by_severity_json = Column(Text, default="{}", comment="{严重程度: 数量}")
+    ingested_at = Column(DateTime, default=datetime.utcnow)
+
+
 class SowFieldDef(Base):
     """SOW 表格列定义（全局共享一份）。
     所有客户、所有机台共用同一套列；admin 在 客户管理 → SOW 字段配置 里维护。

@@ -140,6 +140,28 @@ def _parse_cross_table(ws) -> Dict[str, Any]:
     return {"columns": columns, "rows": rows}
 
 
+# 最新报表解析缓存：str(path) -> (mtime, 解析结果)。文件没变就不重复开 openpyxl，
+# 让"打开问题单管理→看最新"这条最常走的路径秒回。进程内、按文件粒度。
+_parse_cache: Dict[str, tuple] = {}
+
+
+def _parse_excel_cached(path: str) -> Dict[str, Any]:
+    """带 mtime 缓存的报表解析。文件未变直接命中缓存，否则重新解析并刷新缓存。"""
+    p = pathlib.Path(path)
+    try:
+        mtime = p.stat().st_mtime
+    except OSError:
+        mtime = None
+    key = str(p)
+    hit = _parse_cache.get(key)
+    if hit is not None and mtime is not None and hit[0] == mtime:
+        return hit[1]
+    result = _parse_excel(path)
+    if mtime is not None:
+        _parse_cache[key] = (mtime, result)
+    return result
+
+
 def _parse_excel(path: str) -> Dict[str, Any]:
     try:
         import openpyxl
@@ -235,6 +257,36 @@ def _resolve_for_date(path_str: str, date: Optional[str] = None):
         return candidates[0]
 
     raise HTTPException(400, f"无法识别路径：{path_str}")
+
+
+def _list_report_files(path_str: str) -> List[tuple]:
+    """列出报表目录下每天取用的 xlsx，返回 [(date_str, Path)] 升序。只列文件不解析内容。
+
+    兼容日期子目录（YYYY-MM-DD/）与平铺（*_YYYYMMDD.xlsx）两种结构；供趋势增量入库用。
+    """
+    p = pathlib.Path(path_str)
+    if p.is_file():
+        p = p.parent
+    if not p.is_dir():
+        raise HTTPException(404, f"目录不存在：{path_str}")
+
+    date_dirs = _list_date_dirs(p)
+    file_list: List[tuple] = []
+    if date_dirs:
+        for d in reversed(date_dirs):  # 升序
+            xlsxes = sorted(d.glob("*.xlsx"), key=lambda f: f.name, reverse=True)
+            if xlsxes:
+                file_list.append((d.name, xlsxes[0]))
+    else:
+        flat = sorted(
+            (f for f in p.glob("*.xlsx") if _DATE_PAT.search(f.name)),
+            key=_file_sort_key,
+        )
+        for f in flat:
+            m = _DATE_PAT.search(f.name)
+            ds = m.group(1)
+            file_list.append((f"{ds[:4]}-{ds[4:6]}-{ds[6:]}", f))
+    return file_list
 
 
 # ─── PPT builder ────────────────────────────────────────────────────────────
@@ -397,15 +449,18 @@ def get_data(date: Optional[str] = None, _: models.User = Depends(get_current_us
     if not path_str:
         return {"configured": False}
     target = _resolve_for_date(path_str, date)
-    result = _parse_excel(str(target))
+    # 浅拷贝：缓存里存的是共享 dict，避免调用方补字段污染缓存
+    result = dict(_parse_excel_cached(str(target)))
     result["actual_file"] = target.name
     result["date_dir"] = target.parent.name if _DATE_DIR_PAT.match(target.parent.name) else None
     return {"configured": True, **result}
 
 
 @router.get("/trend")
-def get_trend(_: models.User = Depends(get_current_user)):
-    """扫描目录内全部报表，按天聚合趋势数据。支持日期子目录和平铺两种结构。"""
+def get_trend(db: Session = Depends(get_db), _: models.User = Depends(get_current_user)):
+    """按天聚合的问题单趋势。数字入库（issue_report_daily），趋势直接读库；
+    只有新增/变更（file_mtime 变化）的那天才重新解析对应 xlsx——增量、免全量重扫。
+    """
     import openpyxl
 
     cfg = _load_config()
@@ -413,59 +468,64 @@ def get_trend(_: models.User = Depends(get_current_user)):
     if not path_str:
         raise HTTPException(400, "未配置报表路径")
 
-    p = pathlib.Path(path_str)
-    if p.is_file():
-        p = p.parent
-    if not p.is_dir():
-        raise HTTPException(404, f"目录不存在：{path_str}")
+    file_list = _list_report_files(path_str)
+    if not file_list:
+        raise HTTPException(404, "目录中无可用报表（日期子目录或含日期后缀的 xlsx）")
 
-    # 日期子目录结构（优先）
-    date_dirs = _list_date_dirs(p)
-    if date_dirs:
-        file_list = []
-        for d in reversed(date_dirs):  # 升序用于趋势
-            xlsxes = sorted(d.glob("*.xlsx"), key=lambda f: f.name, reverse=True)
-            if xlsxes:
-                file_list.append((d.name, xlsxes[0]))
-        if not file_list:
-            raise HTTPException(404, "无有效报表数据")
-    else:
-        # 平铺目录兼容
-        flat = sorted(
-            (f for f in p.glob("*.xlsx") if _DATE_PAT.search(f.name)),
-            key=_file_sort_key,
-        )
-        if not flat:
-            raise HTTPException(404, "目录中无含日期后缀的报表文件")
-        file_list = []
-        for f in flat:
-            m = _DATE_PAT.search(f.name)
-            ds = m.group(1)
-            file_list.append((f"{ds[:4]}-{ds[4:6]}-{ds[6:]}", f))
+    existing = {d.date: d for d in db.query(models.IssueReportDaily).all()}
+    disk_dates = {ds for ds, _ in file_list}
 
-    daily: List[Dict] = []
-    all_groups:     set = set()
-    all_severities: set = set()
-
+    # 增量入库：只解析库里没有、或文件已变（名字/mtime 变化）的那些天
     for date_str, f in file_list:
         try:
-            wb  = openpyxl.load_workbook(str(f), data_only=True)
+            mtime = str(f.stat().st_mtime)
+        except OSError:
+            mtime = ""
+        cur = existing.get(date_str)
+        if cur is not None and cur.file_name == f.name and cur.file_mtime == mtime:
+            continue  # 未变，跳过解析
+        try:
+            wb = openpyxl.load_workbook(str(f), data_only=True)
             raw = _parse_raw_from_wb(wb)
             wb.close()
         except Exception:
             continue
+        if cur is None:
+            cur = models.IssueReportDaily(date=date_str)
+            db.add(cur)
+            existing[date_str] = cur
+        cur.file_name = f.name
+        cur.file_mtime = mtime
+        cur.total = len(raw)
+        cur.by_group_json = json.dumps(_count_by(raw, "group"), ensure_ascii=False)
+        cur.by_severity_json = json.dumps(_count_by(raw, "severity"), ensure_ascii=False)
+        cur.ingested_at = datetime.utcnow()
 
-        bg = _count_by(raw, "group")
-        bs = _count_by(raw, "severity")
+    # 磁盘上已删除的日期：清掉库里的陈旧行，保持趋势与目录一致
+    stale = [d for date, d in existing.items() if date not in disk_dates]
+    for d in stale:
+        db.delete(d)
+    db.commit()
+
+    rows = (
+        db.query(models.IssueReportDaily)
+        .order_by(models.IssueReportDaily.date.asc())
+        .all()
+    )
+    daily: List[Dict] = []
+    all_groups: set = set()
+    all_severities: set = set()
+    for r in rows:
+        try:
+            bg = json.loads(r.by_group_json or "{}")
+            bs = json.loads(r.by_severity_json or "{}")
+        except (ValueError, TypeError):
+            bg, bs = {}, {}
         all_groups.update(bg.keys())
         all_severities.update(bs.keys())
-
         daily.append({
-            "date":        date_str,
-            "file":        f.name,
-            "total":       len(raw),
-            "by_group":    bg,
-            "by_severity": bs,
+            "date": r.date, "file": r.file_name,
+            "total": r.total, "by_group": bg, "by_severity": bs,
         })
 
     sev_order = ["严重", "一般", "提示"]
@@ -1156,7 +1216,7 @@ def export_pptx(
         raise HTTPException(400, "未配置报表路径")
 
     target = _resolve_for_date(path_str, date)
-    data   = _parse_excel(str(target))
+    data   = dict(_parse_excel_cached(str(target)))
     data["actual_file"] = target.name
 
     try:
