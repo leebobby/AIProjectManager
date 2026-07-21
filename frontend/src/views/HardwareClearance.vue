@@ -3,7 +3,10 @@
     <el-card shadow="never">
       <!-- ── 工具栏 ─────────────────────────────────── -->
       <div class="toolbar">
-        <el-select v-model="filterCustomerId" placeholder="按战场筛选机台列" clearable filterable size="small" style="width:200px">
+        <el-tag v-if="focusedMachine" type="warning" size="small" closable class="machine-filter-tag" @close="filterMachineId = null">
+          仅看机台：{{ focusedMachine.machine_id }}（{{ focusedMachine.battlefield }}）
+        </el-tag>
+        <el-select v-model="filterCustomerId" placeholder="按战场筛选机台列" clearable filterable size="small" style="width:200px" :disabled="!!filterMachineId">
           <el-option v-for="b in battlefieldOptions" :key="b.customer_id" :label="b.battlefield" :value="b.customer_id" />
         </el-select>
         <el-input v-model="q" placeholder="搜索问题单 / 简述 / 部件 / 进展" clearable size="small" style="width:230px" :prefix-icon="Search" />
@@ -144,7 +147,7 @@
 </template>
 
 <script setup>
-import { computed, defineComponent, h, onMounted, ref } from 'vue'
+import { computed, defineComponent, h, onMounted, ref, watch } from 'vue'
 import { RouterLink } from 'vue-router'
 import { ElInput, ElMessage, ElMessageBox } from 'element-plus'
 import { Delete, Document, Download, EditPen, Plus, Search, Setting, Unlock, Upload } from '@element-plus/icons-vue'
@@ -152,7 +155,18 @@ import { configApi, customerStatusApi, downloadBlob, hardwareIssueApi, resourceG
 import { auth } from '../store/auth'
 import { naturalCompare } from '../utils/format'
 
+const props = defineProps({
+  // 从客户总览"硬件清零"格跳过来时，聚焦到某台机台（machine_status_id）
+  focusMachine: { type: [Number, String], default: null },
+})
+
 const isAdmin = auth.isAdmin
+
+const filterMachineId = ref(props.focusMachine != null ? Number(props.focusMachine) : null)
+watch(() => props.focusMachine, (v) => {
+  filterMachineId.value = v != null ? Number(v) : null
+  q.value = ''
+})
 
 const rows = ref([])
 const machines = ref([])
@@ -224,17 +238,30 @@ const battlefieldOptions = computed(() => {
     .sort((a, b) => naturalCompare(a.battlefield, b.battlefield))
 })
 
-// 可见机台列：选了战场就只显示该战场机台
+// 聚焦的机台（从总览跳来）
+const focusedMachine = computed(() => machines.value.find(m => m.id === filterMachineId.value) || null)
+
+// 可见机台列：聚焦某机台→只显示该列；否则选了战场→只显示该战场机台
 const visibleMachines = computed(() => {
+  if (filterMachineId.value) {
+    const m = machines.value.find(x => x.id === filterMachineId.value)
+    return m ? [m] : []
+  }
   let ms = machines.value.slice()
   if (filterCustomerId.value) ms = ms.filter(m => m.customer_id === filterCustomerId.value)
   return ms.sort((a, b) => naturalCompare(a.battlefield || '', b.battlefield || '') || naturalCompare(a.machine_id, b.machine_id))
 })
 
 const filteredRows = computed(() => {
-  if (!q.value.trim()) return rows.value
+  let rs = rows.value
+  // 聚焦机台时，只看该机台有清零状态的行（即"对应机台的情况"）
+  if (filterMachineId.value) {
+    const key = String(filterMachineId.value)
+    rs = rs.filter(r => r.machine_cells && r.machine_cells[key])
+  }
+  if (!q.value.trim()) return rs
   const kw = q.value.trim().toLowerCase()
-  return rows.value.filter(r =>
+  return rs.filter(r =>
     (r.issue_ref || '').toLowerCase().includes(kw)
     || (r.summary || '').toLowerCase().includes(kw)
     || (r.replaced_part || '').toLowerCase().includes(kw)
@@ -450,6 +477,7 @@ onMounted(async () => {
 .hw-page { display: flex; flex-direction: column; gap: 14px; }
 .toolbar { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; margin-bottom: 12px; }
 .toolbar-right { display: flex; align-items: center; gap: 8px; margin-left: auto; }
+.machine-filter-tag { margin-right: 2px; }
 .muted { color: #909399; font-size: 13px; }
 .empty-hint { color: #909399; padding: 24px 0; }
 .legend { margin-top: 10px; font-size: 12px; }

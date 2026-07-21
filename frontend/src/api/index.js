@@ -216,6 +216,7 @@ export const customerIssueApi = {
 
 export const hardwareIssueApi = {
   list:    ()         => http.get('/hardware-issues'),
+  machineSummary: ()  => http.get('/hardware-issues/machine-summary'),
   create:  (data)     => http.post('/hardware-issues', data),
   update:  (id, data) => http.put(`/hardware-issues/${id}`, data),
   remove:  (id)       => http.delete(`/hardware-issues/${id}`),

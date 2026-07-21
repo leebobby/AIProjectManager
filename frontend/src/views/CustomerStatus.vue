@@ -111,6 +111,17 @@
           </template>
         </el-table-column>
 
+        <el-table-column label="硬件清零" width="104" align="center" fixed="right">
+          <template #default="{ row }">
+            <span v-if="clearanceByMachine[row.id] && clearanceByMachine[row.id].total" class="clr-cell">
+              <a class="clr-num" title="查看该机台清零情况" @click="gotoHardware(row)">{{ clearanceByMachine[row.id].done }}</a>
+              <span class="clr-sep">/</span>
+              <a class="clr-num" title="查看该机台清零情况" @click="gotoHardware(row)">{{ clearanceByMachine[row.id].total }}</a>
+            </span>
+            <span v-else class="muted">—</span>
+          </template>
+        </el-table-column>
+
         <el-table-column v-if="isAdmin && editMode" label="操作" width="160" fixed="right">
           <template #default="{ row }">
             <el-button size="small" @click="openEdit(row)">编辑</el-button>
@@ -127,7 +138,7 @@
       </el-tab-pane>
 
       <el-tab-pane label="硬件问题清零" name="hardware">
-        <HardwareClearance v-if="pageTab === 'hardware'" />
+        <HardwareClearance v-if="pageTab === 'hardware'" :focus-machine="hwFocusMachine" />
       </el-tab-pane>
     </el-tabs>
 
@@ -199,7 +210,7 @@ import { computed, nextTick, onMounted, reactive, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { Check, Download, Edit, Plus, Refresh } from '@element-plus/icons-vue'
-import { configApi, customerApi, customerIssueApi, customerStatusApi, downloadBlob, majorVersionApi } from '../api'
+import { configApi, customerApi, customerIssueApi, customerStatusApi, downloadBlob, hardwareIssueApi, majorVersionApi } from '../api'
 import { auth } from '../store/auth'
 import { customerIssues, ensureIssues, reloadIssues } from '../store/customerIssues'
 import { naturalCompare } from '../utils/format'
@@ -213,8 +224,11 @@ const route = useRoute()
 const isAdmin = auth.isAdmin
 
 // 页面顶层 tab：overview=机台总览 / issues=问题跟踪；支持 ?tab=issues&focus=<id> 深链
-const pageTab = ref(route.query.tab === 'issues' ? 'issues' : 'overview')
+const TAB_QUERY = { issues: 'issues', hardware: 'hardware' }
+const pageTab = ref(TAB_QUERY[route.query.tab] || 'overview')
 const trackingFocus = ref(Number(route.query.focus) || null)
+const hwFocusMachine = ref(null)        // 从总览点"硬件清零"跳过来时聚焦的机台
+const clearanceByMachine = ref({})      // {machine_status_id: {total, done}}
 
 const list    = ref([])
 const stages  = ref([])
@@ -286,11 +300,27 @@ async function load() {
     const { data } = await customerStatusApi.list()
     list.value = data.map(row => ({ ...row, task_items: [], issue_items: [] }))
     await loadIssues()
+    loadClearance()   // 硬件清零汇总；失败不阻塞总览
   } catch (e) {
     ElMessage.error(e.response?.data?.detail || '加载失败')
   } finally {
     loading.value = false
   }
+}
+
+async function loadClearance() {
+  try {
+    const { data } = await hardwareIssueApi.machineSummary()
+    clearanceByMachine.value = data || {}
+  } catch {
+    clearanceByMachine.value = {}
+  }
+}
+
+// 点总览"硬件清零"格 → 切到硬件清零 tab 并筛选到该机台
+function gotoHardware(row) {
+  hwFocusMachine.value = row.id
+  pageTab.value = 'hardware'
 }
 
 // 点条目 → 跳到问题跟踪总表并聚焦该条；不传则只是打开总表
@@ -299,8 +329,13 @@ function gotoTracking(item) {
   pageTab.value = 'issues'
 }
 
-// 从问题跟踪 tab 切回总览时，用（可能被 tab 改过的）缓存重组一次，保持一致
-watch(pageTab, (v) => { if (v === 'overview' && list.value.length) applyIssueGrouping() })
+// 从子 tab 切回总览时，用（可能被 tab 改过的）缓存重组，并刷新硬件清零计数
+watch(pageTab, (v) => {
+  if (v === 'overview' && list.value.length) {
+    applyIssueGrouping()
+    loadClearance()
+  }
+})
 
 async function loadConfig() {
   try {
@@ -543,6 +578,14 @@ onMounted(async () => {
   text-decoration: none;
 }
 .bf-link:hover { text-decoration: underline; }
+
+/* 硬件清零联动列 */
+.clr-cell { font-variant-numeric: tabular-nums; }
+.clr-num {
+  color: #409eff; cursor: pointer; font-weight: 600; text-decoration: none;
+}
+.clr-num:hover { text-decoration: underline; }
+.clr-sep { color: #c0c4cc; margin: 0 2px; }
 .dialog-tip {
   font-size: 12px;
   color: #909399;

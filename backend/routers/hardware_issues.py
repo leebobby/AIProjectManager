@@ -96,6 +96,32 @@ def _machines_ordered(db: Session) -> List[models.CustomerStatus]:
     )
 
 
+def _is_done(val: str, done_set: set) -> bool:
+    """某机台格是否算"已清零/完成"。配了 hw_machine_cell_done_options 就按它，
+    否则用启发式：状态里含"已清零"（"未清零"不含"已清零"，自然排除）。"""
+    if not val:
+        return False
+    return (val in done_set) if done_set else ("已清零" in val)
+
+
+@router.get("/machine-summary")
+def machine_summary(db: Session = Depends(get_db), _: models.User = Depends(get_current_user)):
+    """按机台汇总清零进度：{machine_status_id(str): {total, done}}。
+    total＝该机台有非空清零状态的条数；done＝其中算"已清零"的条数。供客户总览联动列用。"""
+    rows = db.query(models.HardwareIssue).all()
+    done_set = set(load_config().get("hw_machine_cell_done_options") or [])
+    out: Dict[str, Dict[str, int]] = {}
+    for r in rows:
+        for msid, val in _parse_cells(r.machine_cells_json).items():
+            if not val:
+                continue
+            s = out.setdefault(msid, {"total": 0, "done": 0})
+            s["total"] += 1
+            if _is_done(val, done_set):
+                s["done"] += 1
+    return out
+
+
 @router.get("", response_model=List[schemas.HardwareIssueOut])
 def list_items(db: Session = Depends(get_db), _: models.User = Depends(get_current_user)):
     rows = (
