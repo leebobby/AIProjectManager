@@ -111,6 +111,31 @@
           </template>
         </el-table-column>
 
+        <el-table-column label="关键特性" min-width="190" fixed="right">
+          <template #header>
+            <span>关键特性</span>
+            <el-button link type="primary" size="small" :icon="TopRight" title="打开特性目录" @click="gotoKeyFeatures" />
+          </template>
+          <template #default="{ row }">
+            <el-select v-if="editMode" :model-value="currentFeatureIds(row)" multiple filterable
+                       collapse-tags collapse-tags-tooltip size="small" placeholder="选择特性" style="width:100%"
+                       @change="(ids) => setMachineFeatures(row, ids)">
+              <el-option v-for="f in featureCatalog" :key="f.id" :label="f.name || '(未命名)'" :value="f.id">
+                <span class="feat-opt-dot" :style="{ background: featureColor(f.status) }" />{{ f.name || '(未命名)' }}
+              </el-option>
+            </el-select>
+            <div v-else class="feat-cell" @click="gotoKeyFeatures">
+              <template v-if="featuresByMachine[row.id] && featuresByMachine[row.id].length">
+                <el-tooltip v-for="f in featuresByMachine[row.id]" :key="f.id"
+                            :content="`${f.name}：${f.status}`" placement="top">
+                  <span class="feat-tag" :style="{ background: featureColor(f.status) }">{{ f.name }}</span>
+                </el-tooltip>
+              </template>
+              <span v-else class="muted">—</span>
+            </div>
+          </template>
+        </el-table-column>
+
         <el-table-column label="硬件清零" width="104" align="center" fixed="right">
           <template #default="{ row }">
             <span v-if="clearanceByMachine[row.id] && clearanceByMachine[row.id].total" class="clr-cell">
@@ -209,10 +234,11 @@
 import { computed, nextTick, onMounted, reactive, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
-import { Check, Download, Edit, Plus, Refresh } from '@element-plus/icons-vue'
-import { configApi, customerApi, customerIssueApi, customerStatusApi, downloadBlob, hardwareIssueApi, majorVersionApi } from '../api'
+import { Check, Download, Edit, Plus, Refresh, TopRight } from '@element-plus/icons-vue'
+import { configApi, customerApi, customerIssueApi, customerStatusApi, downloadBlob, hardwareIssueApi, keyFeatureApi, majorVersionApi } from '../api'
 import { auth } from '../store/auth'
 import { customerIssues, ensureIssues, reloadIssues } from '../store/customerIssues'
+import { featureColor } from '../utils/featureStatus'
 import { naturalCompare } from '../utils/format'
 import CustomerIssueCell from '../components/CustomerIssueCell.vue'
 import CustomerIssueTracking from './CustomerIssueTracking.vue'
@@ -229,6 +255,8 @@ const pageTab = ref(TAB_QUERY[route.query.tab] || 'overview')
 const trackingFocus = ref(Number(route.query.focus) || null)
 const hwFocusMachine = ref(null)        // 从总览点"硬件清零"跳过来时聚焦的机台
 const clearanceByMachine = ref({})      // {machine_status_id: {total, done}}
+const featuresByMachine = ref({})       // {machine_status_id: [{id,name,status}...]}
+const featureCatalog = ref([])          // 全量特性目录，供机台勾选
 
 const list    = ref([])
 const stages  = ref([])
@@ -301,6 +329,7 @@ async function load() {
     list.value = data.map(row => ({ ...row, task_items: [], issue_items: [] }))
     await loadIssues()
     loadClearance()   // 硬件清零汇总；失败不阻塞总览
+    loadFeatures()    // 关键特性点灯；失败不阻塞总览
   } catch (e) {
     ElMessage.error(e.response?.data?.detail || '加载失败')
   } finally {
@@ -317,10 +346,46 @@ async function loadClearance() {
   }
 }
 
+async function loadFeatures() {
+  try {
+    const [bm, cat] = await Promise.all([keyFeatureApi.byMachine(), keyFeatureApi.list()])
+    featuresByMachine.value = bm.data || {}
+    featureCatalog.value = cat.data || []
+  } catch {
+    featuresByMachine.value = {}
+    featureCatalog.value = []
+  }
+}
+
+// 某机台当前勾选的特性 id 列表（点灯来源）
+function currentFeatureIds(row) {
+  return (featuresByMachine.value[row.id] || []).map(f => f.id)
+}
+
+// 机台勾选/取消关键特性 → 保存并本地更新点灯
+async function setMachineFeatures(row, ids) {
+  try {
+    await keyFeatureApi.setMachine(row.id, ids)
+    const byId = Object.fromEntries(featureCatalog.value.map(f => [f.id, f]))
+    featuresByMachine.value = {
+      ...featuresByMachine.value,
+      [row.id]: ids.map(id => byId[id]).filter(Boolean).map(f => ({ id: f.id, name: f.name, status: f.status })),
+    }
+  } catch (e) {
+    ElMessage.error(e.response?.data?.detail || '保存失败')
+    loadFeatures()
+  }
+}
+
 // 点总览"硬件清零"格 → 切到硬件清零 tab 并筛选到该机台
 function gotoHardware(row) {
   hwFocusMachine.value = row.id
   pageTab.value = 'hardware'
+}
+
+// 跳到关键特性目录页
+function gotoKeyFeatures() {
+  router.push({ path: '/key-features' })
 }
 
 // 点条目 → 跳到问题跟踪总表并聚焦该条；不传则只是打开总表
@@ -578,6 +643,14 @@ onMounted(async () => {
   text-decoration: none;
 }
 .bf-link:hover { text-decoration: underline; }
+
+/* 关键特性点灯列 */
+.feat-cell { display: flex; flex-wrap: wrap; gap: 4px; cursor: pointer; min-height: 20px; }
+.feat-tag {
+  display: inline-block; padding: 1px 8px; border-radius: 10px;
+  color: #fff; font-size: 12px; line-height: 18px; white-space: nowrap;
+}
+.feat-opt-dot { display: inline-block; width: 8px; height: 8px; border-radius: 50%; margin-right: 6px; vertical-align: middle; }
 
 /* 硬件清零联动列 */
 .clr-cell { font-variant-numeric: tabular-nums; }

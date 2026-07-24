@@ -214,6 +214,28 @@ export const customerIssueApi = {
   },
 }
 
+export const keyFeatureApi = {
+  list:      ()         => http.get('/key-features'),
+  byMachine: ()         => http.get('/key-features/by-machine'),
+  create:    (data)     => http.post('/key-features', data),
+  update:    (id, data) => http.put(`/key-features/${id}`, data),
+  remove:    (id)       => http.delete(`/key-features/${id}`),
+  setMachine: (machineId, feature_ids) => http.put(`/key-features/machine/${machineId}`, { feature_ids }),
+  uploadAttachment: (id, file) => {
+    const fd = new FormData()
+    fd.append('file', file)
+    return http.post(`/key-features/${id}/attachments`, fd)
+  },
+  addLink: (id, name, url) => {
+    const fd = new FormData()
+    fd.append('name', name)
+    fd.append('url', url)
+    return http.post(`/key-features/${id}/links`, fd)
+  },
+  removeAttachment: (id, attId) => http.delete(`/key-features/${id}/attachments/${attId}`),
+  downloadAttachment: (id, stored) => http.get(`/key-features/${id}/attachments/${stored}`, { responseType: 'blob' }),
+}
+
 export const hardwareIssueApi = {
   list:    ()         => http.get('/hardware-issues'),
   machineSummary: ()  => http.get('/hardware-issues/machine-summary'),

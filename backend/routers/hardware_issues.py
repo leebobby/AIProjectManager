@@ -40,8 +40,48 @@ _FIXED_IMPORT_COLUMNS = [
     ("清零进展", "clear_progress"),
     ("SOP情况", "sop_status"),
 ]
-# 导出/模板里固定列的表头顺序（含「编号」，编号只导出不回读）
-_EXPORT_FIXED = [("编号", None)] + [(h, f) for h, f in _FIXED_IMPORT_COLUMNS]
+# 导出/模板里固定列的顺序：(锚点key, 表头, _serialize 里的取值键)。
+# 锚点key 与前端 FIXED_COLS 的 key 一致，供自定义列 after 定位插入。「编号」单列另处理。
+_FIXED_EXPORT = [
+    ("source", "来源", "source"),
+    ("issue_ref", "问题单号", "issue_ref"),
+    ("summary", "问题简述", "summary"),
+    ("replaced_part", "更换部件", "replaced_part"),
+    ("issue_source", "问题来源", "issue_source"),
+    ("group", "责任领域", "group_name"),
+    ("owner", "责任人", "owner_display"),
+    ("ccb_conclusion", "CCB清零结论", "ccb_conclusion"),
+    ("ship_clear_from", "从#N开始发货清零", "ship_clear_from"),
+    ("clear_progress", "清零进展", "clear_progress"),
+    ("sop_status", "SOP情况", "sop_status"),
+]
+
+
+def _ordered_export_columns(extra_cols: List[Dict[str, Any]]) -> List:
+    """按自定义列的 after 锚点，把固定列与自定义列交织成有序列表。
+    返回 [(kind, 表头, 取值键)]，kind ∈ {"fixed","extra"}；
+    after=__start__ 排到最前、__end__/缺省 排到机台列前、其余接在对应固定列之后。"""
+    by_anchor: Dict[str, List[dict]] = {}
+    for c in extra_cols:
+        by_anchor.setdefault(c.get("after") or "__end__", []).append(c)
+    seen = set()
+    out: List = []
+
+    def _push_extras(anchor: str):
+        for c in by_anchor.get(anchor, []):
+            out.append(("extra", c["label"], c["key"]))
+            seen.add(c["key"])
+
+    _push_extras("__start__")
+    for anchor, header, dkey in _FIXED_EXPORT:
+        out.append(("fixed", header, dkey))
+        _push_extras(anchor)
+    _push_extras("__end__")
+    # after 指向已不存在的锚点 → 兜底放末尾，避免丢列
+    for c in extra_cols:
+        if c["key"] not in seen:
+            out.append(("extra", c["label"], c["key"]))
+    return out
 
 
 def _parse_cells(raw: Optional[str]) -> Dict[str, str]:
@@ -73,6 +113,7 @@ def _serialize(row: models.HardwareIssue, user_names: Dict[int, str] = None) -> 
         "clear_progress": row.clear_progress or "",
         "sop_status": row.sop_status or "",
         "machine_cells": _parse_cells(row.machine_cells_json),
+        "extra_fields": _parse_cells(row.extra_fields_json),
         "sort_order": row.sort_order or 0,
         "version": row.version,
         "updated_at": row.updated_at,
@@ -94,6 +135,13 @@ def _machines_ordered(db: Session) -> List[models.CustomerStatus]:
         .order_by(models.CustomerStatus.battlefield, models.CustomerStatus.machine_id)
         .all()
     )
+
+
+def _extra_columns() -> List[Dict[str, Any]]:
+    """自定义列定义（config.hw_extra_columns）：[{key,label,type,options,width}]。
+    过滤掉缺 key/label 的脏项；顺序即展示/导出顺序。"""
+    cols = load_config().get("hw_extra_columns") or []
+    return [c for c in cols if isinstance(c, dict) and c.get("key") and c.get("label")]
 
 
 def _is_done(val: str, done_set: set) -> bool:
@@ -152,6 +200,8 @@ def create_item(
     data = payload.model_dump()
     cells = data.pop("machine_cells", {}) or {}
     data["machine_cells_json"] = json.dumps(cells, ensure_ascii=False)
+    extra = data.pop("extra_fields", {}) or {}
+    data["extra_fields_json"] = json.dumps(extra, ensure_ascii=False)
     fill_group_fk(db, data, "owner_group", "group_id")
     fill_user_fk(db, data, "owner_name", "owner_user_id")
     if data.get("sort_order") in (None, 0):
@@ -185,6 +235,9 @@ def update_item(
     if "machine_cells" in changes:
         cells = changes.pop("machine_cells") or {}
         item.machine_cells_json = json.dumps(cells, ensure_ascii=False)
+    if "extra_fields" in changes:
+        extra = changes.pop("extra_fields") or {}
+        item.extra_fields_json = json.dumps(extra, ensure_ascii=False)
     fill_group_fk(db, changes, "owner_group", "group_id")
     fill_user_fk(db, changes, "owner_name", "owner_user_id")
     for k, v in changes.items():
@@ -245,19 +298,21 @@ def export_xlsx(
     )
     names = _user_name_map(db, rows)
     machines = _machines_ordered(db)
+    extra_cols = _extra_columns()
+    ordered = _ordered_export_columns(extra_cols)
 
-    fixed_headers = [h for h, _ in _EXPORT_FIXED]
     machine_headers = [m.machine_id for m in machines]
     wb = openpyxl.Workbook()
     ws = wb.active
     ws.title = "硬件问题清零"
-    _style_header(ws, fixed_headers + machine_headers)
+    _style_header(ws, ["编号"] + [h for _, h, _ in ordered] + machine_headers)
 
     for i, r in enumerate(rows, start=1):
         d = _serialize(r, names)
-        line = [i, d["source"], d["issue_ref"], d["summary"], d["replaced_part"],
-                d["issue_source"], d["group_name"], d["owner_display"], d["ccb_conclusion"],
-                d["ship_clear_from"], d["clear_progress"], d["sop_status"]]
+        ef = d["extra_fields"]
+        line = [i]
+        for kind, _hdr, key in ordered:
+            line.append(d.get(key, "") if kind == "fixed" else ef.get(key, ""))
         cells = d["machine_cells"]
         line += [cells.get(str(m.id), "") for m in machines]
         ws.append(line)
@@ -284,19 +339,32 @@ def download_import_template(db: Session = Depends(get_db), _: models.User = Dep
     from openpyxl.utils import get_column_letter
 
     machines = _machines_ordered(db)
-    fixed_headers = [h for h, _ in _EXPORT_FIXED]
+    extra_cols = _extra_columns()
+    ordered = _ordered_export_columns(extra_cols)
     machine_headers = [m.machine_id for m in machines]
     wb = openpyxl.Workbook()
     ws = wb.active
     ws.title = "硬件问题清零导入"
-    _style_header(ws, fixed_headers + machine_headers)
+    _style_header(ws, ["编号"] + [h for _, h, _ in ordered] + machine_headers)
 
-    example = [1, "现场反馈", "HWBUG-2026-001", "电机异响", "更换电机", "来料不良",
-               "电控", "李四", "同意从#6清零", "YLS006", "已换件复测中", "SOP已更新"]
+    # 示例行：固定列填样例，自定义列留空；机台首列示例填「已清零」
+    sample = {
+        "source": "现场反馈", "issue_ref": "HWBUG-2026-001", "summary": "电机异响",
+        "replaced_part": "更换电机", "issue_source": "来料不良", "group_name": "电控",
+        "owner_display": "李四", "ccb_conclusion": "同意从#6清零", "ship_clear_from": "YLS006",
+        "clear_progress": "已换件复测中", "sop_status": "SOP已更新",
+    }
+    example = [1] + [sample.get(key, "") if kind == "fixed" else "" for kind, _h, key in ordered]
     example += ["已清零" if i == 0 else "" for i in range(len(machine_headers))]
     ws.append(example)
 
-    widths = [6, 14, 18, 24, 16, 14, 12, 12, 20, 16, 24, 18] + [12] * len(machine_headers)
+    fixed_width = {
+        "source": 14, "issue_ref": 18, "summary": 24, "replaced_part": 16, "issue_source": 14,
+        "group_name": 12, "owner_display": 12, "ccb_conclusion": 20, "ship_clear_from": 16,
+        "clear_progress": 24, "sop_status": 18,
+    }
+    widths = ([6] + [fixed_width.get(key, 14) if kind == "fixed" else 14 for kind, _h, key in ordered]
+              + [12] * len(machine_headers))
     for i, w in enumerate(widths, start=1):
         ws.column_dimensions[get_column_letter(i)].width = w
     ws.row_dimensions[1].height = 26
@@ -309,7 +377,7 @@ def download_import_template(db: Session = Depends(get_db), _: models.User = Dep
         + "；问题来源/责任领域须与配置一致；删除本示例行后再导入。"
     )).font = Font(italic=True, color="909399")
     ws.merge_cells(start_row=tip_row, start_column=1, end_row=tip_row,
-                   end_column=len(fixed_headers) + len(machine_headers))
+                   end_column=1 + len(ordered) + len(machine_headers))
 
     buf = io.BytesIO()
     wb.save(buf)
@@ -353,16 +421,21 @@ async def import_from_excel(
 
     header_row = [str(c.value).strip() if c.value is not None else "" for c in ws[1]]
     fixed_label_to_field = {h: f for h, f in _FIXED_IMPORT_COLUMNS}
+    extra_cols = _extra_columns()
+    extra_label_to_key = {c["label"]: c["key"] for c in extra_cols}
     # 机台编号 → machine_status_id
     machines = _machines_ordered(db)
     mid_by_no = {m.machine_id: m.id for m in machines}
 
     fixed_idx: Dict[str, int] = {}
+    extra_idx: Dict[int, str] = {}     # col index -> 自定义列 key
     machine_idx: Dict[int, int] = {}   # col index -> machine_status_id
     unknown_machine_cols: List[str] = []
     for idx, label in enumerate(header_row):
         if label in fixed_label_to_field:
             fixed_idx[fixed_label_to_field[label]] = idx
+        elif label in extra_label_to_key:
+            extra_idx[idx] = extra_label_to_key[label]
         elif label in mid_by_no:
             machine_idx[idx] = mid_by_no[label]
         elif label and label != "编号":
@@ -404,11 +477,18 @@ async def import_from_excel(
             errors.append(f"第 {r_idx} 行：问题来源「{src}」不在配置选项内，已跳过")
             continue
 
-        # 全空（既无固定列内容也无机台格）跳过
-        if not any(data.values()) and not cells:
+        extra = {}
+        for col_idx, key in extra_idx.items():
+            val = _coerce(row[col_idx]) if col_idx < len(row) else ""
+            if val:
+                extra[key] = val
+
+        # 全空（既无固定列内容、无机台格、无自定义列）跳过
+        if not any(data.values()) and not cells and not extra:
             continue
 
         data["machine_cells_json"] = json.dumps(cells, ensure_ascii=False)
+        data["extra_fields_json"] = json.dumps(extra, ensure_ascii=False)
         fill_group_fk(db, data, "owner_group", "group_id")
         fill_user_fk(db, data, "owner_name", "owner_user_id")
         data["sort_order"] = _next_sort_order(db) + created

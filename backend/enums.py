@@ -111,3 +111,14 @@ def norm_issue_urgency(v, *, partial: bool = False) -> Optional[str]:
     if s in CUSTOMER_ISSUE_URGENCIES:
         return s
     raise ValueError(f"重要程度「{v}」非法，应为 {'/'.join(CUSTOMER_ISSUE_URGENCIES)} 之一")
+
+
+# ── 关键特性交付状态（key_features）───────────────────────────────────────────
+# 从"最成熟"到"最早期"排序；前端点灯颜色须与本顺序一致。
+KEY_FEATURE_STATUSES = ("可商用", "beta验证", "测试", "开发", "设计", "分析")
+KEY_FEATURE_STATUS_DEFAULT = "分析"
+
+
+def norm_key_feature_status(v, *, partial: bool = False) -> Optional[str]:
+    return _norm_choice(v, KEY_FEATURE_STATUSES, KEY_FEATURE_STATUS_DEFAULT,
+                        "交付状态", partial=partial)

@@ -31,55 +31,16 @@
                 :row-class-name="rowClass" max-height="calc(100vh - 260px)">
         <el-table-column type="index" label="编号" width="56" align="center" fixed="left" />
 
-        <el-table-column label="来源" min-width="110">
-          <template #default="{ row }"><EditableCell :value="row.source" placeholder="—" @save="(v) => save(row, { source: v })" /></template>
-        </el-table-column>
-        <el-table-column label="问题单号" min-width="130">
-          <template #default="{ row }"><EditableCell :value="row.issue_ref" placeholder="—" @save="(v) => save(row, { issue_ref: v })" /></template>
-        </el-table-column>
-        <el-table-column label="问题简述" min-width="200">
-          <template #default="{ row }"><EditableCell :value="row.summary" multiline placeholder="点击填写" @save="(v) => save(row, { summary: v })" /></template>
-        </el-table-column>
-        <el-table-column label="更换部件" min-width="130">
-          <template #default="{ row }"><EditableCell :value="row.replaced_part" placeholder="—" @save="(v) => save(row, { replaced_part: v })" /></template>
-        </el-table-column>
-
-        <el-table-column label="问题来源" width="130" align="center">
+        <!-- 固定列 + 自定义列，按 orderedColumns 交织（自定义列可插入任意固定列之间）-->
+        <el-table-column v-for="c in orderedColumns" :key="c.uid" :label="c.label"
+                         :width="c.width" :min-width="c.minWidth" :align="c.align"
+                         :header-align="c.headerAlign" :class-name="c.className">
           <template #default="{ row }">
-            <el-select :model-value="row.issue_source" size="small" clearable filterable placeholder="—"
-                       :disabled="!editMode" @change="(v) => save(row, { issue_source: v || '' })">
-              <el-option v-for="o in optionsWith(issueSources, row.issue_source)" :key="o" :label="o" :value="o" />
-            </el-select>
+            <FixedCell v-if="c.type === 'fixed'" :col="c.def" :row="row"
+                       :users="users" :groups="groups" :issue-sources="issueSources"
+                       @save="(patch) => save(row, patch)" />
+            <ExtraCell v-else :col="c.def" :row="row" @save="(k, v) => saveExtra(row, k, v)" />
           </template>
-        </el-table-column>
-        <el-table-column label="责任领域" width="130" align="center">
-          <template #default="{ row }">
-            <el-select :model-value="row.group_id" size="small" clearable filterable placeholder="—"
-                       :disabled="!editMode" @change="(v) => save(row, { group_id: v ?? null })">
-              <el-option v-for="g in groups" :key="g.id" :label="g.name" :value="g.id" />
-            </el-select>
-          </template>
-        </el-table-column>
-        <el-table-column label="责任人" width="130" align="center">
-          <template #default="{ row }">
-            <el-select :model-value="row.owner_user_id" size="small" clearable filterable placeholder="未指派"
-                       :disabled="!editMode" @change="(v) => save(row, { owner_user_id: v ?? null })">
-              <el-option v-for="u in users" :key="u.id" :label="u.full_name || u.username" :value="u.id" />
-            </el-select>
-          </template>
-        </el-table-column>
-
-        <el-table-column label="CCB清零结论" min-width="160">
-          <template #default="{ row }"><EditableCell :value="row.ccb_conclusion" multiline placeholder="—" @save="(v) => save(row, { ccb_conclusion: v })" /></template>
-        </el-table-column>
-        <el-table-column label="从#N发货清零" width="120" align="center">
-          <template #default="{ row }"><EditableCell :value="row.ship_clear_from" placeholder="—" @save="(v) => save(row, { ship_clear_from: v })" /></template>
-        </el-table-column>
-        <el-table-column label="清零进展" min-width="160">
-          <template #default="{ row }"><EditableCell :value="row.clear_progress" multiline placeholder="—" @save="(v) => save(row, { clear_progress: v })" /></template>
-        </el-table-column>
-        <el-table-column label="SOP情况" min-width="140">
-          <template #default="{ row }"><EditableCell :value="row.sop_status" multiline placeholder="—" @save="(v) => save(row, { sop_status: v })" /></template>
         </el-table-column>
 
         <!-- 动态机台列 -->
@@ -119,7 +80,7 @@
     </el-card>
 
     <!-- ── 管理员配置弹窗 ─────────────────────────────── -->
-    <el-dialog v-model="cfgVisible" title="硬件问题清零 · 下拉选项配置" width="560px">
+    <el-dialog v-model="cfgVisible" title="硬件问题清零 · 列与选项配置" width="820px">
       <el-form label-position="top">
         <el-form-item label="问题来源选项（每行一个）">
           <el-input v-model="cfgForm.sources" type="textarea" :rows="5" placeholder="来料不良&#10;设计缺陷&#10;工艺问题" />
@@ -137,6 +98,33 @@
             <div v-if="!cfgCellOpts.length" class="muted">先在上方填写状态选项，再为每个状态配色</div>
           </div>
         </el-form-item>
+
+        <el-form-item label="自定义列（可增删、选类型、选择插入位置、排序）">
+          <div class="col-defs">
+            <div v-for="(col, i) in cfgColumns" :key="col.key" class="col-def-row">
+              <el-input v-model="col.label" size="small" placeholder="列名" style="width:120px" />
+              <el-select v-model="col.type" size="small" style="width:92px">
+                <el-option label="文本" value="text" />
+                <el-option label="链接" value="link" />
+                <el-option label="下拉" value="select" />
+                <el-option label="日期" value="date" />
+                <el-option label="数字" value="number" />
+              </el-select>
+              <el-select v-model="col.after" size="small" style="width:160px" placeholder="插入位置">
+                <el-option v-for="p in positionOptions" :key="p.value" :label="p.label" :value="p.value" />
+              </el-select>
+              <el-input v-if="col.type === 'select'" v-model="col.optionsText" size="small"
+                        placeholder="下拉选项，逗号/换行分隔" style="flex:1; min-width:120px" />
+              <span v-else class="col-def-spacer" />
+              <el-button link :icon="Top" :disabled="i === 0" title="上移" @click="moveCol(i, -1)" />
+              <el-button link :icon="Bottom" :disabled="i === cfgColumns.length - 1" title="下移" @click="moveCol(i, 1)" />
+              <el-button link type="danger" :icon="Delete" title="删除列" @click="removeCol(i)" />
+            </div>
+            <el-button size="small" :icon="Plus" @click="addCol">新增列</el-button>
+            <div v-if="!cfgColumns.length" class="muted">还没有自定义列，点「新增列」添加</div>
+            <div v-else class="muted col-hint">「插入位置」决定该列出现在哪个固定列之后；同一位置有多列时按上下顺序排列。</div>
+          </div>
+        </el-form-item>
       </el-form>
       <template #footer>
         <el-button @click="cfgVisible = false">取消</el-button>
@@ -149,8 +137,8 @@
 <script setup>
 import { computed, defineComponent, h, onMounted, ref, watch } from 'vue'
 import { RouterLink } from 'vue-router'
-import { ElInput, ElMessage, ElMessageBox } from 'element-plus'
-import { Delete, Document, Download, EditPen, Plus, Search, Setting, Unlock, Upload } from '@element-plus/icons-vue'
+import { ElButton, ElDatePicker, ElInput, ElMessage, ElMessageBox, ElOption, ElSelect } from 'element-plus'
+import { Bottom, Delete, Document, Download, EditPen, Plus, Search, Setting, Top, TopRight, Unlock, Upload } from '@element-plus/icons-vue'
 import { configApi, customerStatusApi, downloadBlob, hardwareIssueApi, resourceGroupApi, userApi } from '../api'
 import { auth } from '../store/auth'
 import { naturalCompare } from '../utils/format'
@@ -179,6 +167,7 @@ const exporting = ref(false)
 const importing = ref(false)
 const editMode = ref(false)        // 默认只读；进入编辑才可改，防止误改
 const cellColors = ref({})         // {清零状态: 颜色}，用于机台格着色
+const extraColumns = ref([])       // 自定义列定义 [{key,label,type,options}]
 const filterCustomerId = ref(null)
 const q = ref('')
 
@@ -226,6 +215,134 @@ const EditableCell = defineComponent({
           onClick: start,
         }, props.value || (editMode.value ? props.placeholder : '—'))
   },
+})
+
+// 固定列定义：key 与后端 _FIXED_EXPORT 的锚点一致，供自定义列 after 定位。
+// kind 决定单元格渲染方式；text 类 key 即 row 上的字段名。
+const FIXED_COLS = [
+  { key: 'source', label: '来源', kind: 'text', minWidth: 110 },
+  { key: 'issue_ref', label: '问题单号', kind: 'text', minWidth: 130 },
+  { key: 'summary', label: '问题简述', kind: 'text', multiline: true, minWidth: 200 },
+  { key: 'replaced_part', label: '更换部件', kind: 'text', minWidth: 130 },
+  { key: 'issue_source', label: '问题来源', kind: 'issue_source', width: 130, align: 'center' },
+  { key: 'group', label: '责任领域', kind: 'group', width: 130, align: 'center' },
+  { key: 'owner', label: '责任人', kind: 'owner', width: 130, align: 'center' },
+  { key: 'ccb_conclusion', label: 'CCB清零结论', kind: 'text', multiline: true, minWidth: 160 },
+  { key: 'ship_clear_from', label: '从#N发货清零', kind: 'text', width: 120, align: 'center' },
+  { key: 'clear_progress', label: '清零进展', kind: 'text', multiline: true, minWidth: 160 },
+  { key: 'sop_status', label: 'SOP情况', kind: 'text', multiline: true, minWidth: 140 },
+]
+
+// 「插入位置」下拉选项：最前 / 各固定列之后 / 机台列前（默认）
+const positionOptions = [
+  { value: '__start__', label: '表格最前' },
+  ...FIXED_COLS.map(fc => ({ value: fc.key, label: `「${fc.label}」后` })),
+  { value: '__end__', label: '机台列前（默认）' },
+]
+
+// ── 固定列单元格（按 kind 切换：文本 / 问题来源 / 责任领域 / 责任人）──
+const FixedCell = defineComponent({
+  props: { col: Object, row: Object, users: Array, groups: Array, issueSources: Array },
+  emits: ['save'],
+  setup(props, { emit }) {
+    return () => {
+      const { col, row } = props
+      if (col.kind === 'issue_source') {
+        return h(ElSelect, {
+          modelValue: row.issue_source, size: 'small', clearable: true, filterable: true,
+          placeholder: '—', disabled: !editMode.value,
+          onChange: (v) => emit('save', { issue_source: v || '' }),
+        }, () => optionsWith(props.issueSources, row.issue_source).map(o => h(ElOption, { key: o, label: o, value: o })))
+      }
+      if (col.kind === 'group') {
+        return h(ElSelect, {
+          modelValue: row.group_id, size: 'small', clearable: true, filterable: true,
+          placeholder: '—', disabled: !editMode.value,
+          onChange: (v) => emit('save', { group_id: v ?? null }),
+        }, () => props.groups.map(g => h(ElOption, { key: g.id, label: g.name, value: g.id })))
+      }
+      if (col.kind === 'owner') {
+        return h(ElSelect, {
+          modelValue: row.owner_user_id, size: 'small', clearable: true, filterable: true,
+          placeholder: '未指派', disabled: !editMode.value,
+          onChange: (v) => emit('save', { owner_user_id: v ?? null }),
+        }, () => props.users.map(u => h(ElOption, { key: u.id, label: u.full_name || u.username, value: u.id })))
+      }
+      return h(EditableCell, {
+        value: row[col.key], multiline: !!col.multiline, placeholder: '—',
+        onSave: (v) => emit('save', { [col.key]: v }),
+      })
+    }
+  },
+})
+
+// ── 自定义列单元格（按 type：下拉 / 日期 / 链接 / 数字 / 文本）；emit('save', key, val) ──
+const ExtraCell = defineComponent({
+  props: { col: Object, row: Object },
+  emits: ['save'],
+  setup(props, { emit }) {
+    return () => {
+      const { col, row } = props
+      const cur = extraVal(row, col.key)
+      if (col.type === 'select') {
+        return h(ElSelect, {
+          modelValue: cur, size: 'small', clearable: true, disabled: !editMode.value, placeholder: '—',
+          onChange: (v) => emit('save', col.key, v || ''),
+        }, () => (col.options || []).map(o => h(ElOption, { key: o, label: o, value: o })))
+      }
+      if (col.type === 'date') {
+        return h(ElDatePicker, {
+          modelValue: cur, type: 'date', size: 'small', valueFormat: 'YYYY-MM-DD',
+          disabled: !editMode.value, placeholder: '—', style: 'width:130px',
+          'onUpdate:modelValue': (v) => emit('save', col.key, v || ''),
+        })
+      }
+      if (col.type === 'link') {
+        return h('div', { class: 'extra-link' }, [
+          h(EditableCell, { value: cur, placeholder: '—', onSave: (v) => emit('save', col.key, v) }),
+          cur ? h(ElButton, {
+            link: true, type: 'primary', size: 'small', icon: TopRight, title: '打开链接',
+            onClick: () => openLink(cur),
+          }) : null,
+        ])
+      }
+      return h(EditableCell, {
+        value: cur, placeholder: '—',
+        onSave: (v) => emit('save', col.key, col.type === 'number' ? normNum(v) : v),
+      })
+    }
+  },
+})
+
+// 固定列 + 自定义列交织成有序列，供表格单个 v-for 渲染；自定义列按 after 锚点插入
+const orderedColumns = computed(() => {
+  const byAnchor = {}
+  for (const col of extraColumns.value) {
+    const a = col.after || '__end__'
+    ;(byAnchor[a] = byAnchor[a] || []).push(col)
+  }
+  const seen = new Set()
+  const extraItem = (c) => {
+    seen.add(c.key)
+    return {
+      uid: 'x:' + c.key, type: 'extra', def: c, label: c.label,
+      minWidth: c.type === 'select' ? 120 : 140, headerAlign: 'center', className: 'extra-col',
+    }
+  }
+  const fixedItem = (fc) => ({
+    uid: 'f:' + fc.key, type: 'fixed', def: fc, label: fc.label,
+    width: fc.width, minWidth: fc.minWidth, align: fc.align,
+  })
+  const out = []
+  for (const c of byAnchor.__start__ || []) out.push(extraItem(c))
+  for (const fc of FIXED_COLS) {
+    out.push(fixedItem(fc))
+    for (const c of byAnchor[fc.key] || []) out.push(extraItem(c))
+  }
+  for (const c of byAnchor.__end__ || []) out.push(extraItem(c))
+  // after 指向已失效锚点的列兜底放末尾，避免丢列
+  for (const c of extraColumns.value) if (!seen.has(c.key)) out.push(extraItem(c))
+  return out
 })
 
 // 战场下拉：从机台去重派生，保证与实际机台一致
@@ -326,6 +443,25 @@ function saveCell(row, machineId, val) {
   save(row, { machine_cells: cells })
 }
 
+// ── 自定义列取值/保存 ──
+function extraVal(row, key) {
+  return (row.extra_fields && row.extra_fields[key]) || ''
+}
+function saveExtra(row, key, val) {
+  const extra = { ...(row.extra_fields || {}) }
+  if (val) extra[key] = val
+  else delete extra[key]
+  save(row, { extra_fields: extra })
+}
+function normNum(v) {
+  const n = parseInt(v, 10)
+  return Number.isNaN(n) ? '' : String(Math.max(0, n))
+}
+function openLink(url) {
+  const u = /^https?:\/\//i.test(url) ? url : `http://${url}`
+  window.open(u, '_blank')
+}
+
 async function addRow() {
   try {
     const { data } = await hardwareIssueApi.create({})
@@ -405,9 +541,23 @@ const cfgVisible = ref(false)
 const cfgSaving = ref(false)
 const cfgForm = ref({ sources: '', cellOptions: '' })
 const cfgColors = ref({})   // 弹窗内编辑中的 {状态: 颜色}
+const cfgColumns = ref([])  // 弹窗内编辑中的自定义列 [{key,label,type,optionsText}]
 
 // 弹窗里根据"状态选项"文本实时解析出的选项列表，用来渲染配色行
 const cfgCellOpts = computed(() => splitLines(cfgForm.value.cellOptions))
+
+function addCol() {
+  cfgColumns.value.push({ key: 'c' + Date.now().toString(36), label: '新列', type: 'text', after: '__end__', optionsText: '' })
+}
+function moveCol(i, dir) {
+  const j = i + dir
+  if (j < 0 || j >= cfgColumns.value.length) return
+  const arr = cfgColumns.value
+  ;[arr[i], arr[j]] = [arr[j], arr[i]]
+}
+function removeCol(i) {
+  cfgColumns.value.splice(i, 1)
+}
 
 function openConfig() {
   cfgForm.value = {
@@ -416,6 +566,11 @@ function openConfig() {
   }
   // 未配过色的常见状态给出默认建议色，配过的沿用
   cfgColors.value = { ...DEFAULT_CELL_COLORS, ...(cellColors.value || {}) }
+  // 深拷贝列定义，options 数组 → 文本便于编辑
+  cfgColumns.value = (extraColumns.value || []).map(c => ({
+    key: c.key, label: c.label, type: c.type || 'text', after: c.after || '__end__',
+    optionsText: (c.options || []).join('\n'),
+  }))
   cfgVisible.value = true
 }
 
@@ -433,14 +588,23 @@ async function saveConfig() {
     for (const opt of cells) {
       if (cfgColors.value[opt]) colors[opt] = cfgColors.value[opt]
     }
+    // 自定义列：清洗（去掉空列名），select 类型把选项文本转数组
+    const columns = cfgColumns.value
+      .filter(c => (c.label || '').trim())
+      .map(c => ({
+        key: c.key, label: c.label.trim(), type: c.type || 'text', after: c.after || '__end__',
+        options: c.type === 'select' ? splitLines(c.optionsText) : [],
+      }))
     await configApi.save({
       hw_issue_sources: sources,
       hw_machine_cell_options: cells,
       hw_machine_cell_colors: colors,
+      hw_extra_columns: columns,
     })
     issueSources.value = sources
     cellOptions.value = cells
     cellColors.value = colors
+    extraColumns.value = columns
     cfgVisible.value = false
     ElMessage.success('已保存')
   } catch (e) {
@@ -457,6 +621,8 @@ async function loadConfig() {
     cellOptions.value = Array.isArray(data.hw_machine_cell_options) ? data.hw_machine_cell_options : []
     cellColors.value = (data.hw_machine_cell_colors && typeof data.hw_machine_cell_colors === 'object')
       ? data.hw_machine_cell_colors : {}
+    extraColumns.value = Array.isArray(data.hw_extra_columns)
+      ? data.hw_extra_columns.filter(c => c && c.key && c.label) : []
   } catch { /* 静默 */ }
 }
 
@@ -504,4 +670,11 @@ onMounted(async () => {
 .color-map { display: flex; flex-direction: column; gap: 8px; width: 100%; }
 .color-row { display: flex; align-items: center; gap: 10px; }
 .color-row .status-chip { min-width: 90px; text-align: center; }
+
+/* 自定义列配置 */
+.col-defs { display: flex; flex-direction: column; gap: 8px; width: 100%; }
+.col-def-row { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.col-def-spacer { flex: 1; }
+.col-hint { margin-top: 2px; font-size: 12px; }
+.extra-link { display: flex; align-items: center; gap: 2px; }
 </style>

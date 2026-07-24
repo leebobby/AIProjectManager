@@ -214,6 +214,8 @@ class HardwareIssueBase(BaseModel):
     sort_order: Optional[int] = 0
     # {machine_status_id(str): 清零状态}；后端与 machine_cells_json 互转
     machine_cells: Dict[str, str] = {}
+    # 自定义列取值 {列key: 值}；列定义在 config.hw_extra_columns
+    extra_fields: Dict[str, str] = {}
 
 
 class HardwareIssueCreate(HardwareIssueBase):
@@ -237,6 +239,7 @@ class HardwareIssueUpdate(BaseModel):
     sop_status: Optional[str] = None
     sort_order: Optional[int] = None
     machine_cells: Optional[Dict[str, str]] = None
+    extra_fields: Optional[Dict[str, str]] = None
 
 
 class HardwareIssueOut(HardwareIssueBase):
@@ -247,6 +250,60 @@ class HardwareIssueOut(HardwareIssueBase):
     group_name: Optional[str] = ""
 
     model_config = _BASE_CONFIG
+
+
+# ===== 关键特性目录（交付状态点灯 + 需求度量 + 责任人 + 附件）=====
+class KeyFeatureBase(BaseModel):
+    name: Optional[str] = ""
+    status: Optional[str] = "分析"
+    total_sr: Optional[int] = 0
+    accepted_sr: Optional[int] = 0
+    to_test_sr: Optional[int] = 0
+    fo: Optional[str] = ""
+    se: Optional[str] = ""
+    intro: Optional[str] = ""
+    issue_feature: Optional[str] = ""
+    sort_order: Optional[int] = 0
+
+
+class KeyFeatureCreate(KeyFeatureBase):
+    @field_validator("status")
+    @classmethod
+    def _v_status(cls, v):
+        return enums.norm_key_feature_status(v)
+
+
+class KeyFeatureUpdate(BaseModel):
+    version: int
+    name: Optional[str] = None
+    status: Optional[str] = None
+    total_sr: Optional[int] = None
+    accepted_sr: Optional[int] = None
+    to_test_sr: Optional[int] = None
+    fo: Optional[str] = None
+    se: Optional[str] = None
+    intro: Optional[str] = None
+    issue_feature: Optional[str] = None
+    sort_order: Optional[int] = None
+
+    @field_validator("status")
+    @classmethod
+    def _v_status(cls, v):
+        return enums.norm_key_feature_status(v, partial=True)
+
+
+class KeyFeatureOut(KeyFeatureBase):
+    id: int
+    version: int
+    updated_at: Optional[datetime] = None
+    attachments: List[dict] = []          # 由路由解析 attachments_json
+    machine_ids: List[int] = []           # 引用该特性的机台（路由批量填充）
+
+    model_config = _BASE_CONFIG
+
+
+class MachineFeatureSet(BaseModel):
+    feature_ids: List[int] = []
 
 
 # ===== 客户详情：机台 + SOW + License =====

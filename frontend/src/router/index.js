@@ -82,6 +82,12 @@ const routes = [
     meta: { title: '客户面支撑情况', icon: 'Suitcase', group: '客户面管理' },
   },
   {
+    path: '/key-features',
+    name: 'KeyFeatureManagement',
+    component: () => import('../views/KeyFeatureManagement.vue'),
+    meta: { title: '关键特性', icon: 'Opportunity', group: '进度管理' },
+  },
+  {
     path: '/roadmaps',
     name: 'RoadmapManage',
     component: () => import('../views/RoadmapManage.vue'),

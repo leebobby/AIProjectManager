@@ -165,6 +165,7 @@ class HardwareIssue(Base):
     clear_progress = Column(Text, default="", comment="清零进展")
     sop_status = Column(Text, default="", comment="SOP 情况")
     machine_cells_json = Column(Text, default="{}", comment="{machine_status_id: 清零状态}")
+    extra_fields_json = Column(Text, default="{}", comment="自定义列的值 {列key: 值}；列定义在 config.hw_extra_columns")
     sort_order = Column(Integer, default=0, comment="展示顺序")
     version = Column(Integer, nullable=False, default=0, comment="乐观锁版本号")
     created_at = Column(DateTime, default=datetime.utcnow)
@@ -172,6 +173,54 @@ class HardwareIssue(Base):
 
     owner = relationship("User", foreign_keys=[owner_user_id])
     group = relationship("ResourceGroup", foreign_keys=[group_id])
+
+
+class KeyFeature(Base):
+    """关键特性目录（全局），机台通过 machine_key_features 多对多引用。
+
+    交付状态六档（enums.KEY_FEATURE_STATUSES）＝点灯。需求度量三数（总SR/已验收/
+    已转测）、责任人（FO/特性SE）、简介、附件（attachments_json）、关联问题单特性
+    （issue_feature，用于"客户面关键问题"跳到问题单管理按 feature 过滤）。
+    表由 create_all 自动建；协作编辑域，删除限 admin。
+    """
+    __tablename__ = "key_features"
+
+    id = Column(Integer, primary_key=True, index=True)
+    name = Column(String(128), nullable=False, default="", comment="关键特性名称")
+    status = Column(String(16), nullable=False, default="分析", comment="交付状态（六档）＝点灯")
+    # 需求度量
+    total_sr = Column(Integer, default=0, comment="总 SR 数量")
+    accepted_sr = Column(Integer, default=0, comment="已验收数量")
+    to_test_sr = Column(Integer, default=0, comment="已转测数量")
+    # 责任人
+    fo = Column(String(64), default="", comment="FO 责任人")
+    se = Column(String(64), default="", comment="特性 SE")
+    # 内容
+    intro = Column(Text, default="", comment="特性简介")
+    attachments_json = Column(Text, default="[]", comment="附件/链接 [{id,kind,name,stored|url,size}]")
+    issue_feature = Column(String(128), default="", comment="关联问题单特性名（客户面关键问题）")
+    sort_order = Column(Integer, default=0)
+    version = Column(Integer, nullable=False, default=0, comment="乐观锁版本号")
+    created_at = Column(DateTime, default=datetime.utcnow)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+
+class MachineKeyFeature(Base):
+    """机台 ↔ 关键特性 多对多关联。客户面状态页每台机台勾选适用特性，总览据此点灯。"""
+    __tablename__ = "machine_key_features"
+
+    id = Column(Integer, primary_key=True, index=True)
+    machine_status_id = Column(
+        Integer, ForeignKey("customer_status.id", ondelete="CASCADE"),
+        nullable=False, index=True,
+    )
+    feature_id = Column(
+        Integer, ForeignKey("key_features.id", ondelete="CASCADE"),
+        nullable=False, index=True,
+    )
+    __table_args__ = (
+        UniqueConstraint("machine_status_id", "feature_id", name="uq_machine_feature"),
+    )
 
 
 class IssueReportDaily(Base):
